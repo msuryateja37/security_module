@@ -18,7 +18,6 @@
     "view-data": "tsc -p tsconfig.server.json && node dist-server/viewData.js"
   },
   "dependencies": {
-    "@rolldown/binding-darwin-arm64": "^1.1.3",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "lucide-react": "^1.21.0",
