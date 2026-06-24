@@ -1,12 +1,16 @@
-name: Deploy to Azure App Service
+name: CI/CD Pipeline - DLRRD Security Module
 
 on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
-  build-and-deploy:
+  build-and-validate:
+    name: Build and Validate Application
     runs-on: ubuntu-latest
 
     steps:
@@ -22,10 +26,14 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Build Application (React UI & Express Server)
+      - name: Run Linter (oxlint)
+        run: npm run lint
+
+      - name: Build Application (Vite UI & TS Server)
         run: npm run build
 
       - name: Package Deployment Files
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           mkdir -p deploy
           cp -r dist deploy/dist
@@ -34,7 +42,28 @@ jobs:
           cp package.json deploy/package.json
           cp package-lock.json deploy/package-lock.json
           cp database_mssql.sql deploy/database_mssql.sql
-          
+
+      - name: Upload Build Artifacts
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-package
+          path: deploy/
+          retention-days: 1
+
+  deploy-to-azure:
+    name: Deploy to Azure App Service
+    needs: build-and-validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: deployment-package
+          path: ./deploy
+
       - name: Log in to Azure
         uses: azure/login@v2
         with:
@@ -43,5 +72,6 @@ jobs:
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
-          app-name: ${{ secrets.AZURE_APP_NAME }} # e.g., dlrrd-security-module
+          app-name: ${{ secrets.AZURE_APP_NAME }}
           package: ./deploy
+
