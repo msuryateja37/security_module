@@ -38,14 +38,15 @@ jobs:
       - name: Package Deployment Files
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
+          rm -rf deploy
           mkdir -p deploy
-          cp -r dist deploy/dist
-          cp -r dist-server deploy/dist-server
-          cp index.js deploy/index.js
-          cp package.json deploy/package.json
-          cp package-lock.json deploy/package-lock.json
-          cp database_mssql.sql deploy/database_mssql.sql
-          cp web.config deploy/web.config
+          cp -r dist deploy/
+          cp -r dist-server deploy/
+          cp index.js deploy/
+          cp package.json deploy/
+          cp package-lock.json deploy/
+          cp database_mssql.sql deploy/
+          cp web.config deploy/
           cd deploy
           npm ci --omit=dev
 
