@@ -46,6 +46,8 @@ jobs:
           cp package-lock.json deploy/package-lock.json
           cp database_mssql.sql deploy/database_mssql.sql
           cp web.config deploy/web.config
+          cd deploy
+          npm ci --omit=dev
 
       - name: Upload Build Artifacts
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
