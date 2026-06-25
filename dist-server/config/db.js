@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 let sqliteDb = null;
 let mssqlPool = null;
 // Switch based on process.env configuration
-const useMssql = !!(process.env.DB_SERVER || process.env.AZURE_SQL_CONNECTIONSTRING);
+const useMssql = process.env.USE_SQLITE === 'true' ? false : !!(process.env.DB_SERVER || process.env.AZURE_SQL_CONNECTIONSTRING);
 export async function getDbConnection() {
     if (useMssql) {
         if (mssqlPool)
@@ -32,6 +32,14 @@ export async function getDbConnection() {
         console.log('Connected to Azure SQL Database successfully.');
         // Initialize Schema and Seed if needed
         await initializeMssql(mssqlPool);
+        // Clean up DLRRD prefix from any existing incidents
+        try {
+            await mssqlPool.request().query("UPDATE incidents SET refNo = REPLACE(refNo, 'DLRRD/', '') WHERE refNo LIKE 'DLRRD/%'");
+            console.log('Successfully cleaned up old DLRRD prefixes from Azure SQL incidents.');
+        }
+        catch (e) {
+            console.error('Failed to run Azure SQL refNo cleanup:', e);
+        }
         return mssqlPool;
     }
     else {
@@ -52,6 +60,14 @@ export async function getDbConnection() {
                 console.log('Database tables created successfully.');
                 await seedDatabaseSqlite(sqliteDb);
             }
+        }
+        // Clean up DLRRD prefix from any existing incidents
+        try {
+            await sqliteDb.exec("UPDATE incidents SET refNo = REPLACE(refNo, 'DLRRD/', '') WHERE refNo LIKE 'DLRRD/%'");
+            console.log('Successfully cleaned up old DLRRD prefixes from SQLite incidents.');
+        }
+        catch (e) {
+            console.error('Failed to run SQLite refNo cleanup:', e);
         }
         return sqliteDb;
     }
@@ -400,7 +416,7 @@ function getIncidentSeed() {
     return [
         {
             id: 'inc-1',
-            refNo: 'DLRRD/SEC/2026/001',
+            refNo: 'SEC/2026/001',
             incidentType: JSON.stringify(['Theft', 'Malicious damage to property']),
             otherIncidentTypeDetails: '',
             department: 'Chief Directorate: Land Reform',
@@ -439,7 +455,7 @@ function getIncidentSeed() {
         },
         {
             id: 'inc-2',
-            refNo: 'DLRRD/SEC/2026/002',
+            refNo: 'SEC/2026/002',
             incidentType: JSON.stringify(['Armed Robbery', 'Hostage situation']),
             otherIncidentTypeDetails: '',
             department: 'Provincial Shared Services Centre (PSSC)',
@@ -478,7 +494,7 @@ function getIncidentSeed() {
         },
         {
             id: 'inc-3',
-            refNo: 'DLRRD/SEC/2026/003',
+            refNo: 'SEC/2026/003',
             incidentType: JSON.stringify(['Loss of information']),
             otherIncidentTypeDetails: '',
             department: 'Directorate: Information Security',

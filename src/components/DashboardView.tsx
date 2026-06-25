@@ -63,7 +63,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ incidents, stats, 
             Performance Reports
           </button>
           <button className="btn btn-primary" onClick={() => onNavigate('report')}>
-            + Report Breach
+            + Report Incident
           </button>
         </div>
       </div>
@@ -121,7 +121,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ incidents, stats, 
         <div className="glass-card" style={{ padding: '1.5rem' }}>
           <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <TrendingUp size={20} color="hsl(var(--color-primary))" />
-            Security Incident Breaches by Province
+            Security Incidents by Province
           </h3>
           <div style={{ paddingBottom: '1.5rem' }}>
             <div className="chart-container">
@@ -206,7 +206,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ incidents, stats, 
       {/* Recent Incidents Panel */}
       <div className="glass-card" style={{ padding: '1.5rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-          <h3>Recent Security Breaches</h3>
+          <h3>Recent Security Incidents</h3>
           <button className="btn btn-secondary" onClick={() => onNavigate('register')} style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}>
             View All Register Cases
           </button>
@@ -260,7 +260,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ incidents, stats, 
               {incidents.length === 0 && (
                 <tr>
                   <td colSpan={8} style={{ textAlign: 'center', padding: '2rem', color: 'hsl(var(--text-muted))' }}>
-                    No security breaches registered.
+                    No security incidents registered.
                   </td>
                 </tr>
               )}

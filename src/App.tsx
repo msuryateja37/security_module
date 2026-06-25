@@ -32,7 +32,9 @@ import {
   Settings,
   LogOut,
   Search,
-  Bell
+  Bell,
+  Menu,
+  X
 } from 'lucide-react';
 
 
@@ -42,6 +44,11 @@ function App() {
   const [currentUser, setCurrentUser] = useState<string | null>(() => {
     return localStorage.getItem('dlrrd_logged_in_user');
   });
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    setIsSidebarOpen(false);
+  }, [activeView, submitReportSubView]);
 
   // Database States loaded from LocalStorage or mock seeds
   const [incidents, setIncidents] = useState<SecurityIncident[]>([]);
@@ -66,7 +73,7 @@ function App() {
   const [notifications, setNotifications] = useState([
     { id: 'notif-1', title: 'New incident logged', message: 'A theft was reported in Pretoria HQ, Block B.', time: '10m ago', read: false },
     { id: 'notif-2', title: 'TRA checklist completed', message: 'Gauteng Regional Office audit submitted by Supervisor.', time: '1h ago', read: true },
-    { id: 'notif-3', title: 'SLA Breach Alert', message: 'Case DLRRD/SEC/2026/001 requires outcome updates.', time: '4h ago', read: false },
+    { id: 'notif-3', title: 'SLA Breach Alert', message: 'Case SEC/2026/001 requires outcome updates.', time: '4h ago', read: false },
     { id: 'notif-4', title: 'System Maintenance', message: 'Azure SQL DB migration schedule on Saturday.', time: '1d ago', read: true }
   ]);
 
@@ -487,21 +494,20 @@ function App() {
 
   return (
     <div className="app-container">
+      {/* Sidebar Backdrop overlay for mobile */}
+      {isSidebarOpen && (
+        <div 
+          className="sidebar-backdrop" 
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar Navigation */}
-      <nav className="sidebar" style={{ display: 'flex', flexDirection: 'column', height: '100vh', justifyContent: 'space-between' }}>
+      <nav className={`sidebar ${isSidebarOpen ? 'open' : ''}`} style={{ display: 'flex', flexDirection: 'column', height: '100vh', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           {/* Logo Card Section */}
-          <div className="logo-white-card">
-            <svg className="logo-white-card-img" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" fill="rgba(14, 77, 65, 0.15)" stroke="#003326" />
-              <circle cx="12" cy="11" r="3" fill="#31b399" />
-              <path d="M12 2v20M2 11h20" stroke="#003326" strokeWidth="0.5" />
-            </svg>
-            <div className="logo-white-card-text">
-              <span className="logo-dept">rural development<br/>& land reform</span>
-              <span style={{ fontSize: '0.45rem', color: '#6b7280', margin: '0.1rem 0', fontWeight: 500, lineHeight: 1.1 }}>Department: Rural Development and Land Reform</span>
-              <span className="logo-republic">REPUBLIC OF SOUTH AFRICA</span>
-            </div>
+          <div className="logo-white-card" style={{ justifyContent: 'center' }}>
+            <img className="logo-white-card-img" src="/logo_with_name.png" alt="DLRRD Logo" />
           </div>
 
           <ul className="nav-links" style={{ marginTop: '1rem' }}>
@@ -604,11 +610,18 @@ function App() {
       </nav>
 
       {/* Persistent global layout container */}
-      <div style={{ marginLeft: 'var(--sidebar-width)', flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: '100vh', width: 'calc(100% - var(--sidebar-width))' }}>
+      <div className="main-layout-container" style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
         
         {/* Topbar Header */}
         <header className="global-topbar" style={{ position: 'relative' }}>
-          <div className="topbar-left">
+          <div className="topbar-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <button 
+              className="menu-toggle-btn" 
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              title="Toggle Menu"
+            >
+              {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
             <h2 className="topbar-title">{getTopbarTitle()}</h2>
           </div>
           <div className="topbar-right">

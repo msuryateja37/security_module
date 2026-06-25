@@ -34,7 +34,7 @@ export const PERFORMANCE_INDICATORS = [
 export const initialIncidents: SecurityIncident[] = [
   {
     id: 'inc-1',
-    refNo: 'DLRRD/SEC/2026/001',
+    refNo: 'SEC/2026/001',
     incidentType: ['Theft', 'Malicious damage to property'],
     department: 'Chief Directorate: Land Reform',
     contactDetails: '012 312 8624 / thabo.m@dlrrd.gov.za',
@@ -72,7 +72,7 @@ export const initialIncidents: SecurityIncident[] = [
   },
   {
     id: 'inc-2',
-    refNo: 'DLRRD/SEC/2026/002',
+    refNo: 'SEC/2026/002',
     incidentType: ['Armed Robbery', 'Hostage situation'],
     department: 'Provincial Shared Services Centre (PSSC)',
     contactDetails: '018 388 7000 / lerato.k@dlrrd.gov.za',
@@ -110,7 +110,7 @@ export const initialIncidents: SecurityIncident[] = [
   },
   {
     id: 'inc-3',
-    refNo: 'DLRRD/SEC/2026/003',
+    refNo: 'SEC/2026/003',
     incidentType: ['Loss of information'],
     department: 'Directorate: Information Security',
     contactDetails: '012 312 8600 / dumisani.l@dlrrd.gov.za',

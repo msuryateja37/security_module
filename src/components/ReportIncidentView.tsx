@@ -27,13 +27,13 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
   const [dateTime, setDateTime] = useState('');
   const [place, setPlace] = useState('');
   const [province, setProvince] = useState<ProvinceType>('Gauteng');
-  const [lossValue, setLossValue] = useState(0);
+  const [lossValue, setLossValue] = useState<string | number>('');
   const [natureOfLoss, setNatureOfLoss] = useState('');
   const [injuriesFatalities, setInjuriesFatalities] = useState('None');
   const [reportedBy, setReportedBy] = useState('Supervisor');
   const [sapsCaseNumber, setSapsCaseNumber] = useState('');
   const [policeStation, setPoliceStation] = useState('');
-  const [arrests, setArrests] = useState(0);
+  const [arrests, setArrests] = useState<string | number>('');
   const [classification, setClassification] = useState<SecurityIncident['classification']>('Unclassified');
   const [reportedToSaps, setReportedToSaps] = useState<SecurityIncident['reportedToSapsSsa']>('No');
   
@@ -58,6 +58,9 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
   
   // NOC specific initial notification brief
   const [nocBriefDetails, setNocBriefDetails] = useState('');
+
+  const [generatedRefNo, setGeneratedRefNo] = useState('');
+  const [generatedRegNo, setGeneratedRegNo] = useState('');
 
   // Toggle incident type checkbox
   const handleToggleType = (type: string) => {
@@ -99,7 +102,7 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
     // Generate unique incident references
     const year = new Date().getFullYear();
     const randId = Math.floor(1000 + Math.random() * 9000);
-    const refNo = `${formType === 'noc' ? 'NOC' : 'DLRRD'}/SEC/${year}/${randId}`;
+    const refNo = `${formType === 'noc' ? 'NOC/' : ''}SEC/${year}/${randId}`;
     const registerNumber = `REG-${year}-${Math.floor(100 + Math.random() * 900)}`;
 
     const newIncident: SecurityIncident = {
@@ -113,13 +116,13 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
       dateTime,
       place,
       province,
-      lossValue,
+      lossValue: Number(lossValue) || 0,
       natureOfLoss,
       injuriesFatalities,
       reportedBy,
       sapsCaseNumber,
       policeStation,
-      arrests,
+      arrests: Number(arrests) || 0,
       classification,
       reportedToSapsSsa: reportedToSaps,
       outcomeOfInvestigation: 'New report submitted. Preliminary review pending.',
@@ -143,6 +146,9 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
       recommendations
     };
 
+    setGeneratedRefNo(refNo);
+    setGeneratedRegNo(registerNumber);
+
     onAddIncident(newIncident);
     setCurrentStep(4); // Success step
   };
@@ -151,13 +157,13 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
     <div>
       <div className="header-row">
         <div>
-          <h1 className="page-title">Report Security Breach</h1>
+          <h1 className="page-title">Report Security Incident</h1>
           <p className="page-subtitle">File incident notifications directly to the National Operations Centre</p>
         </div>
       </div>
 
       {currentStep < 4 && (
-        <div className="glass-card" style={{ padding: '1.25rem', marginBottom: '1.5rem', display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+        <div className="glass-card step-banner">
           <div>
             <div style={{ fontSize: '0.8rem', color: 'hsl(var(--text-secondary))' }}>FORM NOTIFICATION SCHEME</div>
             <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
@@ -358,7 +364,7 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
                   type="number" 
                   className="form-input" 
                   value={lossValue} 
-                  onChange={(e) => setLossValue(parseInt(e.target.value) || 0)}
+                  onChange={(e) => setLossValue(e.target.value)}
                   required 
                 />
               </div>
@@ -404,7 +410,7 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
                     type="number" 
                     className="form-input" 
                     value={arrests}
-                    onChange={(e) => setArrests(parseInt(e.target.value) || 0)}
+                    onChange={(e) => setArrests(e.target.value)}
                   />
                 </div>
               </div>
@@ -597,7 +603,19 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
         {currentStep === 4 && (
           <div className="glass-card" style={{ padding: '3rem', textAlign: 'center', maxWidth: '600px', margin: '2rem auto' }}>
             <CheckCircle2 size={64} color="hsl(var(--color-success))" style={{ margin: '0 auto 1.5rem auto' }} />
-            <h2 style={{ marginBottom: '0.75rem' }}>Breach Notification Logged</h2>
+            <h2 style={{ marginBottom: '0.75rem' }}>Incident Notification Logged</h2>
+            
+            <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1.25rem', margin: '1.5rem 0', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <div>
+                <span style={{ fontSize: '0.7rem', color: 'hsl(var(--text-secondary))', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>Reference Number (Case ID)</span>
+                <span style={{ fontSize: '1.4rem', fontWeight: 700, color: 'hsl(var(--color-accent))' }}>{generatedRefNo}</span>
+              </div>
+              <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.5rem' }}>
+                <span style={{ fontSize: '0.7rem', color: 'hsl(var(--text-secondary))', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>Official Register Number</span>
+                <span style={{ fontSize: '0.95rem', fontWeight: 600 }}>{generatedRegNo}</span>
+              </div>
+            </div>
+
             <p style={{ color: 'hsl(var(--text-secondary))', marginBottom: '2rem' }}>
               The incident report has been securely registered in the Case Management database and pushed to the National Operations Centre (NOC).
             </p>
@@ -606,7 +624,7 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
               <button type="button" className="btn btn-primary" onClick={() => onNavigate('register')}>
                 Open Case Files
               </button>
-              <button type="button" className="btn btn-secondary" onClick={() => { setCurrentStep(1); setSelectedTypes([]); setNatureOfLoss(''); setLossValue(0); setReportedToSaps('No'); }}>
+              <button type="button" className="btn btn-secondary" onClick={() => { setCurrentStep(1); setSelectedTypes([]); setNatureOfLoss(''); setLossValue(''); setReportedToSaps('No'); }}>
                 Log Another Incident
               </button>
             </div>

@@ -27,6 +27,8 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
   const [editArrests, setEditArrests] = useState(0);
   const [editReportedToSaps, setEditReportedToSaps] = useState<SecurityIncident['reportedToSapsSsa']>('No');
 
+  const isClosed = selectedIncident?.status === 'Closed';
+
   // Open drawer and set state
   const handleOpenDrawer = (inc: SecurityIncident) => {
     setSelectedIncident(inc);
@@ -88,7 +90,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
     <div>
       <div className="header-row">
         <div>
-          <h1 className="page-title">Security Breaches Register</h1>
+          <h1 className="page-title">Security Incidents Register</h1>
           <p className="page-subtitle">Departmental Incident Logs & Investigation Case Files</p>
         </div>
       </div>
@@ -257,7 +259,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
                   <div style={{ fontWeight: 500 }}>{selectedIncident.reportedBy}</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: '0.75rem', color: 'hsl(var(--text-secondary))' }}>DATE & TIME OF BREACH</div>
+                  <div style={{ fontSize: '0.75rem', color: 'hsl(var(--text-secondary))' }}>DATE & TIME OF INCIDENT</div>
                   <div style={{ fontWeight: 500 }}>{new Date(selectedIncident.dateTime).toLocaleString()}</div>
                 </div>
                 <div>
@@ -279,6 +281,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
                       className="form-input" 
                       value={editStatus}
                       onChange={(e) => setEditStatus(e.target.value as SecurityIncident['status'])}
+                      disabled={isClosed}
                     >
                       <option value="Open">Open</option>
                       <option value="Under Investigation">Under Investigation</option>
@@ -292,6 +295,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
                       className="form-input" 
                       value={editClassification}
                       onChange={(e) => setEditClassification(e.target.value as SecurityIncident['classification'])}
+                      disabled={isClosed}
                     >
                       <option value="Unclassified">Unclassified</option>
                       <option value="Restricted">Restricted</option>
@@ -310,6 +314,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
                     placeholder="e.g. Security Manager Mandla Mnguni"
                     value={editResponsible}
                     onChange={(e) => setEditResponsible(e.target.value)}
+                    disabled={isClosed}
                   />
                 </div>
 
@@ -320,6 +325,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
                       className="form-input" 
                       value={editReportedToSaps}
                       onChange={(e) => setEditReportedToSaps(e.target.value as SecurityIncident['reportedToSapsSsa'])}
+                      disabled={isClosed}
                     >
                       <option value="No">No</option>
                       <option value="Pending">Pending</option>
@@ -335,6 +341,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
                         placeholder="e.g. CAS 124/05/2026"
                         value={editSapsNumber}
                         onChange={(e) => setEditSapsNumber(e.target.value)}
+                        disabled={isClosed}
                       />
                     </div>
                   )}
@@ -350,6 +357,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
                         placeholder="e.g. Pretoria Central"
                         value={editPoliceStation}
                         onChange={(e) => setEditPoliceStation(e.target.value)}
+                        disabled={isClosed}
                       />
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
@@ -359,6 +367,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
                         className="form-input" 
                         value={editArrests}
                         onChange={(e) => setEditArrests(parseInt(e.target.value) || 0)}
+                        disabled={isClosed}
                       />
                     </div>
                   </div>
@@ -373,6 +382,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
                     style={{ resize: 'vertical' }}
                     value={editOutcome}
                     onChange={(e) => setEditOutcome(e.target.value)}
+                    disabled={isClosed}
                   />
                 </div>
               </div>
@@ -436,11 +446,17 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
             </div>
 
             <div className="drawer-footer">
-              <button className="btn btn-primary" style={{ flexGrow: 1 }} onClick={handleSaveChanges}>
-                <Save size={16} /> Save Changes
-              </button>
-              <button className="btn btn-secondary" onClick={handleCloseDrawer}>
-                Cancel
+              {!isClosed && (
+                <button className="btn btn-primary" style={{ flexGrow: 1 }} onClick={handleSaveChanges}>
+                  <Save size={16} /> Save Changes
+                </button>
+              )}
+              <button 
+                className="btn btn-secondary" 
+                style={isClosed ? { flexGrow: 1 } : {}} 
+                onClick={handleCloseDrawer}
+              >
+                {isClosed ? 'Close' : 'Cancel'}
               </button>
             </div>
           </div>
