@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { User, Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import type { UserProfile } from '../security/roleAccess';
+import { getPermissionsForRole, getUserByUsername, ROLE_USERS } from '../security/roleAccess';
 
 interface LoginViewProps {
-  onLoginSuccess: (username: string) => void;
+  onLoginSuccess: (user: UserProfile) => void;
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
@@ -12,20 +14,36 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setIsLoading(true);
 
-    // Mock API authentication delay for professional feel
-    setTimeout(() => {
-      if (username.toLowerCase() === 'supervisor' && password === 'password') {
-        onLoginSuccess('supervisor');
-      } else {
-        setError('Invalid username or password. Please try again.');
-        setIsLoading(false);
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const json = await response.json();
+
+      if (response.ok && json.success && json.data?.user) {
+        onLoginSuccess(json.data.user);
+        return;
       }
-    }, 600);
+
+      setError(json.message || 'Invalid username or password. Use one of the role demo accounts below.');
+    } catch {
+      const user = getUserByUsername(username);
+
+      if (user && password === 'password') {
+        onLoginSuccess(user);
+      } else {
+        setError('Invalid username or password. Use one of the role demo accounts below.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -51,6 +69,23 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
           <p style={{ fontSize: '0.75rem', color: '#6b7280', textAlign: 'center', marginBottom: '1.5rem' }}>
             Log in to manage and report security incidents, inspections, and audit logs.
           </p>
+          <div className="login-role-hint">
+            {ROLE_USERS.map(user => (
+              <button
+                type="button"
+                key={user.id}
+                className="login-role-chip"
+                onClick={() => {
+                  setUsername(user.username);
+                  setPassword('password');
+                  setError(null);
+                }}
+                title={`${user.roleLabel}: ${getPermissionsForRole(user.role).join(', ')}`}
+              >
+                {user.roleLabel}
+              </button>
+            ))}
+          </div>
 
           {error && (
             <div className="login-error-msg">

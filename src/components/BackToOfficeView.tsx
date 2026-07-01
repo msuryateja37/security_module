@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { BackToOfficeReport } from '../types/security';
 import { FileText, Save, History, Plus } from 'lucide-react';
+import { useModal } from './NotificationModal';
 
 interface BackToOfficeViewProps {
   reports: BackToOfficeReport[];
@@ -9,6 +10,7 @@ interface BackToOfficeViewProps {
 
 export const BackToOfficeView: React.FC<BackToOfficeViewProps> = ({ reports, onSubmitReport }) => {
   const [showHistory, setShowHistory] = useState(false);
+  const { showAlert } = useModal();
   
   // Form states
   const [officialName, setOfficialName] = useState('Supervisor');
@@ -21,13 +23,13 @@ export const BackToOfficeView: React.FC<BackToOfficeViewProps> = ({ reports, onS
   const [expectedOutput, setExpectedOutput] = useState('');
   const [discussionPoints, setDiscussionPoints] = useState('');
   const [mattersNoting, setMattersNoting] = useState('');
-  const [designation, setDesignation] = useState('');
+  const [designation, setDesignation] = useState('Security Specialist');
   const [signature, setSignature] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!officialName || !date || !eventName) {
-      alert('Please fill in required fields (Name of Official, Date, and Event Name).');
+      showAlert('Please fill in required fields (Name of Official, Date, and Event Name).', 'Validation Error', 'warning');
       return;
     }
 
@@ -64,7 +66,7 @@ export const BackToOfficeView: React.FC<BackToOfficeViewProps> = ({ reports, onS
     setDesignation('');
     setSignature('');
 
-    alert('Back to Office Report successfully logged.');
+    showAlert('Back to Office Report successfully logged.', 'Report Submitted', 'success');
   };
 
   return (

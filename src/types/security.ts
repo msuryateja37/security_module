@@ -21,6 +21,13 @@ export interface SecurityIncident {
   outcomeOfInvestigation: string;
   responsiblePerson?: string;
   status: 'Open' | 'Under Investigation' | 'SAPS Case' | 'Closed';
+  isEscalated?: boolean | number;
+  escalationLevel?: 'Major' | 'High Risk' | 'Critical' | 'National Review';
+  escalationReason?: string;
+  escalationNotes?: string;
+  escalatedBy?: string;
+  escalatedTo?: string;
+  escalatedAt?: string;
   dateCreated: string;
   dateReported: string;
   

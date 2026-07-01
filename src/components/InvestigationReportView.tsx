@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { InvestigationReport } from '../types/security';
 import { FileSearch, Save, History, Plus } from 'lucide-react';
+import { useModal } from './NotificationModal';
 
 interface InvestigationReportViewProps {
   reports: InvestigationReport[];
@@ -9,6 +10,7 @@ interface InvestigationReportViewProps {
 
 export const InvestigationReportView: React.FC<InvestigationReportViewProps> = ({ reports, onSubmitReport }) => {
   const [showHistory, setShowHistory] = useState(false);
+  const { showAlert } = useModal();
   
   // Form states
   const [subject, setSubject] = useState('');
@@ -27,7 +29,7 @@ export const InvestigationReportView: React.FC<InvestigationReportViewProps> = (
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!subject || !date || !officerName) {
-      alert('Please fill in required fields (Subject, Date, and Officer Name).');
+      showAlert('Please fill in required fields (Subject, Date, and Officer Name).', 'Validation Error', 'warning');
       return;
     }
 
@@ -64,7 +66,7 @@ export const InvestigationReportView: React.FC<InvestigationReportViewProps> = (
     setDate('');
     setSignature('');
 
-    alert('Investigation Report successfully compiled.');
+    showAlert('Investigation Report successfully compiled.', 'Report Compiled', 'success');
   };
 
   return (

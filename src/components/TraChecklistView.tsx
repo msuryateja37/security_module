@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { TraAudit } from '../types/security';
 import { Save, History, Plus } from 'lucide-react';
+import { useModal } from './NotificationModal';
 
 interface TraChecklistViewProps {
   reports: TraAudit[];
@@ -70,6 +71,7 @@ const SECTION_C_ITEMS = [
 
 export const TraChecklistView: React.FC<TraChecklistViewProps> = ({ reports, onSubmitReport }) => {
   const [showHistory, setShowHistory] = useState(false);
+  const { showAlert } = useModal();
 
   // Header states
   const [officeName, setOfficeName] = useState('');
@@ -94,7 +96,7 @@ export const TraChecklistView: React.FC<TraChecklistViewProps> = ({ reports, onS
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!officeName || !date || !assessorName) {
-      alert('Please fill in required fields (Office Name, Date, and Assessor Name).');
+      showAlert('Please fill in required fields (Office Name, Date, and Assessor Name).', 'Validation Error', 'warning');
       return;
     }
 
@@ -149,7 +151,7 @@ export const TraChecklistView: React.FC<TraChecklistViewProps> = ({ reports, onS
     setManagerSignature('');
     setChecklistValues({});
 
-    alert('Threat and Risk Assessment checklist submitted successfully.');
+    showAlert('Threat and Risk Assessment checklist submitted successfully.', 'Checklist Submitted', 'success');
   };
 
   // Split section items into two columns

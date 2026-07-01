@@ -23,6 +23,13 @@ export interface SecurityIncidentDb {
   outcomeOfInvestigation: string;
   responsiblePerson?: string;
   status: string;
+  isEscalated?: number;
+  escalationLevel?: string;
+  escalationReason?: string;
+  escalationNotes?: string;
+  escalatedBy?: string;
+  escalatedTo?: string;
+  escalatedAt?: string;
   dateCreated: string;
   dateReported: string;
   whatHappened: string;
@@ -63,6 +70,13 @@ export interface SecurityIncident {
   outcomeOfInvestigation: string;
   responsiblePerson?: string;
   status: 'Open' | 'Under Investigation' | 'SAPS Case' | 'Closed';
+  isEscalated?: boolean | number;
+  escalationLevel?: 'Major' | 'High Risk' | 'Critical' | 'National Review';
+  escalationReason?: string;
+  escalationNotes?: string;
+  escalatedBy?: string;
+  escalatedTo?: string;
+  escalatedAt?: string;
   dateCreated: string;
   dateReported: string;
   whatHappened: string;
@@ -87,6 +101,17 @@ export const IncidentModel = {
       ...row,
       incidentType: JSON.parse(row.incidentType || '[]')
     } as SecurityIncident));
+  },
+
+  async getById(id: string): Promise<SecurityIncident | null> {
+    const rows = await query<SecurityIncidentDb>('SELECT * FROM incidents WHERE id = ?', [id]);
+    const row = rows[0];
+    if (!row) return null;
+
+    return {
+      ...row,
+      incidentType: JSON.parse(row.incidentType || '[]')
+    } as SecurityIncident;
   },
 
   async create(incident: SecurityIncident): Promise<boolean> {
@@ -147,8 +172,20 @@ export const IncidentModel = {
     const fields: string[] = [];
     const values: any[] = [];
     
+    const validColumns = [
+      'refNo', 'incidentType', 'otherIncidentTypeDetails', 'department', 'contactDetails',
+      'dateTime', 'place', 'province', 'lossValue', 'natureOfLoss', 'injuriesFatalities',
+      'reportedBy', 'registerNumber', 'sapsCaseNumber', 'policeStation', 'arrests',
+      'classification', 'reportedToSapsSsa', 'outcomeOfInvestigation', 'responsiblePerson',
+      'status', 'isEscalated', 'escalationLevel', 'escalationReason', 'escalationNotes',
+      'escalatedBy', 'escalatedTo', 'escalatedAt', 'dateCreated', 'dateReported', 'whatHappened', 'whereHappened', 'howHappened',
+      'whoResponsible', 'proceduresUsed', 'weaponsUsed', 'damageDone', 'actionTaken',
+      'securityMeasuresEffectiveness', 'securityPersonnelReaction', 'otherAspects',
+      'lessonsLearned', 'recommendations'
+    ];
+
     for (const [key, value] of Object.entries(incident)) {
-      if (key === 'id') continue;
+      if (key === 'id' || !validColumns.includes(key)) continue;
       fields.push(`${key} = ?`);
       if (key === 'incidentType') {
         values.push(JSON.stringify(value));

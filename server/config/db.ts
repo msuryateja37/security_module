@@ -41,6 +41,7 @@ export async function getDbConnection(): Promise<Database | mssql.ConnectionPool
 
     // Clean up DLRRD prefix from any existing incidents
     try {
+      await ensureIncidentEscalationColumnsMssql(mssqlPool);
       await mssqlPool.request().query("UPDATE incidents SET refNo = REPLACE(refNo, 'DLRRD/', '') WHERE refNo LIKE 'DLRRD/%'");
       console.log('Successfully cleaned up old DLRRD prefixes from Azure SQL incidents.');
     } catch (e) {
@@ -72,6 +73,7 @@ export async function getDbConnection(): Promise<Database | mssql.ConnectionPool
 
     // Clean up DLRRD prefix from any existing incidents
     try {
+      await ensureIncidentEscalationColumnsSqlite(sqliteDb);
       await sqliteDb.exec("UPDATE incidents SET refNo = REPLACE(refNo, 'DLRRD/', '') WHERE refNo LIKE 'DLRRD/%'");
       console.log('Successfully cleaned up old DLRRD prefixes from SQLite incidents.');
     } catch (e) {
@@ -80,6 +82,40 @@ export async function getDbConnection(): Promise<Database | mssql.ConnectionPool
 
     return sqliteDb;
   }
+}
+
+async function ensureIncidentEscalationColumnsSqlite(db: Database) {
+  const columns = [
+    ['isEscalated', 'INTEGER DEFAULT 0'],
+    ['escalationLevel', 'VARCHAR(50)'],
+    ['escalationReason', 'VARCHAR(255)'],
+    ['escalationNotes', 'TEXT'],
+    ['escalatedBy', 'VARCHAR(255)'],
+    ['escalatedTo', 'VARCHAR(255)'],
+    ['escalatedAt', 'VARCHAR(50)']
+  ];
+
+  for (const [name, definition] of columns) {
+    try {
+      await db.exec(`ALTER TABLE incidents ADD COLUMN ${name} ${definition}`);
+    } catch (err: any) {
+      if (!String(err?.message || '').includes('duplicate column name')) {
+        throw err;
+      }
+    }
+  }
+}
+
+async function ensureIncidentEscalationColumnsMssql(pool: mssql.ConnectionPool) {
+  await pool.request().query(`
+    IF COL_LENGTH('incidents', 'isEscalated') IS NULL ALTER TABLE incidents ADD isEscalated BIT DEFAULT 0;
+    IF COL_LENGTH('incidents', 'escalationLevel') IS NULL ALTER TABLE incidents ADD escalationLevel VARCHAR(50);
+    IF COL_LENGTH('incidents', 'escalationReason') IS NULL ALTER TABLE incidents ADD escalationReason VARCHAR(255);
+    IF COL_LENGTH('incidents', 'escalationNotes') IS NULL ALTER TABLE incidents ADD escalationNotes NVARCHAR(MAX);
+    IF COL_LENGTH('incidents', 'escalatedBy') IS NULL ALTER TABLE incidents ADD escalatedBy VARCHAR(255);
+    IF COL_LENGTH('incidents', 'escalatedTo') IS NULL ALTER TABLE incidents ADD escalatedTo VARCHAR(255);
+    IF COL_LENGTH('incidents', 'escalatedAt') IS NULL ALTER TABLE incidents ADD escalatedAt VARCHAR(50);
+  `);
 }
 
 // Positional "?" placeholders in SQL string translated to MS SQL "@p0, @p1..." named inputs

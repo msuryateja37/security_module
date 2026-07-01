@@ -2,17 +2,21 @@ import React, { useState } from 'react';
 import type { SecurityIncident } from '../types/security';
 import { PROVINCES } from '../data/mockData';
 import { Search, Eye, X, Save } from 'lucide-react';
+import { useModal } from './NotificationModal';
 
 interface RegisterViewProps {
   incidents: SecurityIncident[];
   onUpdateIncident: (updatedIncident: SecurityIncident) => void;
+  initialSelectedIncidentId?: string | null;
+  onCloseSelectedIncident?: () => void;
 }
 
-export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateIncident }) => {
+export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateIncident, initialSelectedIncidentId, onCloseSelectedIncident }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterProvince, setFilterProvince] = useState('');
   const [filterClassification, setFilterClassification] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const { showAlert } = useModal();
   
   // Selected incident for detail view drawer
   const [selectedIncident, setSelectedIncident] = useState<SecurityIncident | null>(null);
@@ -45,7 +49,19 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
   // Close drawer
   const handleCloseDrawer = () => {
     setSelectedIncident(null);
+    if (onCloseSelectedIncident) {
+      onCloseSelectedIncident();
+    }
   };
+
+  React.useEffect(() => {
+    if (initialSelectedIncidentId) {
+      const match = incidents.find(i => i.id === initialSelectedIncidentId);
+      if (match) {
+        handleOpenDrawer(match);
+      }
+    }
+  }, [initialSelectedIncidentId, incidents]);
 
   // Save changes
   const handleSaveChanges = () => {
@@ -64,10 +80,14 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
     };
     
     onUpdateIncident(updated);
-    setSelectedIncident(updated); // Update drawer view
-    
-    // Add success toast alert simulation in UI
-    alert(`Case ${updated.refNo} has been successfully updated.`);
+    showAlert(
+      `Case ${updated.refNo} has been successfully updated.`, 
+      'Case Updated', 
+      'success',
+      () => {
+        handleCloseDrawer();
+      }
+    );
   };
 
   // Filter incidents

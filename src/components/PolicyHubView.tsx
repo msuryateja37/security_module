@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { ChecklistItem } from '../types/security';
 import { policySections } from '../data/mockData';
 import { BookOpen, ClipboardList, Search, CheckSquare, Square, Save, RotateCcw } from 'lucide-react';
+import { useModal } from './NotificationModal';
 
 interface PolicyHubViewProps {
   checklists: ChecklistItem[];
@@ -12,6 +13,7 @@ export const PolicyHubView: React.FC<PolicyHubViewProps> = ({ checklists, onUpda
   const [activeTab, setActiveTab] = useState<'explorer' | 'checklist'>('explorer');
   const [policySearch, setPolicySearch] = useState('');
   const [localChecklists, setLocalChecklists] = useState<ChecklistItem[]>([...checklists]);
+  const { showAlert, showConfirm } = useModal();
 
   // Handle ticking checklist item
   const handleToggleChecklist = (id: string) => {
@@ -40,16 +42,23 @@ export const PolicyHubView: React.FC<PolicyHubViewProps> = ({ checklists, onUpda
   // Save checklist state
   const handleSaveChecklist = () => {
     onUpdateChecklist(localChecklists);
-    alert('Security compliance checklist states successfully saved.');
+    showAlert('Security compliance checklist states successfully saved.', 'Checklist Saved', 'success');
   };
 
   // Reset checklist state
   const handleResetChecklist = () => {
-    if (window.confirm('Are you sure you want to reset all checklist items to incomplete?')) {
-      const reset = localChecklists.map(item => ({ ...item, completed: false, notes: '' }));
-      setLocalChecklists(reset);
-      onUpdateChecklist(reset);
-    }
+    showConfirm({
+      title: 'Reset Compliance Checklist',
+      message: 'Are you sure you want to reset all compliance checklist items to incomplete?',
+      confirmText: 'Yes, Reset All',
+      type: 'danger',
+      onConfirm: () => {
+        const reset = localChecklists.map(item => ({ ...item, completed: false, notes: '' }));
+        setLocalChecklists(reset);
+        onUpdateChecklist(reset);
+        showAlert('Compliance checklist items have been reset.', 'Checklist Reset', 'info');
+      }
+    });
   };
 
   // Filter policies based on search query

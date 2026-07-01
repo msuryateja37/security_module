@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import type { PerformanceStats, ProvinceType } from '../types/security';
 import { PROVINCES, MONTHS, PERFORMANCE_INDICATORS } from '../data/mockData';
 import { Save } from 'lucide-react';
+import { useModal } from './NotificationModal';
 
 interface MonthlyStatsViewProps {
   stats: PerformanceStats[];
@@ -11,6 +12,7 @@ interface MonthlyStatsViewProps {
 export const MonthlyStatsView: React.FC<MonthlyStatsViewProps> = ({ stats, onUpdateStats }) => {
   const [selectedProvince, setSelectedProvince] = useState<ProvinceType>('Gauteng');
   const [selectedMonth, setSelectedMonth] = useState<string>('Apr');
+  const { showAlert } = useModal();
   
   // Working local state dictionary for the 12 indicators for the selected province & month
   const [formValues, setFormValues] = useState<{ [indicator: string]: number }>({});
@@ -57,7 +59,7 @@ export const MonthlyStatsView: React.FC<MonthlyStatsViewProps> = ({ stats, onUpd
     });
 
     onUpdateStats(nextStats);
-    alert(`Monthly Performance Statistics for ${selectedProvince} (${selectedMonth}) successfully saved.`);
+    showAlert(`Monthly Performance Statistics for ${selectedProvince} (${selectedMonth}) successfully saved.`, 'Statistics Saved', 'success');
   };
 
   return (

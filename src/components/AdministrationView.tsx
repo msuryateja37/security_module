@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { ChecklistItem } from '../types/security';
 import { CheckSquare, Users, Save } from 'lucide-react';
+import { useModal } from './NotificationModal';
 
 interface AdministrationViewProps {
   checklists: ChecklistItem[];
@@ -10,6 +11,7 @@ interface AdministrationViewProps {
 export const AdministrationView: React.FC<AdministrationViewProps> = ({ checklists, onUpdateChecklist }) => {
   const [activeTab, setActiveTab] = useState<'checklist' | 'staff'>('checklist');
   const [localChecklists, setLocalChecklists] = useState<ChecklistItem[]>(checklists);
+  const { showAlert } = useModal();
 
   React.useEffect(() => {
     setLocalChecklists(checklists);
@@ -37,7 +39,7 @@ export const AdministrationView: React.FC<AdministrationViewProps> = ({ checklis
 
   const handleSaveChecklist = () => {
     onUpdateChecklist(localChecklists);
-    alert('Operational compliance checklist successfully saved.');
+    showAlert('Operational compliance checklist successfully saved.', 'Checklist Saved', 'success');
   };
 
   const securityPersonnel = [

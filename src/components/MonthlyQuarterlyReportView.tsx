@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import type { QuarterlyReport, QuarterlyIndicatorValue } from '../types/security';
 import { PROVINCES } from '../data/mockData';
 import { Save, History, Plus } from 'lucide-react';
+import { useModal } from './NotificationModal';
 
 interface MonthlyQuarterlyReportViewProps {
   reports: QuarterlyReport[];
@@ -18,13 +19,14 @@ const QUARTERLY_INDICATORS = [
   '% of offices monitored on Circular 14 of 2013 in line with Key Control Procedures implemented.',
   '% provision of safety and security special at events',
   'Number of DLRRD offices monitored to ensure compliance with OHS Act and policy.',
-  'Number of offices with valid statutory appointees appointed, trained and monitored.',
-  '% of OHS incidents investigated',
-  'Number of emergency and drills conducted'
+  '% of compliance to Minimum Information Security Standard (MISS) monitored.',
+  '% of reported security breach incident investigated.',
+  '% implementation of Security threat and Risk assessment recommendations.'
 ];
 
 export const MonthlyQuarterlyReportView: React.FC<MonthlyQuarterlyReportViewProps> = ({ reports, onSubmitReport }) => {
   const [showHistory, setShowHistory] = useState(false);
+  const { showAlert } = useModal();
 
   // Header states
   const [province, setProvince] = useState<string>('Gauteng');
@@ -38,9 +40,9 @@ export const MonthlyQuarterlyReportView: React.FC<MonthlyQuarterlyReportViewProp
 
   // Initialize indicator values dictionary
   useEffect(() => {
-    const initialValues: { [indName: string]: QuarterlyIndicatorValue } = {};
+    const initValues: { [indName: string]: QuarterlyIndicatorValue } = {};
     QUARTERLY_INDICATORS.forEach(name => {
-      initialValues[name] = {
+      initValues[name] = {
         annualTarget: 0,
         quarterTarget: 0,
         monthlyTarget: 0,
@@ -52,38 +54,20 @@ export const MonthlyQuarterlyReportView: React.FC<MonthlyQuarterlyReportViewProp
         correctiveAction: ''
       };
     });
-    setIndicatorValues(initialValues);
+    setIndicatorValues(initValues);
   }, []);
 
-  // Handle cell value change
-  const handleValueChange = (indicator: string, field: keyof QuarterlyIndicatorValue, val: any) => {
+  const handleValueChange = (indicator: string, field: keyof QuarterlyIndicatorValue, value: any) => {
     setIndicatorValues(prev => {
       const current = prev[indicator] || {
-        annualTarget: 0,
-        quarterTarget: 0,
-        monthlyTarget: 0,
-        actualQuarterPerformance: 0,
-        month1Val: 0,
-        month2Val: 0,
-        month3Val: 0,
-        varianceReasons: '',
-        correctiveAction: ''
+        annualTarget: 0, quarterTarget: 0, monthlyTarget: 0, actualQuarterPerformance: 0,
+        month1Val: 0, month2Val: 0, month3Val: 0, varianceReasons: '', correctiveAction: ''
       };
+      const updated = { ...current, [field]: value };
       
-      const updated = { ...current, [field]: val };
-      
-      // Auto calculate Actual Performance for Quarter if month1/2/3 are numbers
-      if (field === 'month1Val' || field === 'month2Val' || field === 'month3Val') {
-        const m1 = field === 'month1Val' ? (parseInt(val) || 0) : current.month1Val;
-        const m2 = field === 'month2Val' ? (parseInt(val) || 0) : current.month2Val;
-        const m3 = field === 'month3Val' ? (parseInt(val) || 0) : current.month3Val;
-        
-        // Sum or average depending on whether it starts with '%'
-        if (indicator.startsWith('%')) {
-          updated.actualQuarterPerformance = Math.round((m1 + m2 + m3) / 3);
-        } else {
-          updated.actualQuarterPerformance = m1 + m2 + m3;
-        }
+      // Auto compute actual quarter performance if month values updated
+      if (['month1Val', 'month2Val', 'month3Val'].includes(field)) {
+        updated.actualQuarterPerformance = (Number(updated.month1Val) || 0) + (Number(updated.month2Val) || 0) + (Number(updated.month3Val) || 0);
       }
 
       return {
@@ -96,7 +80,7 @@ export const MonthlyQuarterlyReportView: React.FC<MonthlyQuarterlyReportViewProp
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!province || !quarterNumber || !year) {
-      alert('Please fill in required fields (Province, Quarter, and Year).');
+      showAlert('Please fill in required fields (Province, Quarter, and Year).', 'Validation Error', 'warning');
       return;
     }
 
@@ -129,7 +113,7 @@ export const MonthlyQuarterlyReportView: React.FC<MonthlyQuarterlyReportViewProp
       };
     });
     setIndicatorValues(clearedValues);
-    alert('Monthly and Quarterly Investigation Report successfully compiled.');
+    showAlert('Monthly and Quarterly Investigation Report successfully compiled.', 'Report Compiled', 'success');
   };
 
   return (

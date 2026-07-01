@@ -8,6 +8,17 @@ import type {
   QuarterlyReport,
   TraAudit
 } from './types/security';
+import type { AppView, ReportSubView, UserProfile } from './security/roleAccess';
+import {
+  canAccessReportTab,
+  canAccessView,
+  getDefaultReportTabForRole,
+  getDefaultViewForRole,
+  getViewLabelForRole,
+  NAV_ITEMS,
+  REPORT_TABS,
+  reviveStoredUser
+} from './security/roleAccess';
 import { DashboardView } from './components/DashboardView';
 import { RegisterView } from './components/RegisterView';
 import { ReportIncidentView } from './components/ReportIncidentView';
@@ -21,14 +32,9 @@ import { ApprovalView } from './components/ApprovalView';
 import { SlaMonitorView } from './components/SlaMonitorView';
 import { ReportsArchiveView } from './components/ReportsArchiveView';
 import { AdministrationView } from './components/AdministrationView';
+import { PolicyHubView } from './components/PolicyHubView';
 import { LoginView } from './components/LoginView';
 import { 
-  LayoutDashboard, 
-  FileText, 
-  Briefcase,
-  ClipboardCheck,
-  Clock,
-  Archive,
   Settings,
   LogOut,
   Search,
@@ -36,19 +42,67 @@ import {
   Menu,
   X
 } from 'lucide-react';
-
+import { useModal } from './components/NotificationModal';
 
 function App() {
-  const [activeView, setActiveView] = useState<string>('dashboard');
-  const [submitReportSubView, setSubmitReportSubView] = useState<'incident' | 'bto' | 'investigation' | 'stats' | 'quarterly' | 'tra'>('bto');
-  const [currentUser, setCurrentUser] = useState<string | null>(() => {
-    return localStorage.getItem('dlrrd_logged_in_user');
+  const { showAlert } = useModal();
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
+    return reviveStoredUser(localStorage.getItem('dlrrd_logged_in_user'));
+  });
+  const [activeView, setActiveView] = useState<AppView>(() => {
+    const user = reviveStoredUser(localStorage.getItem('dlrrd_logged_in_user'));
+    const hash = window.location.hash.replace('#/', '').replace('#', '') as AppView;
+    const isValidView = hash && ['dashboard', 'submit_reports', 'my_cases', 'register', 'approval', 'sla_monitor', 'reports_archive', 'policy', 'administration'].includes(hash);
+    if (user) {
+      return isValidView && canAccessView(user.role, hash) ? hash : getDefaultViewForRole(user.role);
+    }
+    return 'dashboard';
+  });
+  const [submitReportSubView, setSubmitReportSubView] = useState<ReportSubView>(() => {
+    const user = reviveStoredUser(localStorage.getItem('dlrrd_logged_in_user'));
+    return user ? getDefaultReportTabForRole(user.role) : 'incident';
   });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // URL Hash Routing synchronization
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#/', '').replace('#', '') as AppView;
+      const isValidView = ['dashboard', 'submit_reports', 'my_cases', 'register', 'approval', 'sla_monitor', 'reports_archive', 'policy', 'administration'].includes(hash);
+      
+      if (isValidView && currentUser && canAccessView(currentUser.role, hash)) {
+        setActiveView(hash);
+      }
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (currentUser) {
+      window.location.hash = `#/${activeView}`;
+    } else {
+      window.location.hash = '';
+    }
+  }, [activeView, currentUser]);
 
   useEffect(() => {
     setIsSidebarOpen(false);
   }, [activeView, submitReportSubView]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    if (!canAccessView(currentUser.role, activeView)) {
+      setActiveView(getDefaultViewForRole(currentUser.role));
+      return;
+    }
+
+    if (activeView === 'submit_reports' && !canAccessReportTab(currentUser.role, submitReportSubView)) {
+      setSubmitReportSubView(getDefaultReportTabForRole(currentUser.role));
+    }
+  }, [activeView, currentUser, submitReportSubView]);
 
   // Database States loaded from LocalStorage or mock seeds
   const [incidents, setIncidents] = useState<SecurityIncident[]>([]);
@@ -60,6 +114,8 @@ function App() {
   const [invReports, setInvReports] = useState<InvestigationReport[]>([]);
   const [qtrReports, setQtrReports] = useState<QuarterlyReport[]>([]);
   const [traAudits, setTraAudits] = useState<TraAudit[]>([]);
+
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
 
   // Search, Notifications, Profile, and Settings states
   const [searchQuery, setSearchQuery] = useState('');
@@ -77,6 +133,15 @@ function App() {
     { id: 'notif-4', title: 'System Maintenance', message: 'Azure SQL DB migration schedule on Saturday.', time: '1d ago', read: true }
   ]);
 
+  const authFetch = (url: string, options: RequestInit = {}) => {
+    const headers = {
+      ...(options.headers || {}),
+      'x-username': currentUser?.username || '',
+      'x-user-role': currentUser?.role || ''
+    };
+    return fetch(url, { ...options, headers });
+  };
+
   const handleSearch = (q: string) => {
     setSearchQuery(q);
     if (!q.trim()) {
@@ -85,7 +150,7 @@ function App() {
       return;
     }
     
-    fetch(`/api/search?q=${encodeURIComponent(q)}`)
+    authFetch(`/api/search?q=${encodeURIComponent(q)}`)
       .then(res => res.json())
       .then(json => {
         if (json.success) {
@@ -100,6 +165,8 @@ function App() {
 
   // Initial Load & LocalStorage-to-Database Migration
   useEffect(() => {
+    if (!currentUser) return;
+
     const localIncidents = localStorage.getItem('dlrrd_incidents');
     const localStats = localStorage.getItem('dlrrd_stats');
     const localChecklists = localStorage.getItem('dlrrd_checklists');
@@ -116,7 +183,7 @@ function App() {
         try {
           const parsed = JSON.parse(localIncidents);
           for (const inc of parsed) {
-            await fetch('/api/incidents', {
+            await authFetch('/api/incidents', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(inc)
@@ -132,7 +199,7 @@ function App() {
       if (localStats) {
         try {
           const parsed = JSON.parse(localStats);
-          await fetch('/api/stats', {
+          await authFetch('/api/stats', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(parsed)
@@ -147,7 +214,7 @@ function App() {
       if (localChecklists) {
         try {
           const parsed = JSON.parse(localChecklists);
-          await fetch('/api/checklists', {
+          await authFetch('/api/checklists', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(parsed)
@@ -163,7 +230,7 @@ function App() {
         try {
           const parsed = JSON.parse(localBto);
           for (const r of parsed) {
-            await fetch('/api/bto-reports', {
+            await authFetch('/api/bto-reports', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(r)
@@ -180,7 +247,7 @@ function App() {
         try {
           const parsed = JSON.parse(localInv);
           for (const r of parsed) {
-            await fetch('/api/investigation-reports', {
+            await authFetch('/api/investigation-reports', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(r)
@@ -197,7 +264,7 @@ function App() {
         try {
           const parsed = JSON.parse(localQtr);
           for (const r of parsed) {
-            await fetch('/api/quarterly-reports', {
+            await authFetch('/api/quarterly-reports', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(r)
@@ -214,7 +281,7 @@ function App() {
         try {
           const parsed = JSON.parse(localTra);
           for (const r of parsed) {
-            await fetch('/api/tra-audits', {
+            await authFetch('/api/tra-audits', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(r)
@@ -232,7 +299,7 @@ function App() {
 
     const loadFromDatabase = () => {
       // Load Incidents
-      fetch('/api/incidents')
+      authFetch('/api/incidents')
         .then(res => res.json())
         .then(json => {
           if (json.success) setIncidents(json.data);
@@ -240,7 +307,7 @@ function App() {
         .catch(err => console.error('Error loading incidents:', err));
 
       // Load Stats
-      fetch('/api/stats')
+      authFetch('/api/stats')
         .then(res => res.json())
         .then(json => {
           if (json.success) setStats(json.data);
@@ -248,7 +315,7 @@ function App() {
         .catch(err => console.error('Error loading stats:', err));
 
       // Load Checklists
-      fetch('/api/checklists')
+      authFetch('/api/checklists')
         .then(res => res.json())
         .then(json => {
           if (json.success) setChecklists(json.data);
@@ -256,7 +323,7 @@ function App() {
         .catch(err => console.error('Error loading checklists:', err));
 
       // Load BTO Reports
-      fetch('/api/bto-reports')
+      authFetch('/api/bto-reports')
         .then(res => res.json())
         .then(json => {
           if (json.success) setBtoReports(json.data);
@@ -264,7 +331,7 @@ function App() {
         .catch(err => console.error('Error loading BTO reports:', err));
 
       // Load Investigation Reports
-      fetch('/api/investigation-reports')
+      authFetch('/api/investigation-reports')
         .then(res => res.json())
         .then(json => {
           if (json.success) setInvReports(json.data);
@@ -272,7 +339,7 @@ function App() {
         .catch(err => console.error('Error loading investigation reports:', err));
 
       // Load Quarterly Reports
-      fetch('/api/quarterly-reports')
+      authFetch('/api/quarterly-reports')
         .then(res => res.json())
         .then(json => {
           if (json.success) setQtrReports(json.data);
@@ -280,7 +347,7 @@ function App() {
         .catch(err => console.error('Error loading quarterly reports:', err));
 
       // Load TRA Audits
-      fetch('/api/tra-audits')
+      authFetch('/api/tra-audits')
         .then(res => res.json())
         .then(json => {
           if (json.success) setTraAudits(json.data);
@@ -294,11 +361,11 @@ function App() {
     } else {
       loadFromDatabase();
     }
-  }, []);
+  }, [currentUser]);
 
   // Update handlers
   const handleUpdateIncident = (updated: SecurityIncident) => {
-    fetch(`/api/incidents/${updated.id}`, {
+    authFetch(`/api/incidents/${updated.id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
@@ -314,8 +381,42 @@ function App() {
     .catch(err => console.error('Error updating incident:', err));
   };
 
+  const handleEscalateIncident = (
+    incidentId: string,
+    escalation: Pick<SecurityIncident, 'escalationLevel' | 'escalationReason' | 'escalationNotes'>
+  ) => {
+    return authFetch(`/api/incidents/${incidentId}/escalate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(escalation)
+    })
+    .then(res => res.json())
+    .then(json => {
+      if (!json.success) {
+        throw new Error(json.error || json.message || 'Failed to escalate incident');
+      }
+
+      const escalatedIncident = json.data as SecurityIncident & { notificationTargets?: { displayName: string }[] };
+      setIncidents(prev => prev.map(inc => inc.id === incidentId ? escalatedIncident : inc));
+      setNotifications(prev => [
+        {
+          id: `notif-${Date.now()}`,
+          title: 'Incident escalated',
+          message: `${escalatedIncident.refNo} routed to ${escalatedIncident.escalatedTo || escalatedIncident.responsiblePerson}.`,
+          time: 'Just now',
+          read: false
+        },
+        ...prev
+      ]);
+
+      return escalatedIncident;
+    });
+  };
+
   const handleApproveIncident = (id: string, update: Partial<SecurityIncident>) => {
-    fetch(`/api/incidents/${id}`, {
+    authFetch(`/api/incidents/${id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
@@ -332,7 +433,7 @@ function App() {
   };
 
   const handleAddIncident = (newIncident: SecurityIncident) => {
-    fetch('/api/incidents', {
+    authFetch('/api/incidents', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -364,7 +465,7 @@ function App() {
         setStats(nextStats);
         
         // Update stats on server
-        fetch('/api/stats', {
+        authFetch('/api/stats', {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json'
@@ -377,7 +478,7 @@ function App() {
   };
 
   const handleUpdateStats = (newStats: PerformanceStats[]) => {
-    fetch('/api/stats', {
+    authFetch('/api/stats', {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
@@ -392,7 +493,7 @@ function App() {
   };
 
   const handleUpdateChecklist = (newChecklist: ChecklistItem[]) => {
-    fetch('/api/checklists', {
+    authFetch('/api/checklists', {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
@@ -408,7 +509,7 @@ function App() {
 
   // Submit handlers for the new design screens
   const handleAddBtoReport = (report: BackToOfficeReport) => {
-    fetch('/api/bto-reports', {
+    authFetch('/api/bto-reports', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -423,7 +524,7 @@ function App() {
   };
 
   const handleAddInvReport = (report: InvestigationReport) => {
-    fetch('/api/investigation-reports', {
+    authFetch('/api/investigation-reports', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -438,7 +539,7 @@ function App() {
   };
 
   const handleAddQtrReport = (report: QuarterlyReport) => {
-    fetch('/api/quarterly-reports', {
+    authFetch('/api/quarterly-reports', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -453,7 +554,7 @@ function App() {
   };
 
   const handleAddTraAudit = (report: TraAudit) => {
-    fetch('/api/tra-audits', {
+    authFetch('/api/tra-audits', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -471,7 +572,7 @@ function App() {
     switch (activeView) {
       case 'dashboard': return 'Dashboard';
       case 'submit_reports': return 'Submit Security Reports';
-      case 'my_cases': return 'My Assigned Cases';
+      case 'my_cases': return currentUser ? getViewLabelForRole('my_cases', currentUser.role) : 'My Assigned Cases';
       case 'register': return 'Investigation';
       case 'approval': return 'Approval';
       case 'sla_monitor': return 'SLA Monitor';
@@ -481,12 +582,26 @@ function App() {
     }
   };
 
+  const navigateToView = (view: string) => {
+    if (!currentUser) return;
+
+    const requestedView = view === 'report' ? 'submit_reports' : view;
+    if (canAccessView(currentUser.role, requestedView as AppView)) {
+      setActiveView(requestedView as AppView);
+    }
+  };
+
+  const allowedNavItems = currentUser ? NAV_ITEMS.filter(item => item.roles.includes(currentUser.role)) : [];
+  const allowedReportTabs = currentUser ? REPORT_TABS.filter(tab => tab.roles.includes(currentUser.role)) : [];
+
   if (!currentUser) {
     return (
       <LoginView 
-        onLoginSuccess={(username) => {
-          setCurrentUser(username);
-          localStorage.setItem('dlrrd_logged_in_user', username);
+        onLoginSuccess={(user) => {
+          setCurrentUser(user);
+          setActiveView(getDefaultViewForRole(user.role));
+          setSubmitReportSubView(getDefaultReportTabForRole(user.role));
+          localStorage.setItem('dlrrd_logged_in_user', JSON.stringify(user));
         }} 
       />
     );
@@ -511,85 +626,20 @@ function App() {
           </div>
 
           <ul className="nav-links" style={{ marginTop: '1rem' }}>
-            <li>
-              <button 
-                onClick={() => setActiveView('dashboard')}
-                className={`nav-link ${activeView === 'dashboard' ? 'active' : ''}`}
-              >
-                <LayoutDashboard size={18} />
-                <span className="nav-text">Dashboard</span>
-              </button>
-            </li>
-
-            <li>
-              <button 
-                onClick={() => setActiveView('submit_reports')}
-                className={`nav-link ${activeView === 'submit_reports' ? 'active' : ''}`}
-              >
-                <FileText size={18} />
-                <span className="nav-text">Submit Reports</span>
-              </button>
-            </li>
-
-            <li>
-              <button 
-                onClick={() => setActiveView('my_cases')}
-                className={`nav-link ${activeView === 'my_cases' ? 'active' : ''}`}
-              >
-                <Briefcase size={18} />
-                <span className="nav-text">My Assigned Cases</span>
-              </button>
-            </li>
-
-            <li>
-              <button 
-                onClick={() => setActiveView('register')}
-                className={`nav-link ${activeView === 'register' ? 'active' : ''}`}
-              >
-                <Search size={18} />
-                <span className="nav-text">Investigation</span>
-              </button>
-            </li>
-
-            <li>
-              <button 
-                onClick={() => setActiveView('approval')}
-                className={`nav-link ${activeView === 'approval' ? 'active' : ''}`}
-              >
-                <ClipboardCheck size={18} />
-                <span className="nav-text">Approval</span>
-              </button>
-            </li>
-
-            <li>
-              <button 
-                onClick={() => setActiveView('sla_monitor')}
-                className={`nav-link ${activeView === 'sla_monitor' ? 'active' : ''}`}
-              >
-                <Clock size={18} />
-                <span className="nav-text">SLA Monitor</span>
-              </button>
-            </li>
-
-            <li>
-              <button 
-                onClick={() => setActiveView('reports_archive')}
-                className={`nav-link ${activeView === 'reports_archive' ? 'active' : ''}`}
-              >
-                <Archive size={18} />
-                <span className="nav-text">Reports</span>
-              </button>
-            </li>
-
-            <li>
-              <button 
-                onClick={() => setActiveView('administration')}
-                className={`nav-link ${activeView === 'administration' ? 'active' : ''}`}
-              >
-                <Settings size={18} />
-                <span className="nav-text">Administration</span>
-              </button>
-            </li>
+            {allowedNavItems.map(item => {
+              const Icon = item.icon;
+              return (
+                <li key={item.view}>
+                  <button
+                    onClick={() => setActiveView(item.view)}
+                    className={`nav-link ${activeView === item.view ? 'active' : ''}`}
+                  >
+                    <Icon size={18} />
+                    <span className="nav-text">{getViewLabelForRole(item.view, currentUser.role)}</span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
 
@@ -600,6 +650,7 @@ function App() {
               localStorage.removeItem('dlrrd_logged_in_user');
               setCurrentUser(null);
               setActiveView('dashboard');
+              setSubmitReportSubView('incident');
             }}
             className="nav-link logout-btn-capsule"
           >
@@ -666,13 +717,13 @@ function App() {
               style={{ cursor: 'pointer', userSelect: 'none' }}
             >
               <div className="profile-avatar">
-                {currentUser ? currentUser.charAt(0).toUpperCase() : 'S'}
+                {currentUser.displayName.charAt(0).toUpperCase()}
               </div>
               <div className="profile-info">
                 <span className="profile-name" style={{ textTransform: 'capitalize' }}>
-                  {currentUser || 'supervisor'}
+                  {currentUser.displayName}
                 </span>
-                <span className="profile-role">Senior Security Supervisor</span>
+                <span className="profile-role">{currentUser.roleLabel}</span>
               </div>
             </div>
           </div>
@@ -691,7 +742,7 @@ function App() {
                     <ul>
                       {searchResults.incidents.map((inc: any) => (
                         <li key={inc.id} onClick={() => {
-                          setActiveView('register');
+                          navigateToView('register');
                           setShowSearchResults(false);
                         }}>
                           <div className="search-item-title">{inc.refNo} - {inc.place}</div>
@@ -708,7 +759,7 @@ function App() {
                     <ul>
                       {searchResults.btoReports.map((rep: any) => (
                         <li key={rep.id} onClick={() => {
-                          setActiveView('reports_archive');
+                          navigateToView('reports_archive');
                           setShowSearchResults(false);
                         }}>
                           <div className="search-item-title">{rep.eventName} - {rep.officialName}</div>
@@ -725,7 +776,7 @@ function App() {
                     <ul>
                       {searchResults.investigationReports.map((rep: any) => (
                         <li key={rep.id} onClick={() => {
-                          setActiveView('reports_archive');
+                          navigateToView('reports_archive');
                           setShowSearchResults(false);
                         }}>
                           <div className="search-item-title">{rep.subject}</div>
@@ -742,7 +793,7 @@ function App() {
                     <ul>
                       {searchResults.traAudits.map((rep: any) => (
                         <li key={rep.id} onClick={() => {
-                          setActiveView('reports_archive');
+                          navigateToView('reports_archive');
                           setShowSearchResults(false);
                         }}>
                           <div className="search-item-title">{rep.officeName}</div>
@@ -795,11 +846,11 @@ function App() {
           {showProfileCard && (
             <div className="profile-dropdown-card">
               <div className="profile-dropdown-header">
-                <div className="profile-avatar large">S</div>
+                <div className="profile-avatar large">{currentUser.displayName.charAt(0).toUpperCase()}</div>
                 <div className="profile-dropdown-info">
-                  <h4 style={{ textTransform: 'capitalize', margin: 0 }}>{currentUser || 'supervisor'}</h4>
-                  <p style={{ margin: '0.1rem 0 0 0' }}>Senior Security Supervisor</p>
-                  <p style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.7)', margin: '0.1rem 0 0 0' }}>supervisor@dlrrd.gov.za</p>
+                  <h4 style={{ textTransform: 'capitalize', margin: 0 }}>{currentUser.displayName}</h4>
+                  <p style={{ margin: '0.1rem 0 0 0' }}>{currentUser.roleLabel}</p>
+                  <p style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.7)', margin: '0.1rem 0 0 0' }}>{currentUser.email}</p>
                 </div>
               </div>
               <div className="profile-dropdown-body">
@@ -809,18 +860,22 @@ function App() {
                 </div>
                 <div className="profile-field">
                   <span className="profile-field-label">Office Location</span>
-                  <span className="profile-field-val">Pretoria Headquarters</span>
+                  <span className="profile-field-val">{currentUser.office}</span>
+                </div>
+                <div className="profile-field">
+                  <span className="profile-field-label">Province Scope</span>
+                  <span className="profile-field-val">{currentUser.province}</span>
                 </div>
                 <div className="profile-field">
                   <span className="profile-field-label">Security Cleared Level</span>
-                  <span className="profile-field-val badge success" style={{ fontSize: '0.6rem', padding: '0.1rem 0.3rem', width: 'fit-content' }}>Secret</span>
+                  <span className="profile-field-val badge success" style={{ fontSize: '0.6rem', padding: '0.1rem 0.3rem', width: 'fit-content' }}>{currentUser.clearanceLevel}</span>
                 </div>
               </div>
               <div className="profile-dropdown-footer">
                 <button 
                   className="btn btn-secondary" 
                   style={{ width: '100%', fontSize: '0.75rem', padding: '0.35rem' }} 
-                  onClick={() => alert('Password reset link sent to supervisor@dlrrd.gov.za')}
+                  onClick={() => showAlert(`Password reset link sent to ${currentUser.email}`, 'Password Reset', 'success')}
                 >
                   Reset Password
                 </button>
@@ -837,93 +892,74 @@ function App() {
               stats={stats} 
               onNavigate={(view) => {
                 if (view === 'report') {
-                  setActiveView('submit_reports');
-                  setSubmitReportSubView('incident');
+                  navigateToView('submit_reports');
+                  if (canAccessReportTab(currentUser.role, 'incident')) {
+                    setSubmitReportSubView('incident');
+                  }
+                } else if (view === 'stats') {
+                  navigateToView('submit_reports');
+                  if (canAccessReportTab(currentUser.role, 'stats')) {
+                    setSubmitReportSubView('stats');
+                  }
                 } else {
-                  setActiveView(view);
+                  navigateToView(view);
                 }
               }} 
             />
           )}
 
-          {activeView === 'submit_reports' && (
+          {activeView === 'submit_reports' && canAccessView(currentUser.role, 'submit_reports') && (
             <div>
               {/* Horizontal Tabs to switch report forms */}
               <div className="horizontal-tab-bar">
-                <button 
-                  className={`horizontal-tab ${submitReportSubView === 'incident' ? 'active' : ''}`}
-                  onClick={() => setSubmitReportSubView('incident')}
-                >
-                  Incident Notification
-                </button>
-                <button 
-                  className={`horizontal-tab ${submitReportSubView === 'bto' ? 'active' : ''}`}
-                  onClick={() => setSubmitReportSubView('bto')}
-                >
-                  Back to Office Report
-                </button>
-                <button 
-                  className={`horizontal-tab ${submitReportSubView === 'investigation' ? 'active' : ''}`}
-                  onClick={() => setSubmitReportSubView('investigation')}
-                >
-                  Investigation Report
-                </button>
-                <button 
-                  className={`horizontal-tab ${submitReportSubView === 'stats' ? 'active' : ''}`}
-                  onClick={() => setSubmitReportSubView('stats')}
-                >
-                  Monthly Performance Statistics
-                </button>
-                <button 
-                  className={`horizontal-tab ${submitReportSubView === 'quarterly' ? 'active' : ''}`}
-                  onClick={() => setSubmitReportSubView('quarterly')}
-                >
-                  Monthly & Quarterly Report
-                </button>
-                <button 
-                  className={`horizontal-tab ${submitReportSubView === 'tra' ? 'active' : ''}`}
-                  onClick={() => setSubmitReportSubView('tra')}
-                >
-                  TRA Checklist
-                </button>
+                {allowedReportTabs.map(tab => (
+                  <button
+                    key={tab.view}
+                    className={`horizontal-tab ${submitReportSubView === tab.view ? 'active' : ''}`}
+                    onClick={() => setSubmitReportSubView(tab.view)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
 
               {/* Form rendering */}
-              {submitReportSubView === 'incident' && (
+              {submitReportSubView === 'incident' && canAccessReportTab(currentUser.role, 'incident') && (
                 <ReportIncidentView 
                   onAddIncident={handleAddIncident} 
+                  currentUser={currentUser}
                   onNavigate={(view) => {
                     if (view === 'register') {
-                      setActiveView('register');
+                      navigateToView('register');
                     }
                   }} 
                 />
               )}
-              {submitReportSubView === 'bto' && (
+              {submitReportSubView === 'bto' && canAccessReportTab(currentUser.role, 'bto') && (
                 <BackToOfficeView 
                   reports={btoReports}
                   onSubmitReport={handleAddBtoReport}
                 />
               )}
-              {submitReportSubView === 'investigation' && (
+              {submitReportSubView === 'investigation' && canAccessReportTab(currentUser.role, 'investigation') && (
                 <InvestigationReportView 
                   reports={invReports}
                   onSubmitReport={handleAddInvReport}
                 />
               )}
-              {submitReportSubView === 'stats' && (
+              {submitReportSubView === 'stats' && canAccessReportTab(currentUser.role, 'stats') && (
                 <MonthlyStatsView 
                   stats={stats} 
                   onUpdateStats={handleUpdateStats} 
                 />
               )}
-              {submitReportSubView === 'quarterly' && (
+              {submitReportSubView === 'quarterly' && canAccessReportTab(currentUser.role, 'quarterly') && (
                 <MonthlyQuarterlyReportView 
                   reports={qtrReports}
                   onSubmitReport={handleAddQtrReport}
                 />
               )}
-              {submitReportSubView === 'tra' && (
+              {submitReportSubView === 'tra' && canAccessReportTab(currentUser.role, 'tra') && (
                 <TraChecklistView 
                   reports={traAudits}
                   onSubmitReport={handleAddTraAudit}
@@ -932,24 +968,29 @@ function App() {
             </div>
           )}
 
-          {activeView === 'register' && (
+          {activeView === 'register' && canAccessView(currentUser.role, 'register') && (
             <RegisterView 
               incidents={incidents} 
               onUpdateIncident={handleUpdateIncident} 
+              initialSelectedIncidentId={selectedIncidentId}
+              onCloseSelectedIncident={() => setSelectedIncidentId(null)}
             />
           )}
 
-          {activeView === 'my_cases' && (
+          {activeView === 'my_cases' && canAccessView(currentUser.role, 'my_cases') && (
             <MyCasesView 
               incidents={incidents} 
+              currentUser={currentUser}
+              onUpdateIncident={handleUpdateIncident}
+              onEscalateIncident={handleEscalateIncident}
               onSelectCase={(incident) => {
-                console.log('Selected case:', incident.id);
-                setActiveView('register');
+                setSelectedIncidentId(incident.id);
+                navigateToView('register');
               }} 
             />
           )}
 
-          {activeView === 'approval' && (
+          {activeView === 'approval' && canAccessView(currentUser.role, 'approval') && (
             <ApprovalView 
               incidents={incidents}
               btoReports={btoReports}
@@ -958,13 +999,13 @@ function App() {
             />
           )}
 
-          {activeView === 'sla_monitor' && (
+          {activeView === 'sla_monitor' && canAccessView(currentUser.role, 'sla_monitor') && (
             <SlaMonitorView 
               incidents={incidents} 
             />
           )}
 
-          {activeView === 'reports_archive' && (
+          {activeView === 'reports_archive' && canAccessView(currentUser.role, 'reports_archive') && (
             <ReportsArchiveView 
               btoReports={btoReports}
               invReports={invReports}
@@ -973,8 +1014,15 @@ function App() {
             />
           )}
 
-          {activeView === 'administration' && (
+          {activeView === 'administration' && canAccessView(currentUser.role, 'administration') && (
             <AdministrationView 
+              checklists={checklists} 
+              onUpdateChecklist={handleUpdateChecklist} 
+            />
+          )}
+
+          {activeView === 'policy' && canAccessView(currentUser.role, 'policy') && (
+            <PolicyHubView 
               checklists={checklists} 
               onUpdateChecklist={handleUpdateChecklist} 
             />
@@ -1046,7 +1094,7 @@ function App() {
             </div>
             <div className="drawer-footer">
               <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => {
-                alert('Settings successfully updated.');
+                showAlert('Settings successfully updated.', 'Settings Saved', 'success');
                 setShowSettingsDrawer(false);
               }}>
                 Save Settings

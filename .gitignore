@@ -6,3 +6,4 @@ deploy/
 .env.local
 *.db
 .DS_Store
+requirement-docs/

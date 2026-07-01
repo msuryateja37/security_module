@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { SecurityIncident, BackToOfficeReport, InvestigationReport } from '../types/security';
 import { ClipboardCheck, ShieldAlert, Award, UserCheck, CheckCircle2, FileText } from 'lucide-react';
+import { useModal } from './NotificationModal';
 
 interface ApprovalViewProps {
   incidents: SecurityIncident[];
@@ -11,14 +12,26 @@ interface ApprovalViewProps {
 
 export const ApprovalView: React.FC<ApprovalViewProps> = ({ incidents, btoReports, invReports, onApproveIncident }) => {
   const [activeTab, setActiveTab] = useState<'incidents' | 'reports'>('incidents');
+  const { showAlert, showConfirm } = useModal();
 
   const pendingIncidents = incidents.filter(i => i.status !== 'Closed');
   const pendingBto = btoReports.slice(0, 3);
   const pendingInv = invReports.slice(0, 3);
 
-  const handleApproveCase = (id: string) => {
-    onApproveIncident(id, { status: 'Closed', outcomeOfInvestigation: 'Approved and Closed by CD: Security Services.' });
-    alert('Case successfully approved and closed.');
+  const handleApproveCase = (id: string, refNo: string) => {
+    showConfirm({
+      title: 'Approve Case Closure',
+      message: `Are you sure you want to approve case ${refNo} for official closure?`,
+      confirmText: 'Approve & Close Case',
+      onConfirm: () => {
+        onApproveIncident(id, { status: 'Closed', outcomeOfInvestigation: 'Approved and Closed by CD: Security Services.' });
+        showAlert(`Case ${refNo} has been successfully approved and closed.`, 'Case Closed', 'success');
+      }
+    });
+  };
+
+  const handleCosignReport = (reportTitle: string) => {
+    showAlert(`Report ${reportTitle} has been formally co-signed and archived by Executive Directorate.`, 'Document Co-signed', 'success');
   };
 
   return (
@@ -78,7 +91,7 @@ export const ApprovalView: React.FC<ApprovalViewProps> = ({ incidents, btoReport
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
                   <button 
                     className="btn btn-primary"
-                    onClick={() => handleApproveCase(incident.id)}
+                    onClick={() => handleApproveCase(incident.id, incident.refNo)}
                     style={{ padding: '0.4rem 1rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
                   >
                     <UserCheck size={14} /> Sign off & Close Case
@@ -98,14 +111,14 @@ export const ApprovalView: React.FC<ApprovalViewProps> = ({ incidents, btoReport
         <div className="glass-card" style={{ padding: '1.5rem' }}>
           <h3 style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <ClipboardCheck size={20} color="hsl(var(--color-accent))" />
-            Officer Report Filings Awaiting Sign-off
+            Submitted Operational Reports
           </h3>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
             {pendingBto.map(r => (
               <div key={r.id} className="glass-card" style={{ padding: '1.25rem', border: '1px solid hsl(var(--border-color))' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid hsl(var(--border-color))', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
-                  <span style={{ fontWeight: 600, color: 'hsl(var(--color-primary))' }}>BTO: {r.eventName}</span>
+                  <span style={{ fontWeight: 600, color: 'hsl(var(--color-primary))' }}>BTO Report: {r.eventName}</span>
                   <span style={{ fontSize: '0.8rem', color: 'hsl(var(--text-muted))' }}>Filing Date: {r.dateCreated}</span>
                 </div>
                 <div style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}>
@@ -114,7 +127,7 @@ export const ApprovalView: React.FC<ApprovalViewProps> = ({ incidents, btoReport
                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                   <button 
                     className="btn btn-secondary"
-                    onClick={() => alert(`Report BTO- ${r.id} signed off by Director.`)}
+                    onClick={() => handleCosignReport(`BTO-${r.id}`)}
                     style={{ padding: '0.35rem 0.75rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
                   >
                     <Award size={14} /> Co-sign Document
@@ -135,7 +148,7 @@ export const ApprovalView: React.FC<ApprovalViewProps> = ({ incidents, btoReport
                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                   <button 
                     className="btn btn-secondary"
-                    onClick={() => alert(`Report INV- ${r.id} signed off by Director.`)}
+                    onClick={() => handleCosignReport(`INV-${r.id}`)}
                     style={{ padding: '0.35rem 0.75rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
                   >
                     <Award size={14} /> Co-sign Document

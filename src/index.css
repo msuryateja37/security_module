@@ -201,6 +201,30 @@ h1, h2, h3, h4, h5, h6 {
   white-space: nowrap;
 }
 
+.login-role-hint {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin: -0.6rem 0 1rem;
+}
+
+.login-role-chip {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: #f9fafb;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.45rem 0.5rem;
+  text-align: center;
+}
+
+.login-role-chip:hover {
+  border-color: var(--color-accent);
+  color: var(--color-primary);
+}
+
 /* Cards Grid */
 .grid-cols-4 {
   display: grid;
@@ -1563,5 +1587,4 @@ h1, h2, h3, h4, h5, h6 {
   from { opacity: 0; }
   to { opacity: 1; }
 }
-
 
