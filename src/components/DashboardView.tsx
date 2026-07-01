@@ -53,19 +53,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ incidents, stats, 
 
   return (
     <div>
-      <div className="header-row">
-        <div>
-          <h1 className="page-title">National Security Command Center</h1>
-          <p className="page-subtitle">Department of Land Reform and Rural Development (DLRRD)</p>
-        </div>
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
-          <button className="btn btn-secondary" onClick={() => onNavigate('stats')}>
-            Performance Reports
-          </button>
-          <button className="btn btn-primary" onClick={() => onNavigate('report')}>
-            + Report Incident
-          </button>
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1.5rem' }}>
+        <button className="btn btn-primary" onClick={() => onNavigate('report')}>
+          + Report Incident
+        </button>
       </div>
 
       {/* KPI Cards Grid */}
