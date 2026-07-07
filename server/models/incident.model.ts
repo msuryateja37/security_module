@@ -32,6 +32,7 @@ export interface SecurityIncidentDb {
   escalatedAt?: string;
   dateCreated: string;
   dateReported: string;
+  ownerId?: string;
   whatHappened: string;
   whereHappened: string;
   howHappened: string;
@@ -79,6 +80,7 @@ export interface SecurityIncident {
   escalatedAt?: string;
   dateCreated: string;
   dateReported: string;
+  ownerId?: string;
   whatHappened: string;
   whereHappened: string;
   howHappened: string;
@@ -120,11 +122,11 @@ export const IncidentModel = {
         id, refNo, incidentType, otherIncidentTypeDetails, department, contactDetails,
         dateTime, place, province, lossValue, natureOfLoss, injuriesFatalities, reportedBy,
         registerNumber, sapsCaseNumber, policeStation, arrests, classification, reportedToSapsSsa,
-        outcomeOfInvestigation, responsiblePerson, status, dateCreated, dateReported, whatHappened,
+        outcomeOfInvestigation, responsiblePerson, status, dateCreated, dateReported, ownerId, whatHappened,
         whereHappened, howHappened, whoResponsible, proceduresUsed, weaponsUsed, damageDone,
         actionTaken, securityMeasuresEffectiveness, securityPersonnelReaction, otherAspects,
         lessonsLearned, recommendations
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         incident.id,
         incident.refNo,
@@ -150,6 +152,7 @@ export const IncidentModel = {
         incident.status,
         incident.dateCreated,
         incident.dateReported,
+        incident.ownerId || null,
         incident.whatHappened || '',
         incident.whereHappened || '',
         incident.howHappened || '',

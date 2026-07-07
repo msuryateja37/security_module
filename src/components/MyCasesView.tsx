@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import type { SecurityIncident } from '../types/security';
 import { getViewLabelForRole } from '../security/roleAccess';
-import { Briefcase, AlertTriangle, Clock, ShieldCheck, CheckCircle2, Eye, Search, UserCheck, ArrowUpCircle, X, Send } from 'lucide-react';
+import { Briefcase, Eye, Search, UserCheck, ArrowUpCircle, X, Send } from 'lucide-react';
 import { useModal } from './NotificationModal';
 
 interface MyCasesViewProps {
@@ -133,19 +133,6 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
       .finally(() => setIsEscalating(false));
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'Open':
-        return <AlertTriangle size={18} style={{ color: 'var(--color-danger)' }} />;
-      case 'Under Investigation':
-        return <Clock size={18} style={{ color: 'var(--color-warning)' }} />;
-      case 'SAPS Case':
-        return <ShieldCheck size={18} style={{ color: 'var(--color-accent)' }} />;
-      default:
-        return <CheckCircle2 size={18} style={{ color: 'var(--color-success)' }} />;
-    }
-  };
-
   const getStatusClass = (status: string) => {
     switch (status) {
       case 'Open': return 'danger';
@@ -233,18 +220,15 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
                     <td>{incident.place}</td>
                     <td>
                       {isUnassigned ? (
-                        <span style={{ color: 'var(--color-danger)', fontWeight: 600, fontSize: '0.8rem' }}>⚠️ Unassigned</span>
+                        <span style={{ color: 'var(--color-danger)', fontWeight: 600, fontSize: '0.8rem' }}>Unassigned</span>
                       ) : (
                         <span style={{ fontWeight: 500 }}>{incident.responsiblePerson}</span>
                       )}
                     </td>
                     <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                        {getStatusIcon(incident.status)}
-                        <span className={`badge ${getStatusClass(incident.status)}`}>
-                          {incident.status}
-                        </span>
-                      </div>
+                      <span className={`badge ${getStatusClass(incident.status)}`}>
+                        {incident.status}
+                      </span>
                     </td>
                     <td>
                       <span style={{ fontSize: '0.8rem', fontWeight: 600, opacity: 0.9 }}>

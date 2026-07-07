@@ -30,6 +30,7 @@ export interface SecurityIncident {
   escalatedAt?: string;
   dateCreated: string;
   dateReported: string;
+  ownerId?: string;
   
   // Incident Report detail questions
   whatHappened: string;
@@ -88,6 +89,7 @@ export interface BackToOfficeReport {
   designation: string;
   signature: string;
   dateCreated: string;
+  ownerId?: string;
 }
 
 // Investigation Report
@@ -106,6 +108,7 @@ export interface InvestigationReport {
   date: string;
   signature: string;
   dateCreated: string;
+  ownerId?: string;
 }
 
 // Monthly and Quarterly Investigation Report
@@ -130,6 +133,7 @@ export interface QuarterlyReport {
   branch: string;
   indicatorValues: { [indicatorName: string]: QuarterlyIndicatorValue };
   dateCreated: string;
+  ownerId?: string;
 }
 
 // TRA Audit
@@ -150,4 +154,5 @@ export interface TraAudit {
     }
   };
   dateCreated: string;
+  ownerId?: string;
 }

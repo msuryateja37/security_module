@@ -33,14 +33,19 @@ import { SlaMonitorView } from './components/SlaMonitorView';
 import { ReportsArchiveView } from './components/ReportsArchiveView';
 import { AdministrationView } from './components/AdministrationView';
 import { PolicyHubView } from './components/PolicyHubView';
+import { AssistantView } from './components/AssistantView';
+import type { ChatMessage } from './components/AssistantView';
 import { LoginView } from './components/LoginView';
-import { 
+import { ProfileView } from './components/ProfileView';
+import {
   Settings,
   LogOut,
   Search,
   Bell,
   Menu,
-  X
+  X,
+  UserRound,
+  KeyRound
 } from 'lucide-react';
 import { useModal } from './components/NotificationModal';
 
@@ -52,7 +57,7 @@ function App() {
   const [activeView, setActiveView] = useState<AppView>(() => {
     const user = reviveStoredUser(localStorage.getItem('dlrrd_logged_in_user'));
     const hash = window.location.hash.replace('#/', '').replace('#', '') as AppView;
-    const isValidView = hash && ['dashboard', 'submit_reports', 'my_cases', 'register', 'approval', 'sla_monitor', 'reports_archive', 'policy', 'administration'].includes(hash);
+    const isValidView = hash && ['dashboard', 'submit_reports', 'my_cases', 'register', 'approval', 'sla_monitor', 'reports_archive', 'assistant', 'policy', 'administration', 'profile'].includes(hash);
     if (user) {
       return isValidView && canAccessView(user.role, hash) ? hash : getDefaultViewForRole(user.role);
     }
@@ -68,7 +73,7 @@ function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#/', '').replace('#', '') as AppView;
-      const isValidView = ['dashboard', 'submit_reports', 'my_cases', 'register', 'approval', 'sla_monitor', 'reports_archive', 'policy', 'administration'].includes(hash);
+      const isValidView = ['dashboard', 'submit_reports', 'my_cases', 'register', 'approval', 'sla_monitor', 'reports_archive', 'assistant', 'policy', 'administration', 'profile'].includes(hash);
       
       if (isValidView && currentUser && canAccessView(currentUser.role, hash)) {
         setActiveView(hash);
@@ -125,6 +130,15 @@ function App() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileCard, setShowProfileCard] = useState(false);
   const [showSettingsDrawer, setShowSettingsDrawer] = useState(false);
+  // Which tab the profile page opens on ('security' when arriving via Change Password)
+  const [profileInitialTab, setProfileInitialTab] = useState<'personal' | 'role' | 'security' | 'preferences'>('personal');
+
+  // Draft prepared by the SIMS Assistant, waiting for user review in the incident form
+  const [assistantDraft, setAssistantDraft] = useState<Partial<SecurityIncident> | null>(null);
+  const [assistantDraftVersion, setAssistantDraftVersion] = useState(0);
+  // Assistant conversation — kept here (memory only, never persisted) so it survives
+  // navigating to the incident form and back; cleared once the drafted incident is submitted.
+  const [assistantMessages, setAssistantMessages] = useState<ChatMessage[]>([]);
 
   const [notifications, setNotifications] = useState([
     { id: 'notif-1', title: 'New incident logged', message: 'A theft was reported in Pretoria HQ, Block B.', time: '10m ago', read: false },
@@ -577,7 +591,9 @@ function App() {
       case 'approval': return 'Approval';
       case 'sla_monitor': return 'SLA Monitor';
       case 'reports_archive': return 'Reports';
+      case 'assistant': return 'AI Assistant';
       case 'administration': return 'Administration';
+      case 'profile': return 'My Profile';
       default: return 'CD: Security Services';
     }
   };
@@ -646,11 +662,13 @@ function App() {
         {/* Translucent bottom area containing Logout */}
         <div className="logout-container-bottom" style={{ marginBottom: '0.5rem' }}>
           <button 
-            onClick={() => { 
+            onClick={() => {
               localStorage.removeItem('dlrrd_logged_in_user');
               setCurrentUser(null);
               setActiveView('dashboard');
               setSubmitReportSubView('incident');
+              setAssistantMessages([]);
+              setAssistantDraft(null);
             }}
             className="nav-link logout-btn-capsule"
           >
@@ -871,13 +889,30 @@ function App() {
                   <span className="profile-field-val badge success" style={{ fontSize: '0.6rem', padding: '0.1rem 0.3rem', width: 'fit-content' }}>{currentUser.clearanceLevel}</span>
                 </div>
               </div>
-              <div className="profile-dropdown-footer">
-                <button 
-                  className="btn btn-secondary" 
-                  style={{ width: '100%', fontSize: '0.75rem', padding: '0.35rem' }} 
-                  onClick={() => showAlert(`Password reset link sent to ${currentUser.email}`, 'Password Reset', 'success')}
+              <div className="profile-dropdown-footer" style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  className="btn btn-primary"
+                  style={{ flex: 1, fontSize: '0.75rem', padding: '0.35rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}
+                  onClick={() => {
+                    setShowProfileCard(false);
+                    setProfileInitialTab('personal');
+                    setActiveView('profile');
+                  }}
                 >
-                  Reset Password
+                  <UserRound size={14} />
+                  View Profile
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  style={{ flex: 1, fontSize: '0.75rem', padding: '0.35rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}
+                  onClick={() => {
+                    setShowProfileCard(false);
+                    setProfileInitialTab('security');
+                    setActiveView('profile');
+                  }}
+                >
+                  <KeyRound size={14} />
+                  Change Password
                 </button>
               </div>
             </div>
@@ -925,14 +960,24 @@ function App() {
 
               {/* Form rendering */}
               {submitReportSubView === 'incident' && canAccessReportTab(currentUser.role, 'incident') && (
-                <ReportIncidentView 
-                  onAddIncident={handleAddIncident} 
+                <ReportIncidentView
+                  key={`incident-form-${assistantDraftVersion}`}
+                  initialData={assistantDraft ?? undefined}
+                  onAddIncident={(incident) => {
+                    // The assistant-drafted report is now submitted — clear the draft
+                    // and the assistant conversation that produced it.
+                    if (assistantDraft) {
+                      setAssistantMessages([]);
+                    }
+                    setAssistantDraft(null);
+                    handleAddIncident(incident);
+                  }}
                   currentUser={currentUser}
                   onNavigate={(view) => {
                     if (view === 'register') {
                       navigateToView('register');
                     }
-                  }} 
+                  }}
                 />
               )}
               {submitReportSubView === 'bto' && canAccessReportTab(currentUser.role, 'bto') && (
@@ -1015,16 +1060,42 @@ function App() {
           )}
 
           {activeView === 'administration' && canAccessView(currentUser.role, 'administration') && (
-            <AdministrationView 
-              checklists={checklists} 
-              onUpdateChecklist={handleUpdateChecklist} 
+            <AdministrationView
+              checklists={checklists}
+              onUpdateChecklist={handleUpdateChecklist}
+              currentUser={currentUser}
+            />
+          )}
+
+          {activeView === 'assistant' && canAccessView(currentUser.role, 'assistant') && (
+            <AssistantView
+              currentUser={currentUser}
+              messages={assistantMessages}
+              onMessagesChange={setAssistantMessages}
+              onPrefillIncident={(draft) => {
+                setAssistantDraft(draft);
+                setAssistantDraftVersion(v => v + 1);
+                setSubmitReportSubView('incident');
+                navigateToView('submit_reports');
+              }}
             />
           )}
 
           {activeView === 'policy' && canAccessView(currentUser.role, 'policy') && (
-            <PolicyHubView 
-              checklists={checklists} 
-              onUpdateChecklist={handleUpdateChecklist} 
+            <PolicyHubView
+              checklists={checklists}
+              onUpdateChecklist={handleUpdateChecklist}
+            />
+          )}
+
+          {activeView === 'profile' && (
+            <ProfileView
+              currentUser={currentUser}
+              initialTab={profileInitialTab}
+              onUserUpdated={(user) => {
+                setCurrentUser(user);
+                localStorage.setItem('dlrrd_logged_in_user', JSON.stringify(user));
+              }}
             />
           )}
         </main>

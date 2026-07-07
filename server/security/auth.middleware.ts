@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
-import { getPermissionsForRole, getUserByUsername, Permission, SecurityRole, UserProfile } from './roleAccess.js';
+import { getPermissionsForRole, Permission, SecurityRole, UserProfile } from './roleAccess.js';
+import { UserModel } from '../models/user.model.js';
 import { ResponseView } from '../views/response.view.js';
 import { AuditService } from './audit.service.js';
 
@@ -7,12 +8,12 @@ export interface AuthenticatedRequest extends Request {
   user?: UserProfile;
 }
 
-export const authenticateUser = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const authenticateUser = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const usernameHeader = req.headers['x-username'] as string;
   const roleHeader = req.headers['x-user-role'] as SecurityRole;
 
   if (usernameHeader) {
-    const user = getUserByUsername(usernameHeader);
+    const user = await UserModel.getByUsername(usernameHeader);
 
     if (!user) {
       return ResponseView.sendError(res, 'Unknown user identity', 'Unauthorized', 401);

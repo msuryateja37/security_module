@@ -6,12 +6,11 @@ import { AuditService } from '../security/audit.service.js';
 import { SlaService } from '../security/sla.service.js';
 import { ROLE_USERS } from '../security/roleAccess.js';
 
-const getEscalationTarget = (level?: string) => {
-  if (level === 'Critical' || level === 'National Review') {
-    return ROLE_USERS.find(u => u.role === 'security_director') || ROLE_USERS.find(u => u.role === 'chief_security_investigator');
-  }
-
-  return ROLE_USERS.find(u => u.role === 'chief_security_investigator') || ROLE_USERS.find(u => u.role === 'security_director');
+// Workflow: significant/big cases are escalated to the Security Director (Chief Director),
+// who then assigns a Security Investigator for field work. Escalation therefore always
+// targets the Director; investigator assignment is the Director's follow-up action.
+const getEscalationTarget = (_level?: string) => {
+  return ROLE_USERS.find(u => u.role === 'security_director');
 };
 
 export const IncidentController = {
@@ -20,13 +19,19 @@ export const IncidentController = {
       const user = req.user!;
       let incidents = await IncidentModel.getAll();
 
-      // Provincial Segregation (RBAC & MISS compliance)
-      // If user is not National / Director, restrict view to their authorized province or own reported incidents
+      // Provincial Segregation (RBAC & MISS compliance, FR-033)
       if (user.role === 'security_coordinator') {
         incidents = incidents.filter(i => i.province === user.province || i.province === 'National');
       } else if (user.role === 'employee') {
-        incidents = incidents.filter(i => i.reportedBy === user.displayName || i.contactDetails === user.email);
+        // ownerId is authoritative; name/email matching kept for pre-migration records
+        incidents = incidents.filter(i =>
+          i.ownerId === user.username || i.reportedBy === user.displayName || i.contactDetails === user.email
+        );
+      } else if (user.role === 'chief_security_investigator') {
+        // Chief Investigator only sees cases assigned to them by the Security Director
+        incidents = incidents.filter(i => i.responsiblePerson === user.displayName);
       }
+      // Chief Director (security_director) sees all incidents across provinces
 
       // Attach dynamic SLA status to each incident
       const enrichedIncidents = incidents.map(inc => ({
@@ -71,6 +76,8 @@ export const IncidentController = {
       if (!incident.province) {
         incident.province = user.province;
       }
+      // Record ownership is always stamped from the authenticated identity, never from the client
+      incident.ownerId = user.username;
 
       // Count coordinators for the incident's province
       const provinceCoordinators = ROLE_USERS.filter(

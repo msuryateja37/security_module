@@ -5,6 +5,7 @@ import { ChecklistController } from '../controllers/checklist.controller.js';
 import { ReportController } from '../controllers/report.controller.js';
 import { SearchController } from '../controllers/search.controller.js';
 import { AuthController } from '../controllers/auth.controller.js';
+import { AssistantController } from '../controllers/assistant.controller.js';
 import { authenticateUser, requirePermission, AuthenticatedRequest } from '../security/auth.middleware.js';
 import { AuditService } from '../security/audit.service.js';
 import { ResponseView } from '../views/response.view.js';
@@ -19,8 +20,16 @@ router.post('/auth/login', AuthController.login);
 router.post('/auth/logout', AuthController.logout);
 router.post('/auth/refresh-token', AuthController.refreshToken);
 router.get('/auth/profile', requirePermission('dashboard:view'), AuthController.profile);
+// Self-service profile management (contact details, notification preferences, portal credential, own audit trail)
+router.put('/auth/profile', requirePermission('dashboard:view'), AuthController.updateProfile);
+router.put('/auth/preferences', requirePermission('dashboard:view'), AuthController.updatePreferences);
+router.post('/auth/change-password', requirePermission('dashboard:view'), AuthController.changePassword);
+router.get('/auth/my-activity', requirePermission('dashboard:view'), AuthController.myActivity);
 router.get('/auth/permissions', requirePermission('dashboard:view'), AuthController.permissions);
 router.get('/users', requirePermission('admin:manage_roles'), AuthController.users);
+// Temporary Security Coordinator management (Chief Director only — leave cover, matrix item 2)
+router.post('/users/:username/temp-coordinator', requirePermission('admin:manage_roles'), AuthController.assignTempCoordinator);
+router.delete('/users/:username/temp-coordinator', requirePermission('admin:manage_roles'), AuthController.revokeTempCoordinator);
 router.get('/roles', requirePermission('admin:manage_roles'), AuthController.roles);
 router.get('/permissions', requirePermission('admin:manage_roles'), AuthController.allPermissions);
 
@@ -62,5 +71,8 @@ router.get('/tra-audits', requirePermission('reports:view_archive'), ReportContr
 router.post('/tra-audits', requirePermission('reports:submit_operational'), ReportController.createTra);
 
 router.get('/search', requirePermission('dashboard:view'), SearchController.search);
+
+// SIMS Assistant (AI) — conversations are not persisted; data access is tool-scoped per user
+router.post('/assistant', requirePermission('dashboard:view'), AssistantController.chat);
 
 export default router;

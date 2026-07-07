@@ -17,6 +17,7 @@ export interface TraAudit {
     }
   };
   dateCreated: string;
+  ownerId?: string;
 }
 
 export interface TraAuditDb {
@@ -31,6 +32,7 @@ export interface TraAuditDb {
   managerSignature: string;
   checklistValues: string;
   dateCreated: string;
+  ownerId?: string;
 }
 
 export const TraAuditModel = {
@@ -47,7 +49,8 @@ export const TraAuditModel = {
       assessorSignature: row.assessorSignature,
       managerSignature: row.managerSignature,
       checklistValues: JSON.parse(row.checklistValues || '{}'),
-      dateCreated: row.dateCreated
+      dateCreated: row.dateCreated,
+      ownerId: row.ownerId
     }));
   },
 
@@ -55,11 +58,11 @@ export const TraAuditModel = {
     const result = await execute(
       `INSERT INTO tra_audits (
         id, officeName, date, assessorName, officeLocation, time, managerName,
-        assessorSignature, managerSignature, checklistValues, dateCreated
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        assessorSignature, managerSignature, checklistValues, dateCreated, ownerId
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         audit.id, audit.officeName, audit.date, audit.assessorName, audit.officeLocation, audit.time, audit.managerName,
-        audit.assessorSignature, audit.managerSignature, JSON.stringify(audit.checklistValues), audit.dateCreated
+        audit.assessorSignature, audit.managerSignature, JSON.stringify(audit.checklistValues), audit.dateCreated, audit.ownerId || null
       ]
     );
     return result.changes !== undefined && result.changes > 0;

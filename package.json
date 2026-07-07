@@ -22,6 +22,7 @@
     "express": "^5.2.1",
     "lucide-react": "^1.21.0",
     "mssql": "^12.6.0",
+    "openai": "^6.45.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "sqlite": "^5.1.1",

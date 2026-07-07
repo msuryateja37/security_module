@@ -9,6 +9,8 @@ interface ReportIncidentViewProps {
   onAddIncident: (incident: SecurityIncident) => void;
   onNavigate: (view: string) => void;
   currentUser?: UserProfile;
+  /** Draft prepared by the SIMS Assistant — seeds the form; the user reviews and submits manually. */
+  initialData?: Partial<SecurityIncident>;
 }
 
 const INCIDENT_TYPES_LIST = [
@@ -20,43 +22,48 @@ const INCIDENT_TYPES_LIST = [
   'Permit related', 'Firearm left unattended', 'Accidental damage to property'
 ];
 
-export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddIncident, onNavigate, currentUser }) => {
+export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddIncident, onNavigate, currentUser, initialData }) => {
   const [formType, setFormType] = useState<'standard' | 'noc'>('standard');
   const [currentStep, setCurrentStep] = useState(1);
   const { showAlert } = useModal();
   const defaultProvince = currentUser?.province && PROVINCES.includes(currentUser.province as ProvinceType)
     ? currentUser.province as ProvinceType
     : 'Gauteng';
-  
-  // Form fields state
+  const draftProvince = initialData?.province && PROVINCES.includes(initialData.province as ProvinceType)
+    ? initialData.province as ProvinceType
+    : undefined;
+
+  // Form fields state (seeded from the assistant draft when present)
   const [department, setDepartment] = useState('Chief Directorate: Security and Facilities Management Services');
   const [contactDetails, setContactDetails] = useState(currentUser?.email || '');
-  const [dateTime, setDateTime] = useState('');
-  const [place, setPlace] = useState('');
-  const [province, setProvince] = useState<ProvinceType>(defaultProvince);
-  const [lossValue, setLossValue] = useState<string | number>('');
-  const [natureOfLoss, setNatureOfLoss] = useState('');
-  const [injuriesFatalities, setInjuriesFatalities] = useState('None');
+  const [dateTime, setDateTime] = useState(initialData?.dateTime || '');
+  const [place, setPlace] = useState(initialData?.place || '');
+  const [province, setProvince] = useState<ProvinceType>(draftProvince || defaultProvince);
+  const [lossValue, setLossValue] = useState<string | number>(initialData?.lossValue ?? '');
+  const [natureOfLoss, setNatureOfLoss] = useState(initialData?.natureOfLoss || '');
+  const [injuriesFatalities, setInjuriesFatalities] = useState(initialData?.injuriesFatalities || 'None');
   const [reportedBy, setReportedBy] = useState(currentUser?.displayName || '');
-  const [sapsCaseNumber, setSapsCaseNumber] = useState('');
-  const [policeStation, setPoliceStation] = useState('');
+  const [sapsCaseNumber, setSapsCaseNumber] = useState(initialData?.sapsCaseNumber || '');
+  const [policeStation, setPoliceStation] = useState(initialData?.policeStation || '');
   const [arrests] = useState<string | number>('');
-  const [classification, setClassification] = useState<SecurityIncident['classification']>('Unclassified');
-  const [reportedToSaps, setReportedToSaps] = useState<SecurityIncident['reportedToSapsSsa']>('No');
-  
+  const [classification, setClassification] = useState<SecurityIncident['classification']>(initialData?.classification || 'Unclassified');
+  const [reportedToSaps, setReportedToSaps] = useState<SecurityIncident['reportedToSapsSsa']>(initialData?.reportedToSapsSsa || 'No');
+
   // Selected incident types
-  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
-  const [otherTypeDetails, setOtherTypeDetails] = useState('');
+  const [selectedTypes, setSelectedTypes] = useState<string[]>(
+    (initialData?.incidentType || []).filter(t => INCIDENT_TYPES_LIST.includes(t))
+  );
+  const [otherTypeDetails, setOtherTypeDetails] = useState(initialData?.otherIncidentTypeDetails || '');
 
   // Narrative steps
-  const [whatHappened, setWhatHappened] = useState('');
-  const [whereHappened, setWhereHappened] = useState('');
-  const [howHappened, setHowHappened] = useState('');
-  const [whoResponsible, setWhoResponsible] = useState('');
-  const [proceduresUsed, setProceduresUsed] = useState('');
-  const [weaponsUsed, setWeaponsUsed] = useState('');
-  const [damageDone, setDamageDone] = useState('');
-  const [actionTaken, setActionTaken] = useState('');
+  const [whatHappened, setWhatHappened] = useState(initialData?.whatHappened || '');
+  const [whereHappened, setWhereHappened] = useState(initialData?.whereHappened || '');
+  const [howHappened, setHowHappened] = useState(initialData?.howHappened || '');
+  const [whoResponsible, setWhoResponsible] = useState(initialData?.whoResponsible || '');
+  const [proceduresUsed, setProceduresUsed] = useState(initialData?.proceduresUsed || '');
+  const [weaponsUsed, setWeaponsUsed] = useState(initialData?.weaponsUsed || '');
+  const [damageDone, setDamageDone] = useState(initialData?.damageDone || '');
+  const [actionTaken, setActionTaken] = useState(initialData?.actionTaken || '');
   const [securityMeasuresEffectiveness, setSecurityMeasuresEffectiveness] = useState('');
   const [securityPersonnelReaction, setSecurityPersonnelReaction] = useState('');
   const [otherAspects, setOtherAspects] = useState('');

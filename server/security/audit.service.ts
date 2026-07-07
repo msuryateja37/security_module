@@ -7,7 +7,7 @@ export interface AuditLogEntry {
   username: string;
   userRole: string;
   province: string;
-  action: 'CREATE' | 'READ' | 'UPDATE' | 'DELETE' | 'ESCALATE' | 'LOGIN' | 'LOGOUT' | 'ACCESS_DENIED';
+  action: 'CREATE' | 'READ' | 'UPDATE' | 'DELETE' | 'ESCALATE' | 'LOGIN' | 'LOGOUT' | 'ACCESS_DENIED' | 'ASSISTANT_QUERY';
   resource: string;
   resourceId?: string;
   details?: string;
@@ -72,6 +72,21 @@ export const AuditService = {
         'SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT ?',
         [limit]
       );
+    } catch (err) {
+      console.error('[AuditService Query Error]', err);
+      return [];
+    }
+  },
+
+  /** A user's own activity trail — powers the "Recent activity" section of the profile page. */
+  async getLogsForUser(username: string, limit: number = 25): Promise<AuditLogEntry[]> {
+    try {
+      // No SQL LIMIT — keeps the query portable between SQLite and Azure SQL (TOP vs LIMIT)
+      const rows = await query<AuditLogEntry>(
+        'SELECT * FROM audit_logs WHERE username = ? ORDER BY timestamp DESC',
+        [username]
+      );
+      return rows.slice(0, limit);
     } catch (err) {
       console.error('[AuditService Query Error]', err);
       return [];

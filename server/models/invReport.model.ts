@@ -15,6 +15,7 @@ export interface InvestigationReport {
   date: string;
   signature: string;
   dateCreated: string;
+  ownerId?: string;
 }
 
 export const InvReportModel = {
@@ -26,11 +27,12 @@ export const InvReportModel = {
     const result = await execute(
       `INSERT INTO investigation_reports (
         id, subject, purpose, scope, background, factualInfo,
-        findings, recommendations, officerName, rank, office, date, signature, dateCreated
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        findings, recommendations, officerName, rank, office, date, signature, dateCreated, ownerId
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         report.id, report.subject, report.purpose, report.scope, report.background, report.factualInfo,
-        report.findings, report.recommendations, report.officerName, report.rank, report.office, report.date, report.signature, report.dateCreated
+        report.findings, report.recommendations, report.officerName, report.rank, report.office, report.date, report.signature, report.dateCreated,
+        report.ownerId || null
       ]
     );
     return result.changes !== undefined && result.changes > 0;

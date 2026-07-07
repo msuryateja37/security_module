@@ -21,6 +21,7 @@ export interface QuarterlyReport {
   branch: string;
   indicatorValues: { [indicatorName: string]: QuarterlyIndicatorValue };
   dateCreated: string;
+  ownerId?: string;
 }
 
 export interface QuarterlyReportDb {
@@ -32,6 +33,7 @@ export interface QuarterlyReportDb {
   branch: string;
   indicatorValues: string;
   dateCreated: string;
+  ownerId?: string;
 }
 
 export const QtrReportModel = {
@@ -45,18 +47,19 @@ export const QtrReportModel = {
       program: row.program,
       branch: row.branch,
       indicatorValues: JSON.parse(row.indicatorValues || '{}'),
-      dateCreated: row.dateCreated
+      dateCreated: row.dateCreated,
+      ownerId: row.ownerId
     }));
   },
 
   async create(report: QuarterlyReport): Promise<boolean> {
     const result = await execute(
       `INSERT INTO quarterly_reports (
-        id, province, quarterNumber, year, program, branch, indicatorValues, dateCreated
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, province, quarterNumber, year, program, branch, indicatorValues, dateCreated, ownerId
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         report.id, report.province, report.quarterNumber, report.year, report.program, report.branch,
-        JSON.stringify(report.indicatorValues), report.dateCreated
+        JSON.stringify(report.indicatorValues), report.dateCreated, report.ownerId || null
       ]
     );
     return result.changes !== undefined && result.changes > 0;

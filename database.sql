@@ -1,5 +1,32 @@
 -- SQL DDL Schema for DLRRD Security Module Database
 
+-- 0. System Users Table (BRS 6.1 Stakeholder Register)
+-- Profile store for role assignment; authentication itself remains AD SSO (FR-031).
+CREATE TABLE IF NOT EXISTS users (
+    id VARCHAR(50) PRIMARY KEY,
+    username VARCHAR(100) NOT NULL UNIQUE,
+    displayName VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL,
+    roleCode VARCHAR(10) NOT NULL, -- EMP, SECCO, CHINV, CHDIR
+    roleLabel VARCHAR(100) NOT NULL,
+    province VARCHAR(50) NOT NULL,
+    office VARCHAR(255),
+    clearanceLevel VARCHAR(50),
+    isActive INTEGER DEFAULT 1,
+    dateCreated VARCHAR(50),
+    baseRole VARCHAR(50),        -- set while acting as temporary Security Coordinator (holds permanent role)
+    tempAssignedBy VARCHAR(100), -- Chief Director who made the temporary assignment
+    persalNumber VARCHAR(20),    -- government HR (PERSAL) identifier — HR/AD-sourced, read-only in portal
+    jobTitle VARCHAR(255),       -- designation as used on official forms
+    phoneNumber VARCHAR(50),     -- work contact number
+    directorate VARCHAR(255),    -- organisational unit (defaults to CD: SFMS)
+    preferences TEXT,            -- JSON-serialized UserPreferences (notification settings)
+    passwordHash VARCHAR(255),   -- scrypt salt:hash of the portal credential (AD SSO replaces this in production)
+    passwordChangedAt VARCHAR(50),
+    lastLoginAt VARCHAR(50)
+);
+
 -- 1. Security Incident Reports Table
 CREATE TABLE IF NOT EXISTS incidents (
     id VARCHAR(50) PRIMARY KEY,
@@ -33,6 +60,7 @@ CREATE TABLE IF NOT EXISTS incidents (
     escalatedAt VARCHAR(50),
     dateCreated VARCHAR(50) NOT NULL,
     dateReported VARCHAR(50) NOT NULL,
+    ownerId VARCHAR(100), -- users.username of the record creator
     whatHappened TEXT,
     whereHappened TEXT,
     howHappened TEXT,
@@ -80,7 +108,8 @@ CREATE TABLE IF NOT EXISTS bto_reports (
     mattersNoting TEXT NOT NULL,
     designation VARCHAR(255) NOT NULL,
     signature TEXT NOT NULL,
-    dateCreated VARCHAR(50) NOT NULL
+    dateCreated VARCHAR(50) NOT NULL,
+    ownerId VARCHAR(100) -- users.username of the record creator
 );
 
 -- 5. Investigation Reports Table
@@ -98,7 +127,8 @@ CREATE TABLE IF NOT EXISTS investigation_reports (
     office VARCHAR(255) NOT NULL,
     date VARCHAR(50) NOT NULL,
     signature TEXT NOT NULL,
-    dateCreated VARCHAR(50) NOT NULL
+    dateCreated VARCHAR(50) NOT NULL,
+    ownerId VARCHAR(100) -- users.username of the record creator
 );
 
 -- 6. Monthly & Quarterly Investigation Reports Table
@@ -110,7 +140,8 @@ CREATE TABLE IF NOT EXISTS quarterly_reports (
     program VARCHAR(255) NOT NULL,
     branch VARCHAR(255) NOT NULL,
     indicatorValues TEXT NOT NULL, -- JSON-serialized map of IndicatorValues
-    dateCreated VARCHAR(50) NOT NULL
+    dateCreated VARCHAR(50) NOT NULL,
+    ownerId VARCHAR(100) -- users.username of the record creator
 );
 
 -- 7. Threat and Risk Assessment (TRA) Audits Table
@@ -125,5 +156,6 @@ CREATE TABLE IF NOT EXISTS tra_audits (
     assessorSignature TEXT NOT NULL,
     managerSignature TEXT NOT NULL,
     checklistValues TEXT NOT NULL, -- JSON-serialized map of ChecklistValues
-    dateCreated VARCHAR(50) NOT NULL
+    dateCreated VARCHAR(50) NOT NULL,
+    ownerId VARCHAR(100) -- users.username of the record creator
 );

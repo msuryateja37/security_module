@@ -4,6 +4,7 @@ import mssql from 'mssql';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { ROLE_USERS } from '../security/roleAccess.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -48,6 +49,12 @@ export async function getDbConnection(): Promise<Database | mssql.ConnectionPool
       console.error('Failed to run Azure SQL refNo cleanup:', e);
     }
 
+    try {
+      await ensureUsersAndOwnershipMssql(mssqlPool);
+    } catch (e) {
+      console.error('Failed to ensure users table / ownerId columns (Azure SQL):', e);
+    }
+
     return mssqlPool;
   } else {
     if (sqliteDb) return sqliteDb;
@@ -80,6 +87,12 @@ export async function getDbConnection(): Promise<Database | mssql.ConnectionPool
       console.error('Failed to run SQLite refNo cleanup:', e);
     }
 
+    try {
+      await ensureUsersAndOwnershipSqlite(sqliteDb);
+    } catch (e) {
+      console.error('Failed to ensure users table / ownerId columns (SQLite):', e);
+    }
+
     return sqliteDb;
   }
 }
@@ -104,6 +117,188 @@ async function ensureIncidentEscalationColumnsSqlite(db: Database) {
       }
     }
   }
+}
+
+// Tables that carry an ownerId (users.username of the creator) for record-level access control
+const OWNED_TABLES = ['incidents', 'bto_reports', 'investigation_reports', 'quarterly_reports', 'tra_audits'];
+
+async function ensureUsersAndOwnershipSqlite(db: Database) {
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id VARCHAR(50) PRIMARY KEY,
+      username VARCHAR(100) NOT NULL UNIQUE,
+      displayName VARCHAR(255) NOT NULL,
+      email VARCHAR(255) NOT NULL,
+      role VARCHAR(50) NOT NULL,
+      roleCode VARCHAR(10) NOT NULL,
+      roleLabel VARCHAR(100) NOT NULL,
+      province VARCHAR(50) NOT NULL,
+      office VARCHAR(255),
+      clearanceLevel VARCHAR(50),
+      isActive INTEGER DEFAULT 1,
+      dateCreated VARCHAR(50)
+    )
+  `);
+
+  // Temporary Security Coordinator support (Chief Director leave-cover assignments)
+  // + user profile fields (personal details, notification preferences, portal credential)
+  for (const col of [
+    'baseRole VARCHAR(50)',
+    'tempAssignedBy VARCHAR(100)',
+    'persalNumber VARCHAR(20)',
+    'jobTitle VARCHAR(255)',
+    'phoneNumber VARCHAR(50)',
+    'directorate VARCHAR(255)',
+    'preferences TEXT',
+    'passwordHash VARCHAR(255)',
+    'passwordChangedAt VARCHAR(50)',
+    'lastLoginAt VARCHAR(50)'
+  ]) {
+    try {
+      await db.exec(`ALTER TABLE users ADD COLUMN ${col}`);
+    } catch (err: any) {
+      if (!String(err?.message || '').includes('duplicate column name')) throw err;
+    }
+  }
+
+  await migrateRetiredRoles(sql => db.exec(sql));
+
+  for (const user of ROLE_USERS) {
+    // Never overwrite the role of a user currently acting as temporary coordinator (baseRole set)
+    await db.run(
+      `INSERT INTO users (id, username, displayName, email, role, roleCode, roleLabel, province, office, clearanceLevel, isActive, dateCreated, persalNumber, jobTitle, phoneNumber, directorate)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+       ON CONFLICT(username) DO UPDATE SET
+         role = excluded.role, roleCode = excluded.roleCode, roleLabel = excluded.roleLabel
+       WHERE users.baseRole IS NULL`,
+      [user.id, user.username, user.displayName, user.email, user.role, user.roleCode, user.roleLabel, user.province, user.office, user.clearanceLevel, new Date().toISOString(), user.persalNumber, user.jobTitle, user.phoneNumber, user.directorate]
+    );
+  }
+
+  // Backfill profile identity fields for rows seeded before the profile feature existed
+  for (const user of ROLE_USERS) {
+    await db.run(
+      `UPDATE users SET
+         persalNumber = COALESCE(persalNumber, ?),
+         jobTitle = COALESCE(jobTitle, ?),
+         phoneNumber = COALESCE(phoneNumber, ?),
+         directorate = COALESCE(directorate, ?)
+       WHERE username = ?`,
+      [user.persalNumber, user.jobTitle, user.phoneNumber, user.directorate, user.username]
+    );
+  }
+
+  for (const table of OWNED_TABLES) {
+    try {
+      await db.exec(`ALTER TABLE ${table} ADD COLUMN ownerId VARCHAR(100)`);
+    } catch (err: any) {
+      if (!String(err?.message || '').includes('duplicate column name')) throw err;
+    }
+  }
+
+  await backfillOwnership(sql => db.exec(sql));
+}
+
+async function ensureUsersAndOwnershipMssql(pool: mssql.ConnectionPool) {
+  // Users table exists via database_mssql.sql DDL; ensure it for older deployments
+  await pool.request().query(`
+    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'users')
+    CREATE TABLE users (
+      id VARCHAR(50) PRIMARY KEY,
+      username VARCHAR(100) NOT NULL UNIQUE,
+      displayName VARCHAR(255) NOT NULL,
+      email VARCHAR(255) NOT NULL,
+      role VARCHAR(50) NOT NULL,
+      roleCode VARCHAR(10) NOT NULL,
+      roleLabel VARCHAR(100) NOT NULL,
+      province VARCHAR(50) NOT NULL,
+      office VARCHAR(255),
+      clearanceLevel VARCHAR(50),
+      isActive BIT DEFAULT 1,
+      dateCreated VARCHAR(50)
+    );
+  `);
+
+  // Temporary Security Coordinator support (Chief Director leave-cover assignments)
+  // + user profile fields (personal details, notification preferences, portal credential)
+  const mssqlUserColumns: [string, string][] = [
+    ['baseRole', 'VARCHAR(50)'],
+    ['tempAssignedBy', 'VARCHAR(100)'],
+    ['persalNumber', 'VARCHAR(20)'],
+    ['jobTitle', 'VARCHAR(255)'],
+    ['phoneNumber', 'VARCHAR(50)'],
+    ['directorate', 'VARCHAR(255)'],
+    ['preferences', 'NVARCHAR(MAX)'],
+    ['passwordHash', 'VARCHAR(255)'],
+    ['passwordChangedAt', 'VARCHAR(50)'],
+    ['lastLoginAt', 'VARCHAR(50)']
+  ];
+  for (const [name, type] of mssqlUserColumns) {
+    await pool.request().query(`IF COL_LENGTH('users', '${name}') IS NULL ALTER TABLE users ADD ${name} ${type};`);
+  }
+
+  await migrateRetiredRoles(sql => pool.request().query(sql).then(() => undefined));
+
+  for (const user of ROLE_USERS) {
+    // Never overwrite the role of a user currently acting as temporary coordinator (baseRole set)
+    await pool.request()
+      .input('id', user.id)
+      .input('username', user.username)
+      .input('displayName', user.displayName)
+      .input('email', user.email)
+      .input('role', user.role)
+      .input('roleCode', user.roleCode)
+      .input('roleLabel', user.roleLabel)
+      .input('province', user.province)
+      .input('office', user.office)
+      .input('clearanceLevel', user.clearanceLevel)
+      .input('dateCreated', new Date().toISOString())
+      .input('persalNumber', user.persalNumber)
+      .input('jobTitle', user.jobTitle)
+      .input('phoneNumber', user.phoneNumber)
+      .input('directorate', user.directorate)
+      .query(`
+        IF EXISTS (SELECT 1 FROM users WHERE username = @username)
+          UPDATE users SET role = @role, roleCode = @roleCode, roleLabel = @roleLabel,
+            persalNumber = COALESCE(persalNumber, @persalNumber),
+            jobTitle = COALESCE(jobTitle, @jobTitle),
+            phoneNumber = COALESCE(phoneNumber, @phoneNumber),
+            directorate = COALESCE(directorate, @directorate)
+          WHERE username = @username AND baseRole IS NULL
+        ELSE
+          INSERT INTO users (id, username, displayName, email, role, roleCode, roleLabel, province, office, clearanceLevel, isActive, dateCreated, persalNumber, jobTitle, phoneNumber, directorate)
+          VALUES (@id, @username, @displayName, @email, @role, @roleCode, @roleLabel, @province, @office, @clearanceLevel, 1, @dateCreated, @persalNumber, @jobTitle, @phoneNumber, @directorate)
+      `);
+  }
+
+  for (const table of OWNED_TABLES) {
+    await pool.request().query(`IF COL_LENGTH('${table}', 'ownerId') IS NULL ALTER TABLE ${table} ADD ownerId VARCHAR(100);`);
+  }
+
+  await backfillOwnership(sql => pool.request().query(sql).then(() => undefined));
+}
+
+// Role-model migration (July 2026): the 7-role model was reduced to 4 roles.
+//   assistant_coordinator -> security_coordinator (closest equivalent, keeps provincial scope)
+//   executive / system_administrator -> deactivated (roles retired; admin duties now sit
+//   with the Chief Director). Rows are kept (isActive = 0) to preserve audit history.
+async function migrateRetiredRoles(run: (sql: string) => Promise<unknown>) {
+  await run(`UPDATE users SET role = 'security_coordinator', roleCode = 'SECCO', roleLabel = 'Security Coordinator' WHERE role = 'assistant_coordinator'`);
+  await run(`UPDATE users SET isActive = 0 WHERE role IN ('executive', 'system_administrator')`);
+  // Refresh labels/codes for roles whose terminology changed
+  await run(`UPDATE users SET roleCode = 'SECCO', roleLabel = 'Security Coordinator' WHERE role = 'security_coordinator' AND baseRole IS NULL`);
+  await run(`UPDATE users SET roleCode = 'CHINV', roleLabel = 'Chief Investigator' WHERE role = 'chief_security_investigator'`);
+  await run(`UPDATE users SET roleCode = 'CHDIR', roleLabel = 'Chief Director (Security Director)' WHERE role = 'security_director'`);
+}
+
+// Link pre-existing seed/demo rows to their creating account where the name
+// fields identify them; unmatched legacy rows keep ownerId NULL and remain
+// governed by province-level scoping only.
+async function backfillOwnership(run: (sql: string) => Promise<unknown>) {
+  await run(`UPDATE bto_reports SET ownerId = 'coordinator' WHERE ownerId IS NULL AND officialName = 'Supervisor'`);
+  await run(`UPDATE investigation_reports SET ownerId = 'coordinator' WHERE ownerId IS NULL AND officerName = 'Supervisor'`);
+  await run(`UPDATE tra_audits SET ownerId = 'coordinator' WHERE ownerId IS NULL AND assessorName = 'Supervisor'`);
+  await run(`UPDATE quarterly_reports SET ownerId = 'coordinator' WHERE ownerId IS NULL AND id = 'qtr-seed-1'`);
 }
 
 async function ensureIncidentEscalationColumnsMssql(pool: mssql.ConnectionPool) {
