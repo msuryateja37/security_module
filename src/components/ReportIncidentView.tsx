@@ -1,24 +1,41 @@
 import React, { useState } from 'react';
 import type { SecurityIncident, ProvinceType } from '../types/security';
+import { NATURE_OF_CASE_OPTIONS } from '../types/security';
 import type { UserProfile } from '../security/roleAccess';
 import { PROVINCES } from '../data/mockData';
-import { Shield, FileText, CheckCircle2, ArrowRight, ArrowLeft, AlertTriangle } from 'lucide-react';
+import { Shield, FileText, CheckCircle2, ArrowRight, ArrowLeft, AlertTriangle, Paperclip, X, UploadCloud } from 'lucide-react';
 import { useModal } from './NotificationModal';
 
 interface ReportIncidentViewProps {
-  onAddIncident: (incident: SecurityIncident) => void;
+  /** Persists the incident; resolves once the server accepted it so attachments can follow. */
+  onAddIncident: (incident: SecurityIncident) => Promise<boolean>;
   onNavigate: (view: string) => void;
   currentUser?: UserProfile;
   /** Draft prepared by the SIMS Assistant — seeds the form; the user reviews and submits manually. */
   initialData?: Partial<SecurityIncident>;
 }
 
+const readFileAsDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+
+const formatFileSize = (bytes: number) =>
+  bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+
+const ACCEPTED_FILE_TYPES = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp,.bmp,.txt,.csv,.rtf,.msg,.eml,.zip,.mp4,.mov,.mp3,.wav';
+
+// Fallback list — the live list comes from the system configuration
+// (FR-039, Administration → System Configuration → Incident Categories).
 const INCIDENT_TYPES_LIST = [
-  'Loss of information', 'Armed Robbery', 'Violence (workplace)', 'Conflict of interest', 
-  'Malicious damage to property', 'Trespassing', 'Bomb Threat', 'Robbery', 'Fraud', 
-  'Extortion', 'Sabotage', 'Drugs', 'Harassment', 'Assault', 'Theft', 'Kidnapping', 
-  'Arson', 'Pouching', 'Accidental Discharge of a firearm', 'Acts of terrorism / terror', 
-  'Violation of permit system', 'Fire', 'Explosion', 'Hostage situation', 'Firearm related', 
+  'Loss of information', 'Armed Robbery', 'Violence (workplace)', 'Conflict of interest',
+  'Malicious damage to property', 'Trespassing', 'Bomb Threat', 'Robbery', 'Fraud',
+  'Extortion', 'Sabotage', 'Drugs', 'Harassment', 'Assault', 'Theft', 'Kidnapping',
+  'Arson', 'Pouching', 'Accidental Discharge of a firearm', 'Acts of terrorism / terror',
+  'Violation of permit system', 'Fire', 'Explosion', 'Hostage situation', 'Firearm related',
   'Permit related', 'Firearm left unattended', 'Accidental damage to property'
 ];
 
@@ -48,12 +65,34 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
   const [arrests] = useState<string | number>('');
   const [classification, setClassification] = useState<SecurityIncident['classification']>(initialData?.classification || 'Unclassified');
   const [reportedToSaps, setReportedToSaps] = useState<SecurityIncident['reportedToSapsSsa']>(initialData?.reportedToSapsSsa || 'No');
+  // Expected resolution window for the case (required on both form types)
+  const [natureOfCase, setNatureOfCase] = useState<string>(initialData?.natureOfCase || '');
+  // Supporting documents chosen by the reporter — uploaded right after the incident is created
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadedCount, setUploadedCount] = useState(0);
 
   // Selected incident types
   const [selectedTypes, setSelectedTypes] = useState<string[]>(
     (initialData?.incidentType || []).filter(t => INCIDENT_TYPES_LIST.includes(t))
   );
   const [otherTypeDetails, setOtherTypeDetails] = useState(initialData?.otherIncidentTypeDetails || '');
+
+  // Incident categories configured by the System Administrator (FR-039)
+  const [incidentTypes, setIncidentTypes] = useState<string[]>(INCIDENT_TYPES_LIST);
+  React.useEffect(() => {
+    if (!currentUser) return;
+    fetch('/api/config/form-options', {
+      headers: { 'x-username': currentUser.username, 'x-user-role': currentUser.role }
+    })
+      .then(res => res.json())
+      .then(json => {
+        if (json.success && Array.isArray(json.data?.incidentTypes) && json.data.incidentTypes.length > 0) {
+          setIncidentTypes(json.data.incidentTypes);
+        }
+      })
+      .catch(() => { /* keep the fallback list */ });
+  }, [currentUser]);
 
   // Narrative steps
   const [whatHappened, setWhatHappened] = useState(initialData?.whatHappened || '');
@@ -102,6 +141,10 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
         showAlert('Please specify the Nature of Loss / Damage.', 'Validation Error', 'warning');
         return;
       }
+      if (!natureOfCase) {
+        showAlert('Please select the Nature of Case (expected resolution window).', 'Validation Error', 'warning');
+        return;
+      }
     }
     setCurrentStep(currentStep + 1);
   };
@@ -110,12 +153,65 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
     setCurrentStep(currentStep - 1);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleAddFiles = (list: FileList | null) => {
+    if (!list) return;
+    const incoming = Array.from(list);
+    setAttachedFiles(prev => {
+      const next = [...prev];
+      for (const file of incoming) {
+        if (file.size > 15 * 1024 * 1024) {
+          showAlert(`"${file.name}" exceeds the 15 MB per-file limit and was skipped.`, 'File Too Large', 'warning');
+          continue;
+        }
+        if (!next.some(f => f.name === file.name && f.size === file.size)) {
+          next.push(file);
+        }
+      }
+      return next;
+    });
+  };
+
+  const uploadAttachments = async (incidentId: string): Promise<number> => {
+    if (!currentUser || attachedFiles.length === 0) return 0;
+    let uploaded = 0;
+    for (const file of attachedFiles) {
+      try {
+        const dataUrl = await readFileAsDataUrl(file);
+        const res = await fetch(`/api/incidents/${incidentId}/attachments`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-username': currentUser.username,
+            'x-user-role': currentUser.role
+          },
+          body: JSON.stringify({
+            fileName: file.name,
+            mimeType: file.type,
+            dataBase64: dataUrl,
+            category: 'reporter_document'
+          })
+        });
+        const json = await res.json();
+        if (json.success) uploaded++;
+        else showAlert(`"${file.name}" could not be uploaded: ${json.error || json.message}`, 'Upload Failed', 'warning');
+      } catch {
+        showAlert(`"${file.name}" could not be uploaded.`, 'Upload Failed', 'warning');
+      }
+    }
+    return uploaded;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+    if (isSubmitting) return;
+
     if (formType === 'noc') {
       if (!reportedBy || !dateTime || !place || !contactDetails || selectedTypes.length === 0 || !nocBriefDetails) {
         showAlert('Please complete all required NOC flash notification fields.', 'Validation Error', 'warning');
+        return;
+      }
+      if (!natureOfCase) {
+        showAlert('Please select the Nature of Case (expected resolution window).', 'Validation Error', 'warning');
         return;
       }
     }
@@ -147,6 +243,8 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
       reportedToSapsSsa: reportedToSaps,
       outcomeOfInvestigation: formType === 'noc' ? 'NOC Flash Notification dispatched. National Operations Centre review active.' : 'New report submitted. Preliminary review pending.',
       status: 'Open',
+      natureOfCase,
+      workflowStage: 'Submitted',
       dateCreated: new Date().toISOString().split('T')[0],
       dateReported: new Date().toISOString().split('T')[0],
       
@@ -168,9 +266,80 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
     setGeneratedRefNo(refNo);
     setGeneratedRegNo(registerNumber);
 
-    onAddIncident(newIncident);
-    setCurrentStep(4);
+    setIsSubmitting(true);
+    try {
+      const created = await onAddIncident(newIncident);
+      if (!created) {
+        showAlert('The incident could not be saved. Please try again.', 'Submission Failed', 'danger');
+        return;
+      }
+      const uploaded = await uploadAttachments(newIncident.id);
+      setUploadedCount(uploaded);
+      setCurrentStep(4);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  // Supporting documents picker (FR-004) — shared by the standard and NOC forms
+  const attachmentSection = (
+    <div className="form-group" style={{ marginTop: '1.25rem' }}>
+      <label className="form-label">Supporting Documents / Evidence (photos, reports, statements)</label>
+      <label
+        style={{
+          display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.9rem 1rem',
+          border: '1.5px dashed var(--border-color)', borderRadius: 'var(--radius-sm)',
+          cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.85rem'
+        }}
+      >
+        <UploadCloud size={20} />
+        <span>Click to attach files (max 15 MB each — PDF, Office documents, images, audio/video)</span>
+        <input
+          type="file"
+          multiple
+          accept={ACCEPTED_FILE_TYPES}
+          style={{ display: 'none' }}
+          onChange={(e) => { handleAddFiles(e.target.files); e.target.value = ''; }}
+        />
+      </label>
+      {attachedFiles.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.6rem' }}>
+          {attachedFiles.map((file, idx) => (
+            <div
+              key={`${file.name}-${idx}`}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.45rem 0.75rem',
+                background: 'rgba(0,0,0,0.03)', border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-sm)', fontSize: '0.8rem'
+              }}
+            >
+              <Paperclip size={14} style={{ flexShrink: 0 }} />
+              <span style={{ flexGrow: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+              <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{formatFileSize(file.size)}</span>
+              <button
+                type="button"
+                onClick={() => setAttachedFiles(prev => prev.filter((_, i) => i !== idx))}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex' }}
+                aria-label={`Remove ${file.name}`}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const natureOfCaseSelect = (
+    <div className="form-group">
+      <label className="form-label">Nature of Case (expected resolution window) *</label>
+      <select className="form-input" value={natureOfCase} onChange={(e) => setNatureOfCase(e.target.value)} required>
+        <option value="">Select expected timeframe</option>
+        {NATURE_OF_CASE_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+      </select>
+    </div>
+  );
 
   return (
     <div>
@@ -323,7 +492,7 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
           <div className="form-group" style={{ marginTop: '1rem' }}>
             <label className="form-label">Select Incident Type(s) *</label>
             <div className="incident-types-grid">
-              {INCIDENT_TYPES_LIST.map(type => (
+              {incidentTypes.map(type => (
                 <label key={type} className="checkbox-label">
                   <input type="checkbox" checked={selectedTypes.includes(type)} onChange={() => handleToggleType(type)} />
                   {type}
@@ -336,9 +505,9 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
             <label className="form-label">
               Initial Notification Report Brief Details (Comprehensive Summary for NOC) *
             </label>
-            <textarea 
-              rows={4} 
-              className="form-input" 
+            <textarea
+              rows={4}
+              className="form-input"
               placeholder="Provide a concise summary of the security incident, names involved, immediate risks, and current status for NOC operational response..."
               value={nocBriefDetails}
               onChange={(e) => setNocBriefDetails(e.target.value)}
@@ -346,12 +515,18 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
             />
           </div>
 
+          <div className="form-grid">
+            {natureOfCaseSelect}
+          </div>
+
+          {attachmentSection}
+
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '2rem', gap: '0.75rem' }}>
-            <button type="button" className="btn btn-secondary" onClick={() => setFormType('standard')}>
+            <button type="button" className="btn btn-secondary" onClick={() => setFormType('standard')} disabled={isSubmitting}>
               Cancel NOC Alert
             </button>
-            <button type="submit" className="btn btn-primary">
-              Submit NOC Initial Notification
+            <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+              {isSubmitting ? 'Dispatching...' : 'Submit NOC Initial Notification'}
             </button>
           </div>
         </form>
@@ -432,7 +607,7 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
               <div className="form-group">
                 <label className="form-label">Incident Type (Select all that apply) *</label>
                 <div className="incident-types-grid">
-                  {INCIDENT_TYPES_LIST.map(type => (
+                  {incidentTypes.map(type => (
                     <label key={type} className="checkbox-label">
                       <input type="checkbox" checked={selectedTypes.includes(type)} onChange={() => handleToggleType(type)} />
                       {type}
@@ -470,6 +645,10 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
                     <option value="Yes">Yes</option>
                   </select>
                 </div>
+              </div>
+
+              <div className="form-grid">
+                {natureOfCaseSelect}
               </div>
 
               {reportedToSaps === 'Yes' && (
@@ -575,12 +754,14 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
                 </div>
               </div>
 
+              {attachmentSection}
+
               <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginTop: '2rem' }}>
-                <button type="button" className="btn btn-secondary" onClick={handlePrevStep}>
+                <button type="button" className="btn btn-secondary" onClick={handlePrevStep} disabled={isSubmitting}>
                   <ArrowLeft size={16} /> Back
                 </button>
-                <button type="submit" className="btn btn-success">
-                  Submit Standard Incident Report
+                <button type="submit" className="btn btn-success" disabled={isSubmitting}>
+                  {isSubmitting ? 'Submitting & Uploading...' : 'Submit Standard Incident Report'}
                 </button>
               </div>
             </div>
@@ -604,17 +785,22 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
             </div>
           </div>
 
-          <p style={{ color: 'hsl(var(--text-secondary))', marginBottom: '2rem' }}>
-            {formType === 'noc' 
+          <p style={{ color: 'hsl(var(--text-secondary))', marginBottom: '0.75rem' }}>
+            {formType === 'noc'
               ? 'The NOC Flash Initial Notification has been immediately dispatched to the National Operations Centre emergency board.'
-              : 'The incident report has been securely registered in the Case Management database and pushed to regional coordinators.'}
+              : 'The incident report has been securely registered and auto-routed to your Provincial Security Coordinator and the National Office.'}
           </p>
-          
+          <p style={{ color: 'hsl(var(--text-secondary))', marginBottom: '2rem', fontSize: '0.85rem' }}>
+            A confirmation has been sent to you by email and in-app alert.
+            {uploadedCount > 0 && ` ${uploadedCount} supporting document${uploadedCount === 1 ? '' : 's'} uploaded to the case file.`}
+            {' '}You will be notified automatically as the case progresses.
+          </p>
+
           <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
-            <button type="button" className="btn btn-primary" onClick={() => onNavigate('register')}>
-              Open Case Files
+            <button type="button" className="btn btn-primary" onClick={() => onNavigate('my_cases')}>
+              Track My Incident
             </button>
-            <button type="button" className="btn btn-secondary" onClick={() => { setFormType('standard'); setCurrentStep(1); setSelectedTypes([]); setNatureOfLoss(''); setLossValue(''); setNocBriefDetails(''); }}>
+            <button type="button" className="btn btn-secondary" onClick={() => { setFormType('standard'); setCurrentStep(1); setSelectedTypes([]); setNatureOfLoss(''); setLossValue(''); setNocBriefDetails(''); setNatureOfCase(''); setAttachedFiles([]); setUploadedCount(0); }}>
               Log Another Incident
             </button>
           </div>

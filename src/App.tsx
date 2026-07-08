@@ -28,6 +28,7 @@ import { InvestigationReportView } from './components/InvestigationReportView';
 import { MonthlyQuarterlyReportView } from './components/MonthlyQuarterlyReportView';
 import { TraChecklistView } from './components/TraChecklistView';
 import { MyCasesView } from './components/MyCasesView';
+import { CaseDetailView } from './components/CaseDetailView';
 import { ApprovalView } from './components/ApprovalView';
 import { SlaMonitorView } from './components/SlaMonitorView';
 import { ReportsArchiveView } from './components/ReportsArchiveView';
@@ -37,6 +38,10 @@ import { AssistantView } from './components/AssistantView';
 import type { ChatMessage } from './components/AssistantView';
 import { LoginView } from './components/LoginView';
 import { ProfileView } from './components/ProfileView';
+import { LeavesView } from './components/LeavesView';
+import { LeaveManagementView } from './components/LeaveManagementView';
+import { relativeTime } from './utils/workdays';
+import type { AppNotification } from './types/leave';
 import {
   Settings,
   LogOut,
@@ -54,10 +59,18 @@ function App() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     return reviveStoredUser(localStorage.getItem('dlrrd_logged_in_user'));
   });
+  // Case file deep-link (#/case/<id>) — the id of the case open in CaseDetailView
+  const [caseDetailId, setCaseDetailId] = useState<string | null>(() => {
+    const match = window.location.hash.match(/^#\/?case\/(.+)$/);
+    return match ? decodeURIComponent(match[1]) : null;
+  });
   const [activeView, setActiveView] = useState<AppView>(() => {
     const user = reviveStoredUser(localStorage.getItem('dlrrd_logged_in_user'));
+    if (user && window.location.hash.match(/^#\/?case\/(.+)$/)) {
+      return 'case_detail';
+    }
     const hash = window.location.hash.replace('#/', '').replace('#', '') as AppView;
-    const isValidView = hash && ['dashboard', 'submit_reports', 'my_cases', 'register', 'approval', 'sla_monitor', 'reports_archive', 'assistant', 'policy', 'administration', 'profile'].includes(hash);
+    const isValidView = hash && ['dashboard', 'submit_reports', 'my_cases', 'register', 'approval', 'sla_monitor', 'reports_archive', 'assistant', 'policy', 'administration', 'profile', 'leaves', 'leave_management'].includes(hash);
     if (user) {
       return isValidView && canAccessView(user.role, hash) ? hash : getDefaultViewForRole(user.role);
     }
@@ -72,9 +85,17 @@ function App() {
   // URL Hash Routing synchronization
   useEffect(() => {
     const handleHashChange = () => {
+      // Case file deep-links: #/case/<incidentId>
+      const caseMatch = window.location.hash.match(/^#\/?case\/(.+)$/);
+      if (caseMatch && currentUser) {
+        setCaseDetailId(decodeURIComponent(caseMatch[1]));
+        setActiveView('case_detail');
+        return;
+      }
+
       const hash = window.location.hash.replace('#/', '').replace('#', '') as AppView;
-      const isValidView = ['dashboard', 'submit_reports', 'my_cases', 'register', 'approval', 'sla_monitor', 'reports_archive', 'assistant', 'policy', 'administration', 'profile'].includes(hash);
-      
+      const isValidView = ['dashboard', 'submit_reports', 'my_cases', 'register', 'approval', 'sla_monitor', 'reports_archive', 'assistant', 'policy', 'administration', 'profile', 'leaves', 'leave_management'].includes(hash);
+
       if (isValidView && currentUser && canAccessView(currentUser.role, hash)) {
         setActiveView(hash);
       }
@@ -86,11 +107,18 @@ function App() {
 
   useEffect(() => {
     if (currentUser) {
-      window.location.hash = `#/${activeView}`;
+      window.location.hash = activeView === 'case_detail' && caseDetailId
+        ? `#/case/${encodeURIComponent(caseDetailId)}`
+        : `#/${activeView}`;
     } else {
       window.location.hash = '';
     }
-  }, [activeView, currentUser]);
+  }, [activeView, currentUser, caseDetailId]);
+
+  const openCaseFile = (incidentId: string) => {
+    setCaseDetailId(incidentId);
+    setActiveView('case_detail');
+  };
 
   useEffect(() => {
     setIsSidebarOpen(false);
@@ -133,6 +161,35 @@ function App() {
   // Which tab the profile page opens on ('security' when arriving via Change Password)
   const [profileInitialTab, setProfileInitialTab] = useState<'personal' | 'role' | 'security' | 'preferences'>('personal');
 
+  // Close topbar dropdowns when clicking anywhere outside them.
+  // Trigger elements are excluded so their own onClick toggles keep working.
+  useEffect(() => {
+    if (!showProfileCard && !showNotifications && !showSearchResults) return;
+
+    const handlePointerDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (showProfileCard && !target.closest('.topbar-profile') && !target.closest('.profile-dropdown-card')) {
+        setShowProfileCard(false);
+      }
+      if (showNotifications && !target.closest('.topbar-notif-btn') && !target.closest('.notifications-dropdown')) {
+        setShowNotifications(false);
+      }
+      if (showSearchResults && !target.closest('.topbar-search-container') && !target.closest('.search-results-dropdown')) {
+        setShowSearchResults(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [showProfileCard, showNotifications, showSearchResults]);
+
+  // Close topbar dropdowns when navigating to a different screen
+  useEffect(() => {
+    setShowProfileCard(false);
+    setShowNotifications(false);
+    setShowSearchResults(false);
+  }, [activeView]);
+
   // Draft prepared by the SIMS Assistant, waiting for user review in the incident form
   const [assistantDraft, setAssistantDraft] = useState<Partial<SecurityIncident> | null>(null);
   const [assistantDraftVersion, setAssistantDraftVersion] = useState(0);
@@ -140,12 +197,9 @@ function App() {
   // navigating to the incident form and back; cleared once the drafted incident is submitted.
   const [assistantMessages, setAssistantMessages] = useState<ChatMessage[]>([]);
 
-  const [notifications, setNotifications] = useState([
-    { id: 'notif-1', title: 'New incident logged', message: 'A theft was reported in Pretoria HQ, Block B.', time: '10m ago', read: false },
-    { id: 'notif-2', title: 'TRA checklist completed', message: 'Gauteng Regional Office audit submitted by Supervisor.', time: '1h ago', read: true },
-    { id: 'notif-3', title: 'SLA Breach Alert', message: 'Case SEC/2026/001 requires outcome updates.', time: '4h ago', read: false },
-    { id: 'notif-4', title: 'System Maintenance', message: 'Azure SQL DB migration schedule on Saturday.', time: '1d ago', read: true }
-  ]);
+  // In-app notification feed — persisted server-side (FR-008), polled so leave
+  // decisions, acting-coordinator activations etc. appear without a reload.
+  const [notifications, setNotifications] = useState<{ id: string; title: string; message: string; time: string; read: boolean; link?: string | null }[]>([]);
 
   const authFetch = (url: string, options: RequestInit = {}) => {
     const headers = {
@@ -154,6 +208,75 @@ function App() {
       'x-user-role': currentUser?.role || ''
     };
     return fetch(url, { ...options, headers });
+  };
+
+  // Parse an API response defensively. When the backend restarts or the dev
+  // proxy drops the connection mid-request, the browser receives an empty
+  // (non-JSON) body and res.json() throws the cryptic "Unexpected end of JSON
+  // input" — translate that into an actionable message instead.
+  const parseApiResponse = async (res: Response): Promise<any> => {
+    const text = await res.text();
+    if (text) {
+      try {
+        return JSON.parse(text);
+      } catch {
+        throw new Error(`The server returned an unexpected response (HTTP ${res.status}). Please try again.`);
+      }
+    }
+    throw new Error(
+      res.ok
+        ? 'The server returned an empty response. Please refresh and check whether the action was applied.'
+        : `Could not reach the server (HTTP ${res.status}). The action may still have been applied — the list will refresh so you can verify.`
+    );
+  };
+
+  // Load and poll the persisted notification feed
+  useEffect(() => {
+    if (!currentUser) return;
+    let cancelled = false;
+
+    const loadNotifications = () => {
+      authFetch('/api/notifications')
+        .then(res => res.json())
+        .then(json => {
+          if (cancelled || !json.success) return;
+          setNotifications((json.data as AppNotification[]).map(n => ({
+            id: n.id,
+            title: n.title,
+            message: n.message,
+            time: relativeTime(n.dateCreated),
+            read: !!n.isRead,
+            link: n.link
+          })));
+        })
+        .catch(err => console.error('Error loading notifications:', err));
+    };
+
+    loadNotifications();
+    const interval = setInterval(loadNotifications, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser]);
+
+  const handleMarkAllNotificationsRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    authFetch('/api/notifications/read-all', { method: 'PUT' })
+      .catch(err => console.error('Error marking notifications read:', err));
+  };
+
+  const handleOpenNotification = (notif: { id: string; read: boolean; link?: string | null }) => {
+    if (!notif.read) {
+      setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, read: true } : n));
+      authFetch(`/api/notifications/${encodeURIComponent(notif.id)}/read`, { method: 'PUT' })
+        .catch(err => console.error('Error marking notification read:', err));
+    }
+    if (notif.link) {
+      window.location.hash = notif.link.replace(/^#\/?/, '#/');
+      setShowNotifications(false);
+    }
   };
 
   const handleSearch = (q: string) => {
@@ -377,6 +500,16 @@ function App() {
     }
   }, [currentUser]);
 
+  // Reload the incident list from the server (used after workflow actions on the case file page)
+  const refreshIncidents = () => {
+    authFetch('/api/incidents')
+      .then(res => res.json())
+      .then(json => {
+        if (json.success) setIncidents(json.data);
+      })
+      .catch(err => console.error('Error reloading incidents:', err));
+  };
+
   // Update handlers
   const handleUpdateIncident = (updated: SecurityIncident) => {
     authFetch(`/api/incidents/${updated.id}`, {
@@ -406,7 +539,13 @@ function App() {
       },
       body: JSON.stringify(escalation)
     })
-    .then(res => res.json())
+    .then(parseApiResponse)
+    .catch((err) => {
+      // The escalation may have gone through even when the response was lost
+      // (server restart / dropped proxy connection) — resync before reporting.
+      refreshIncidents();
+      throw err;
+    })
     .then(json => {
       if (!json.success) {
         throw new Error(json.error || json.message || 'Failed to escalate incident');
@@ -429,25 +568,10 @@ function App() {
     });
   };
 
-  const handleApproveIncident = (id: string, update: Partial<SecurityIncident>) => {
-    authFetch(`/api/incidents/${id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(update)
-    })
-    .then(res => res.json())
-    .then(json => {
-      if (json.success) {
-        setIncidents(prev => prev.map(inc => inc.id === id ? { ...inc, ...update } : inc));
-      }
-    })
-    .catch(err => console.error('Error approving incident:', err));
-  };
-
-  const handleAddIncident = (newIncident: SecurityIncident) => {
-    authFetch('/api/incidents', {
+  // Returns whether the server accepted the incident so the report form can
+  // upload supporting documents against the new case before confirming.
+  const handleAddIncident = (newIncident: SecurityIncident): Promise<boolean> => {
+    return authFetch('/api/incidents', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -457,13 +581,14 @@ function App() {
     .then(res => res.json())
     .then(json => {
       if (json.success) {
-        setIncidents(prev => [newIncident, ...prev]);
-        
+        // Server assigns routing (responsiblePerson) and workflow stage — use its copy
+        setIncidents(prev => [json.data || newIncident, ...prev]);
+
         // Handle incrementing incident stats
         const incidentDate = new Date(newIncident.dateTime);
         const monthsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         const monthName = monthsShort[incidentDate.getMonth()];
-        
+
         const nextStats = stats.map(s => {
           if (s.province === newIncident.province && s.indicator === 'Security Breaches reported') {
             return {
@@ -477,7 +602,7 @@ function App() {
           return s;
         });
         setStats(nextStats);
-        
+
         // Update stats on server
         authFetch('/api/stats', {
           method: 'PUT',
@@ -486,9 +611,14 @@ function App() {
           },
           body: JSON.stringify(nextStats)
         }).catch(err => console.error('Error syncing stats:', err));
+        return true;
       }
+      return false;
     })
-    .catch(err => console.error('Error adding incident:', err));
+    .catch(err => {
+      console.error('Error adding incident:', err);
+      return false;
+    });
   };
 
   const handleUpdateStats = (newStats: PerformanceStats[]) => {
@@ -594,6 +724,9 @@ function App() {
       case 'assistant': return 'AI Assistant';
       case 'administration': return 'Administration';
       case 'profile': return 'My Profile';
+      case 'leaves': return 'Leaves Management';
+      case 'leave_management': return 'Leave Management';
+      case 'case_detail': return 'Case File';
       default: return 'CD: Security Services';
     }
   };
@@ -709,8 +842,8 @@ function App() {
               <Settings size={18} />
             </button>
             
-            <button 
-              className="topbar-btn" 
+            <button
+              className="topbar-btn topbar-notif-btn"
               onClick={() => {
                 setShowNotifications(!showNotifications);
                 setShowProfileCard(false);
@@ -839,16 +972,26 @@ function App() {
             <div className="notifications-dropdown">
               <div className="dropdown-header">
                 <span>Notifications</span>
-                <button 
-                  onClick={() => setNotifications(prev => prev.map(n => ({ ...n, read: true })))} 
+                <button
+                  onClick={handleMarkAllNotificationsRead}
                   className="dropdown-action-btn"
                 >
                   Mark all read
                 </button>
               </div>
               <div className="dropdown-body">
+                {notifications.length === 0 && (
+                  <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                    No notifications yet.
+                  </div>
+                )}
                 {notifications.map(notif => (
-                  <div key={notif.id} className={`notification-item ${notif.read ? 'read' : 'unread'}`}>
+                  <div
+                    key={notif.id}
+                    className={`notification-item ${notif.read ? 'read' : 'unread'}`}
+                    onClick={() => handleOpenNotification(notif)}
+                    style={{ cursor: notif.link ? 'pointer' : 'default' }}
+                  >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div className="notification-title">{notif.title}</div>
                       <div className="notification-time">{notif.time}</div>
@@ -922,9 +1065,8 @@ function App() {
         {/* Main Content Area */}
         <main className="main-content" style={{ flexGrow: 1, padding: '2rem' }}>
           {activeView === 'dashboard' && (
-            <DashboardView 
-              incidents={incidents} 
-              stats={stats} 
+            <DashboardView
+              incidents={incidents}
               onNavigate={(view) => {
                 if (view === 'report') {
                   navigateToView('submit_reports');
@@ -970,14 +1112,10 @@ function App() {
                       setAssistantMessages([]);
                     }
                     setAssistantDraft(null);
-                    handleAddIncident(incident);
+                    return handleAddIncident(incident);
                   }}
                   currentUser={currentUser}
-                  onNavigate={(view) => {
-                    if (view === 'register') {
-                      navigateToView('register');
-                    }
-                  }}
+                  onNavigate={navigateToView}
                 />
               )}
               {submitReportSubView === 'bto' && canAccessReportTab(currentUser.role, 'bto') && (
@@ -1023,24 +1161,34 @@ function App() {
           )}
 
           {activeView === 'my_cases' && canAccessView(currentUser.role, 'my_cases') && (
-            <MyCasesView 
-              incidents={incidents} 
+            <MyCasesView
+              incidents={incidents}
               currentUser={currentUser}
               onUpdateIncident={handleUpdateIncident}
               onEscalateIncident={handleEscalateIncident}
-              onSelectCase={(incident) => {
-                setSelectedIncidentId(incident.id);
-                navigateToView('register');
-              }} 
+              onSelectCase={(incident) => openCaseFile(incident.id)}
+            />
+          )}
+
+          {activeView === 'case_detail' && caseDetailId && (
+            <CaseDetailView
+              incidentId={caseDetailId}
+              currentUser={currentUser}
+              onBack={() => {
+                setCaseDetailId(null);
+                setActiveView(canAccessView(currentUser.role, 'my_cases') ? 'my_cases' : getDefaultViewForRole(currentUser.role));
+              }}
+              onChanged={refreshIncidents}
             />
           )}
 
           {activeView === 'approval' && canAccessView(currentUser.role, 'approval') && (
-            <ApprovalView 
+            <ApprovalView
               incidents={incidents}
               btoReports={btoReports}
               invReports={invReports}
-              onApproveIncident={handleApproveIncident}
+              currentUser={currentUser}
+              onOpenCase={(incident) => openCaseFile(incident.id)}
             />
           )}
 
@@ -1079,6 +1227,14 @@ function App() {
                 navigateToView('submit_reports');
               }}
             />
+          )}
+
+          {activeView === 'leaves' && canAccessView(currentUser.role, 'leaves') && (
+            <LeavesView currentUser={currentUser} />
+          )}
+
+          {activeView === 'leave_management' && canAccessView(currentUser.role, 'leave_management') && (
+            <LeaveManagementView currentUser={currentUser} />
           )}
 
           {activeView === 'policy' && canAccessView(currentUser.role, 'policy') && (

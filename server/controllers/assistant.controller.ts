@@ -7,6 +7,7 @@ import { AuthenticatedRequest } from '../security/auth.middleware.js';
 import { AuditService } from '../security/audit.service.js';
 import { SlaService } from '../security/sla.service.js';
 import { UserProfile } from '../security/roleAccess.js';
+import { ConfigService, SlaRules } from '../services/config.service.js';
 
 /**
  * SIMS Assistant — conversational AI over Azure OpenAI.
@@ -52,7 +53,8 @@ function scopeIncidentsForUser(incidents: any[], user: UserProfile): any[] {
   if (user.role === 'security_coordinator') {
     return incidents.filter(i => i.province === user.province || i.province === 'National');
   }
-  if (user.role === 'employee') {
+  if (user.role === 'employee' || user.role === 'system_administrator') {
+    // Employees and the System Administrator only see incidents they reported themselves
     return incidents.filter(i =>
       i.ownerId === user.username || i.reportedBy === user.displayName || i.contactDetails === user.email
     );
@@ -65,7 +67,7 @@ function scopeIncidentsForUser(incidents: any[], user: UserProfile): any[] {
 }
 
 /** Compact projection so we don't send full narratives to the model for a list. */
-function toSummary(inc: any) {
+function toSummary(inc: any, slaRules?: SlaRules) {
   return {
     id: inc.id,
     refNo: inc.refNo,
@@ -77,7 +79,7 @@ function toSummary(inc: any) {
     natureOfLoss: inc.natureOfLoss,
     lossValue: inc.lossValue,
     responsiblePerson: inc.responsiblePerson,
-    slaStatus: SlaService.calculateSla(inc)?.status ?? undefined
+    slaStatus: SlaService.calculateSla(inc, slaRules)?.status ?? undefined
   };
 }
 
@@ -207,12 +209,13 @@ const ALL_TOOLS: ChatCompletionFunctionTool[] = [
  * - Security Coordinator: + case analysis/brief, province case-load statistics, reporter contact info.
  * - Chief Investigator: assigned-case tracking, analysis of assigned cases, statistics; no form pre-fill.
  * - Chief Director: all-province oversight, analysis, statistics; no form pre-fill.
+ * - System Administrator: own-incident reporting/tracking and profile questions only; no case analysis.
  */
 function getToolsForUser(user: UserProfile): ChatCompletionFunctionTool[] {
   const managementRoles = ['security_coordinator', 'chief_security_investigator', 'security_director'];
   return ALL_TOOLS.filter(tool => {
     const name = tool.function.name;
-    if (name === 'prefill_incident_form') return user.role === 'employee' || user.role === 'security_coordinator';
+    if (name === 'prefill_incident_form') return ['employee', 'security_coordinator', 'system_administrator'].includes(user.role);
     if (name === 'analyze_case' || name === 'get_case_statistics') return managementRoles.includes(user.role);
     return true;
   });
@@ -244,6 +247,11 @@ const ROLE_AI_CAPABILITIES: Record<string, string[]> = {
     'Case briefs (analyze_case): Summary, Key Facts, Reporter & Contact, Status & SLA, Recommended Next Step. The Director\'s workflow: assign the Chief Investigator to escalated cases (My Cases → set responsible person), review investigation submissions, and approve final closure.',
     'If asked about coordinator leave cover: the Director appoints a temporary Security Coordinator in Administration → Users & Acting Roles; the acting coordinator has the full rights of a permanent one.',
     'Answer questions about the user\'s own profile (get_my_profile). Note: the Director does not register incidents via chat.'
+  ],
+  system_administrator: [
+    'Explain system administration: the System Administrator (ICT/MTS) creates/modifies/deactivates accounts under Administration → Users & Acting Roles; configures SLA rules, escalation matrices, incident categories and notification templates under Administration → System Configuration; and monitors performance, availability and the audit trail under Administration → System Health & Logs. All changes are recorded in the audit trail.',
+    'Register an incident via chat (prefill_incident_form) and track own submissions (list_my_incidents / get_incident_details) — the System Administrator has no access to other users\' case data.',
+    'Answer questions about the user\'s own profile (get_my_profile).'
   ]
 };
 
@@ -258,7 +266,7 @@ function buildSystemPrompt(user: UserProfile): string {
     ...capabilities.map((c, i) => `${i + 1}. ${c}`),
     '',
     'Process facts you may state:',
-    '   - Roles: Employees report and track their own incidents. Security Coordinators approve cases, close small cases with reports/attachments, and escalate significant cases to the Security Director. The Chief Investigator only works cases assigned by the Security Director, collects field data, and submits the case for the Director\'s approval. The Chief Director (Security Director) oversees all provinces, assigns investigators, approves closures, and can appoint an employee as temporary Security Coordinator (e.g. leave cover).',
+    '   - Roles: Employees report and track their own incidents. Security Coordinators approve cases, close small cases with reports/attachments, and escalate significant cases to the Security Director. The Chief Investigator only works cases assigned by the Security Director, collects field data, and submits the case for the Director\'s approval. The Chief Director (Security Director) oversees all provinces, assigns investigators, approves closures, and can appoint an employee as temporary Security Coordinator (e.g. leave cover). The System Administrator (ICT/MTS) manages users, roles, permissions, SLA configurations, notification templates, escalation rules and overall system administration.',
     '   - SLA/policy deadlines: report incident to NOC immediately/without delay; full report within 14 days; security breach to SSA within 48 hours; internal investigation within 14 working days.',
     '   - Escalation: coordinators escalate complex cases (Major, High Risk, Critical, National Review) from My Cases; escalations go to the Security Director.',
     '   - Incidents are submitted via Submit Reports → Incident Notification; the system generates the reference number and notifies the Security Coordinator automatically.',
@@ -331,12 +339,14 @@ export const AssistantController = {
           let args: any = {};
           try { args = JSON.parse(call.function.arguments || '{}'); } catch { /* leave empty */ }
           let result: any;
+          // SLA targets from system configuration (cached read, FR-037)
+          const slaRules = await ConfigService.getSlaRules();
 
           if (call.function.name === 'list_my_incidents') {
             const all = await IncidentModel.getAll();
             let scoped = scopeIncidentsForUser(all, user);
             if (args.status) scoped = scoped.filter(i => i.status === args.status);
-            const summaries = scoped.map(toSummary);
+            const summaries = scoped.map(i => toSummary(i, slaRules));
             incidentCards = summaries.slice(0, 5);
             result = { count: summaries.length, incidents: summaries.slice(0, 25) };
           } else if (call.function.name === 'get_incident_details') {
@@ -346,8 +356,8 @@ export const AssistantController = {
               i => i.refNo?.toLowerCase() === String(args.refNo || '').toLowerCase()
             );
             if (found) {
-              incidentCards = [toSummary(found)];
-              result = { ...found, slaInfo: SlaService.calculateSla(found) };
+              incidentCards = [toSummary(found, slaRules)];
+              result = { ...found, slaInfo: SlaService.calculateSla(found, slaRules) };
             } else {
               result = { error: 'Not found in the records this user is authorised to view.' };
             }
@@ -358,10 +368,10 @@ export const AssistantController = {
               i => i.refNo?.toLowerCase() === String(args.refNo || '').toLowerCase()
             );
             if (found) {
-              incidentCards = [toSummary(found)];
+              incidentCards = [toSummary(found, slaRules)];
               result = {
                 case: found,
-                slaInfo: SlaService.calculateSla(found),
+                slaInfo: SlaService.calculateSla(found, slaRules),
                 reporter: {
                   raisedBy: found.reportedBy,
                   contactDetails: found.contactDetails,
@@ -390,7 +400,7 @@ export const AssistantController = {
             let unassigned = 0;
             for (const inc of scoped) {
               byStatus[inc.status] = (byStatus[inc.status] || 0) + 1;
-              const sla = SlaService.calculateSla(inc);
+              const sla = SlaService.calculateSla(inc, slaRules);
               if (sla?.status) bySla[sla.status] = (bySla[sla.status] || 0) + 1;
               byProvince[inc.province] = (byProvince[inc.province] || 0) + 1;
               if (inc.responsiblePerson === user.displayName) attendedByMe++;

@@ -37,6 +37,14 @@ export async function getDbConnection(): Promise<Database | mssql.ConnectionPool
     mssqlPool = await mssql.connect(config);
     console.log('Connected to Azure SQL Database successfully.');
 
+    // Azure SQL drops idle connections; without a listener the pool's 'error'
+    // event crashes the process (killing any in-flight request). Log it and
+    // discard the pool so the next call reconnects.
+    mssqlPool.on('error', (err) => {
+      console.error('Azure SQL connection pool error (will reconnect on next query):', err);
+      mssqlPool = null;
+    });
+
     // Initialize Schema and Seed if needed
     await initializeMssql(mssqlPool);
 
@@ -53,6 +61,12 @@ export async function getDbConnection(): Promise<Database | mssql.ConnectionPool
       await ensureUsersAndOwnershipMssql(mssqlPool);
     } catch (e) {
       console.error('Failed to ensure users table / ownerId columns (Azure SQL):', e);
+    }
+
+    try {
+      await ensureCaseWorkflowMssql(mssqlPool);
+    } catch (e) {
+      console.error('Failed to ensure case workflow columns/tables (Azure SQL):', e);
     }
 
     return mssqlPool;
@@ -91,6 +105,18 @@ export async function getDbConnection(): Promise<Database | mssql.ConnectionPool
       await ensureUsersAndOwnershipSqlite(sqliteDb);
     } catch (e) {
       console.error('Failed to ensure users table / ownerId columns (SQLite):', e);
+    }
+
+    try {
+      await ensureLeaveTablesSqlite(sqliteDb);
+    } catch (e) {
+      console.error('Failed to ensure leave/notification tables (SQLite):', e);
+    }
+
+    try {
+      await ensureCaseWorkflowSqlite(sqliteDb);
+    } catch (e) {
+      console.error('Failed to ensure case workflow columns/tables (SQLite):', e);
     }
 
     return sqliteDb;
@@ -152,7 +178,8 @@ async function ensureUsersAndOwnershipSqlite(db: Database) {
     'preferences TEXT',
     'passwordHash VARCHAR(255)',
     'passwordChangedAt VARCHAR(50)',
-    'lastLoginAt VARCHAR(50)'
+    'lastLoginAt VARCHAR(50)',
+    'totalLeaves INTEGER DEFAULT 0'
   ]) {
     try {
       await db.exec(`ALTER TABLE users ADD COLUMN ${col}`);
@@ -231,7 +258,8 @@ async function ensureUsersAndOwnershipMssql(pool: mssql.ConnectionPool) {
     ['preferences', 'NVARCHAR(MAX)'],
     ['passwordHash', 'VARCHAR(255)'],
     ['passwordChangedAt', 'VARCHAR(50)'],
-    ['lastLoginAt', 'VARCHAR(50)']
+    ['lastLoginAt', 'VARCHAR(50)'],
+    ['totalLeaves', 'INT DEFAULT 0']
   ];
   for (const [name, type] of mssqlUserColumns) {
     await pool.request().query(`IF COL_LENGTH('users', '${name}') IS NULL ALTER TABLE users ADD ${name} ${type};`);
@@ -278,13 +306,182 @@ async function ensureUsersAndOwnershipMssql(pool: mssql.ConnectionPool) {
   await backfillOwnership(sql => pool.request().query(sql).then(() => undefined));
 }
 
-// Role-model migration (July 2026): the 7-role model was reduced to 4 roles.
+// Leave management, persisted in-app notifications and system configuration —
+// created here (not only in database.sql) so databases that predate the feature
+// pick the tables up on boot. The MSSQL path is covered by initializeMssql
+// re-running database_mssql.sql.
+async function ensureLeaveTablesSqlite(db: Database) {
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS leave_days (
+      id VARCHAR(50) PRIMARY KEY,
+      batchId VARCHAR(50) NOT NULL,
+      ownerId VARCHAR(100) NOT NULL,
+      province VARCHAR(50) NOT NULL,
+      leaveDate VARCHAR(50) NOT NULL,
+      reason TEXT,
+      status VARCHAR(20) NOT NULL,
+      substituteUsername VARCHAR(100),
+      decidedBy VARCHAR(100),
+      decidedAt VARCHAR(50),
+      decisionNote TEXT,
+      dateCreated VARCHAR(50) NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS leave_transfers (
+      id VARCHAR(50) PRIMARY KEY,
+      batchId VARCHAR(50) NOT NULL,
+      incidentId VARCHAR(50) NOT NULL,
+      fromUser VARCHAR(100) NOT NULL,
+      toUser VARCHAR(100) NOT NULL,
+      transferredAt VARCHAR(50) NOT NULL,
+      restoredAt VARCHAR(50)
+    );
+    CREATE TABLE IF NOT EXISTS notifications (
+      id VARCHAR(50) PRIMARY KEY,
+      username VARCHAR(100) NOT NULL,
+      title VARCHAR(200) NOT NULL,
+      message TEXT,
+      link VARCHAR(100),
+      isRead INTEGER DEFAULT 0,
+      dateCreated VARCHAR(50) NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS system_config (
+      configKey VARCHAR(50) PRIMARY KEY,
+      configValue TEXT NOT NULL,
+      updatedBy VARCHAR(100),
+      updatedAt VARCHAR(50)
+    );
+  `);
+}
+
+// End-to-end case workflow (July 2026): expected resolution window on the report
+// form (natureOfCase), fine-grained workflow stage, investigation assignment and
+// approval cycle fields, plus supporting-document attachments and the per-case
+// event timeline (FR-004 uploads, FR-010 workflow history).
+// Stage flow: Submitted -> Under Review -> Closed (small case)
+//                                       -> Escalated -> Investigation -> Pending Approval
+//                                          -> (Returned => Investigation) | Approved -> Closed
+const CASE_WORKFLOW_COLUMNS: [name: string, sqliteType: string, mssqlType: string][] = [
+  ['natureOfCase', 'VARCHAR(50)', 'VARCHAR(50)'],
+  ['workflowStage', "VARCHAR(50) DEFAULT 'Submitted'", "VARCHAR(50) DEFAULT 'Submitted'"],
+  ['preliminaryFindings', 'TEXT', 'NVARCHAR(MAX)'],
+  ['investigationFindings', 'TEXT', 'NVARCHAR(MAX)'],
+  ['assignedInvestigator', 'VARCHAR(255)', 'VARCHAR(255)'],
+  ['assignedInvestigatorBy', 'VARCHAR(255)', 'VARCHAR(255)'],
+  ['assignedInvestigatorAt', 'VARCHAR(50)', 'VARCHAR(50)'],
+  ['investigationSubmittedAt', 'VARCHAR(50)', 'VARCHAR(50)'],
+  ['returnReason', 'TEXT', 'NVARCHAR(MAX)'],
+  ['returnCount', 'INTEGER DEFAULT 0', 'INT DEFAULT 0'],
+  ['approvedBy', 'VARCHAR(255)', 'VARCHAR(255)'],
+  ['approvedAt', 'VARCHAR(50)', 'VARCHAR(50)'],
+  ['approvalNotes', 'TEXT', 'NVARCHAR(MAX)'],
+  ['closedBy', 'VARCHAR(255)', 'VARCHAR(255)'],
+  ['closedAt', 'VARCHAR(50)', 'VARCHAR(50)'],
+  ['closureOutcome', 'VARCHAR(50)', 'VARCHAR(50)'],
+  ['closureReport', 'TEXT', 'NVARCHAR(MAX)']
+];
+
+// Existing rows created before workflowStage existed read back the column default
+// ('Submitted'); realign them with their coarse status so old cases keep working.
+const CASE_WORKFLOW_BACKFILL = [
+  `UPDATE incidents SET workflowStage = 'Closed' WHERE status = 'Closed' AND (workflowStage IS NULL OR workflowStage = 'Submitted')`,
+  `UPDATE incidents SET workflowStage = 'Escalated' WHERE isEscalated = 1 AND status <> 'Closed' AND (workflowStage IS NULL OR workflowStage = 'Submitted')`,
+  `UPDATE incidents SET workflowStage = 'Under Review' WHERE status IN ('Under Investigation', 'SAPS Case') AND (workflowStage IS NULL OR workflowStage = 'Submitted')`
+];
+
+async function ensureCaseWorkflowSqlite(db: Database) {
+  for (const [name, definition] of CASE_WORKFLOW_COLUMNS) {
+    try {
+      await db.exec(`ALTER TABLE incidents ADD COLUMN ${name} ${definition}`);
+    } catch (err: any) {
+      if (!String(err?.message || '').includes('duplicate column name')) throw err;
+    }
+  }
+
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS attachments (
+      id VARCHAR(50) PRIMARY KEY,
+      incidentId VARCHAR(50) NOT NULL,
+      fileName VARCHAR(255) NOT NULL,
+      mimeType VARCHAR(100),
+      fileSize INTEGER DEFAULT 0,
+      category VARCHAR(50),
+      stage VARCHAR(50),
+      uploadedBy VARCHAR(100),
+      uploadedByName VARCHAR(255),
+      uploadedByRole VARCHAR(50),
+      storagePath VARCHAR(500) NOT NULL,
+      dateCreated VARCHAR(50) NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS case_events (
+      id VARCHAR(50) PRIMARY KEY,
+      incidentId VARCHAR(50) NOT NULL,
+      eventType VARCHAR(50) NOT NULL,
+      stage VARCHAR(50),
+      actor VARCHAR(100),
+      actorName VARCHAR(255),
+      actorRole VARCHAR(50),
+      notes TEXT,
+      dateCreated VARCHAR(50) NOT NULL
+    );
+  `);
+
+  for (const sql of CASE_WORKFLOW_BACKFILL) {
+    await db.exec(sql);
+  }
+}
+
+async function ensureCaseWorkflowMssql(pool: mssql.ConnectionPool) {
+  for (const [name, , type] of CASE_WORKFLOW_COLUMNS) {
+    await pool.request().query(`IF COL_LENGTH('incidents', '${name}') IS NULL ALTER TABLE incidents ADD ${name} ${type};`);
+  }
+
+  await pool.request().query(`
+    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'attachments')
+    CREATE TABLE attachments (
+      id VARCHAR(50) PRIMARY KEY,
+      incidentId VARCHAR(50) NOT NULL,
+      fileName VARCHAR(255) NOT NULL,
+      mimeType VARCHAR(100),
+      fileSize INT DEFAULT 0,
+      category VARCHAR(50),
+      stage VARCHAR(50),
+      uploadedBy VARCHAR(100),
+      uploadedByName VARCHAR(255),
+      uploadedByRole VARCHAR(50),
+      storagePath VARCHAR(500) NOT NULL,
+      dateCreated VARCHAR(50) NOT NULL
+    );
+  `);
+  await pool.request().query(`
+    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'case_events')
+    CREATE TABLE case_events (
+      id VARCHAR(50) PRIMARY KEY,
+      incidentId VARCHAR(50) NOT NULL,
+      eventType VARCHAR(50) NOT NULL,
+      stage VARCHAR(50),
+      actor VARCHAR(100),
+      actorName VARCHAR(255),
+      actorRole VARCHAR(50),
+      notes NVARCHAR(MAX),
+      dateCreated VARCHAR(50) NOT NULL
+    );
+  `);
+
+  for (const sql of CASE_WORKFLOW_BACKFILL) {
+    await pool.request().query(sql);
+  }
+}
+
+// Role-model migration (July 2026): the 7-role model was reduced to 4 roles, then
+// System Administrator was reinstated as the fifth role (client matrix update).
 //   assistant_coordinator -> security_coordinator (closest equivalent, keeps provincial scope)
-//   executive / system_administrator -> deactivated (roles retired; admin duties now sit
-//   with the Chief Director). Rows are kept (isActive = 0) to preserve audit history.
+//   executive             -> deactivated (role retired; duties sit with the Chief Director).
+//                            Rows are kept (isActive = 0) to preserve audit history.
+//   system_administrator  -> reactivated with current code/label (ICT/MTS admin role)
 async function migrateRetiredRoles(run: (sql: string) => Promise<unknown>) {
   await run(`UPDATE users SET role = 'security_coordinator', roleCode = 'SECCO', roleLabel = 'Security Coordinator' WHERE role = 'assistant_coordinator'`);
-  await run(`UPDATE users SET isActive = 0 WHERE role IN ('executive', 'system_administrator')`);
+  await run(`UPDATE users SET isActive = 0 WHERE role = 'executive'`);
+  await run(`UPDATE users SET isActive = 1, roleCode = 'SYSADM', roleLabel = 'System Administrator' WHERE role = 'system_administrator'`);
   // Refresh labels/codes for roles whose terminology changed
   await run(`UPDATE users SET roleCode = 'SECCO', roleLabel = 'Security Coordinator' WHERE role = 'security_coordinator' AND baseRole IS NULL`);
   await run(`UPDATE users SET roleCode = 'CHINV', roleLabel = 'Chief Investigator' WHERE role = 'chief_security_investigator'`);

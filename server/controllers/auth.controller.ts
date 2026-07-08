@@ -194,8 +194,11 @@ export const AuthController = {
     ResponseView.sendSuccess(res, logs, 'Fetched own activity successfully');
   },
 
-  async users(_req: Request, res: Response) {
-    const users = await UserModel.getAll();
+  async users(req: Request, res: Response) {
+    // ?includeInactive=1 — admin user management also lists deactivated accounts
+    const users = req.query?.includeInactive === '1'
+      ? await UserModel.getAllForAdmin()
+      : await UserModel.getAll();
     ResponseView.sendSuccess(res, users, 'Fetched users successfully');
   },
 

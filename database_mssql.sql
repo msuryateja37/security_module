@@ -10,7 +10,7 @@ BEGIN
         displayName VARCHAR(255) NOT NULL,
         email VARCHAR(255) NOT NULL,
         role VARCHAR(50) NOT NULL,
-        roleCode VARCHAR(10) NOT NULL, -- EMP, SECCO, CHINV, CHDIR
+        roleCode VARCHAR(10) NOT NULL, -- EMP, SECCO, CHINV, CHDIR, SYSADM
         roleLabel VARCHAR(100) NOT NULL,
         province VARCHAR(50) NOT NULL,
         office VARCHAR(255),
@@ -26,7 +26,8 @@ BEGIN
         preferences NVARCHAR(MAX),   -- JSON-serialized UserPreferences (notification settings)
         passwordHash VARCHAR(255),   -- scrypt salt:hash of the portal credential (AD SSO replaces this in production)
         passwordChangedAt VARCHAR(50),
-        lastLoginAt VARCHAR(50)
+        lastLoginAt VARCHAR(50),
+        totalLeaves INT DEFAULT 0    -- running leave allocation, managed by the Chief Director
     );
 END;
 
@@ -56,6 +57,24 @@ BEGIN
         outcomeOfInvestigation NVARCHAR(MAX),
         responsiblePerson VARCHAR(255),
         status VARCHAR(50) NOT NULL,
+        -- End-to-end case workflow (see server/config/db.ts CASE_WORKFLOW_COLUMNS)
+        natureOfCase VARCHAR(50),
+        workflowStage VARCHAR(50) DEFAULT 'Submitted',
+        preliminaryFindings NVARCHAR(MAX),
+        investigationFindings NVARCHAR(MAX),
+        assignedInvestigator VARCHAR(255),
+        assignedInvestigatorBy VARCHAR(255),
+        assignedInvestigatorAt VARCHAR(50),
+        investigationSubmittedAt VARCHAR(50),
+        returnReason NVARCHAR(MAX),
+        returnCount INT DEFAULT 0,
+        approvedBy VARCHAR(255),
+        approvedAt VARCHAR(50),
+        approvalNotes NVARCHAR(MAX),
+        closedBy VARCHAR(255),
+        closedAt VARCHAR(50),
+        closureOutcome VARCHAR(50),
+        closureReport NVARCHAR(MAX),
         isEscalated BIT DEFAULT 0,
         escalationLevel VARCHAR(50),
         escalationReason VARCHAR(255),
@@ -181,5 +200,107 @@ BEGIN
         checklistValues NVARCHAR(MAX) NOT NULL, -- JSON object
         dateCreated VARCHAR(50) NOT NULL,
         ownerId VARCHAR(100) -- users.username of the record creator
+    );
+END;
+
+-- 8. Coordinator Leave Days Table
+-- One row per requested working day; days submitted together share a batchId so the
+-- Chief Director can approve/reject individual days within a single request.
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'leave_days')
+BEGIN
+    CREATE TABLE leave_days (
+        id VARCHAR(50) PRIMARY KEY,
+        batchId VARCHAR(50) NOT NULL,
+        ownerId VARCHAR(100) NOT NULL,        -- users.username of the requesting coordinator
+        province VARCHAR(50) NOT NULL,
+        leaveDate VARCHAR(50) NOT NULL,       -- 'YYYY-MM-DD'
+        reason NVARCHAR(MAX),                 -- personal data (POPIA): visible to owner + Chief Director only
+        status VARCHAR(20) NOT NULL,          -- Pending | Approved | Rejected | Revoked | Cancelled | Expired
+        substituteUsername VARCHAR(100),      -- employee nominated as acting coordinator at approval
+        decidedBy VARCHAR(100),
+        decidedAt VARCHAR(50),
+        decisionNote NVARCHAR(MAX),
+        dateCreated VARCHAR(50) NOT NULL
+    );
+END;
+
+-- 9. Leave Incident Transfers Table
+-- Records each incident handed to the acting coordinator so it can be handed back.
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'leave_transfers')
+BEGIN
+    CREATE TABLE leave_transfers (
+        id VARCHAR(50) PRIMARY KEY,
+        batchId VARCHAR(50) NOT NULL,
+        incidentId VARCHAR(50) NOT NULL,
+        fromUser VARCHAR(100) NOT NULL,       -- original coordinator username
+        toUser VARCHAR(100) NOT NULL,         -- acting coordinator username
+        transferredAt VARCHAR(50) NOT NULL,
+        restoredAt VARCHAR(50)                -- NULL while the substitution is active
+    );
+END;
+
+-- 10. In-App Notifications Table (FR-008)
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'notifications')
+BEGIN
+    CREATE TABLE notifications (
+        id VARCHAR(50) PRIMARY KEY,
+        username VARCHAR(100) NOT NULL,       -- recipient users.username
+        title VARCHAR(200) NOT NULL,
+        message NVARCHAR(MAX),
+        link VARCHAR(100),                    -- app hash to open, e.g. '#/leaves'
+        isRead BIT DEFAULT 0,
+        dateCreated VARCHAR(50) NOT NULL
+    );
+END;
+
+-- 11. System Configuration Table (FR-037/FR-038/FR-039)
+-- Managed by the System Administrator: SLA rules, escalation matrices,
+-- incident categories and notification templates. Values are JSON and
+-- overlay the code defaults in server/services/config.service.ts.
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'system_config')
+BEGIN
+    CREATE TABLE system_config (
+        configKey VARCHAR(50) PRIMARY KEY,    -- sla_rules | escalation_rules | incident_categories | notification_templates
+        configValue NVARCHAR(MAX) NOT NULL,   -- JSON payload
+        updatedBy VARCHAR(100),               -- users.username of the last editor
+        updatedAt VARCHAR(50)
+    );
+END;
+
+-- 12. Case Attachments (FR-004 / FR-014)
+-- Supporting documents and evidence uploaded against an incident at any
+-- workflow stage. Binary content lives on disk under uploads/<incidentId>/.
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'attachments')
+BEGIN
+    CREATE TABLE attachments (
+        id VARCHAR(50) PRIMARY KEY,
+        incidentId VARCHAR(50) NOT NULL,      -- incidents.id
+        fileName VARCHAR(255) NOT NULL,       -- original client file name
+        mimeType VARCHAR(100),
+        fileSize INT DEFAULT 0,               -- bytes
+        category VARCHAR(50),                 -- reporter_document | preliminary_evidence | investigation_evidence | closure_report
+        stage VARCHAR(50),                    -- workflowStage at upload time
+        uploadedBy VARCHAR(100),              -- users.username
+        uploadedByName VARCHAR(255),
+        uploadedByRole VARCHAR(50),
+        storagePath VARCHAR(500) NOT NULL,    -- relative path under uploads/
+        dateCreated VARCHAR(50) NOT NULL
+    );
+END;
+
+-- 13. Case Workflow Events (FR-010)
+-- Immutable per-case timeline of every workflow action.
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'case_events')
+BEGIN
+    CREATE TABLE case_events (
+        id VARCHAR(50) PRIMARY KEY,
+        incidentId VARCHAR(50) NOT NULL,      -- incidents.id
+        eventType VARCHAR(50) NOT NULL,       -- SUBMITTED | REVIEW_STARTED | PRELIMINARY_FINDINGS | ESCALATED | INVESTIGATOR_ASSIGNED | FINDINGS_SUBMITTED | RETURNED | APPROVED | CLOSED | ATTACHMENT_ADDED
+        stage VARCHAR(50),                    -- workflowStage after the event
+        actor VARCHAR(100),                   -- users.username
+        actorName VARCHAR(255),
+        actorRole VARCHAR(50),
+        notes NVARCHAR(MAX),
+        dateCreated VARCHAR(50) NOT NULL
     );
 END;

@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { getDbConnection } from './config/db.js';
 import apiRouter from './routes/api.routes.js';
+import { startLeaveScheduler } from './jobs/leave.scheduler.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,9 +17,13 @@ getDbConnection()
   .then(() => console.log('Database initialized successfully.'))
   .catch(err => console.error('Failed to initialize database on startup:', err));
 
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Daily leave sweep (expiry, reminders, acting-coordinator activation/reversion)
+startLeaveScheduler();
+
+// Middleware — the JSON limit accommodates base64 attachment uploads
+// (15 MB binary ≈ 20 MB base64, see server/services/fileStorage.service.ts)
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 // Simple request logger
 app.use((req, res, next) => {
@@ -51,6 +56,21 @@ app.use((req, res, next) => {
     return res.sendFile(path.join(distPath, 'index.html'));
   }
   next();
+});
+
+// Last-resort error handler — anything that slips past controller try/catch
+// must still produce a JSON body, never an empty/HTML response the SPA can't parse.
+app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error(`Unhandled error on ${req.method} ${req.url}:`, err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
+});
+
+// A rejected fire-and-forget promise (email fan-out, schedulers) must not take
+// down the process mid-request — that severs in-flight responses and surfaces
+// in the browser as "Unexpected end of JSON input".
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection:', reason);
 });
 
 app.listen(PORT, () => {

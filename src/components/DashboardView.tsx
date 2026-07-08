@@ -1,32 +1,24 @@
 import React from 'react';
-import type { SecurityIncident, PerformanceStats } from '../types/security';
-import { Shield, AlertTriangle, CheckCircle, TrendingUp, Users, DollarSign, ArrowRight } from 'lucide-react';
+import type { SecurityIncident } from '../types/security';
+import { Shield, AlertTriangle, CheckCircle, TrendingUp, DollarSign, ArrowRight, FileSearch } from 'lucide-react';
 import { PROVINCES } from '../data/mockData';
 
 interface DashboardViewProps {
   incidents: SecurityIncident[];
-  stats: PerformanceStats[];
   onNavigate: (view: string) => void;
 }
 
-export const DashboardView: React.FC<DashboardViewProps> = ({ incidents, stats, onNavigate }) => {
-  // Calculations
+export const DashboardView: React.FC<DashboardViewProps> = ({ incidents, onNavigate }) => {
+  // All KPIs are computed from the incidents the server returned for this user
+  // (already scoped to their province/role) — no seeded statistics.
   const activeCases = incidents.filter(i => i.status !== 'Closed').length;
   const closedCases = incidents.filter(i => i.status === 'Closed').length;
+  const underReviewCases = incidents.filter(i =>
+    i.status !== 'Closed' &&
+    (i.workflowStage ? i.workflowStage === 'Under Review' : i.status === 'Under Investigation')
+  ).length;
   const totalLoss = incidents.reduce((sum, i) => sum + i.lossValue, 0);
-
-  // Vetting total calculation from stats (just summing Gauteng vetting forms as a dashboard KPI)
-  const totalVettingForms = stats
-    .filter(s => s.indicator === 'Vetting forms issued')
-    .reduce((sum, s) => {
-      return sum + Object.values(s.monthlyValues).reduce((a, b) => a + b, 0);
-    }, 0);
-
-  const totalInspections = stats
-    .filter(s => s.indicator === 'Office Inspections/after hours')
-    .reduce((sum, s) => {
-      return sum + Object.values(s.monthlyValues).reduce((a, b) => a + b, 0);
-    }, 0);
+  const sapsReferrals = incidents.filter(i => i.reportedToSapsSsa === 'Yes' || i.status === 'SAPS Case').length;
 
   // Province distribution for Chart
   const provinceCounts = PROVINCES.map(p => {
@@ -74,12 +66,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ incidents, stats, 
 
         <div className="glass-card stat-card">
           <div className="stat-header">
+            <span className="stat-title">Under Review</span>
+            <FileSearch className="stat-icon warning" size={24} />
+          </div>
+          <div className="stat-value">{underReviewCases}</div>
+          <div className="stat-footer">
+            <span>Preliminary review by coordinator</span>
+          </div>
+        </div>
+
+        <div className="glass-card stat-card">
+          <div className="stat-header">
             <span className="stat-title">Resolved Cases</span>
             <CheckCircle className="stat-icon success" size={24} />
           </div>
           <div className="stat-value">{closedCases}</div>
           <div className="stat-footer">
-            <span>SAPS/Internal outcome recorded</span>
+            <span>Closed with outcome recorded</span>
           </div>
         </div>
 
@@ -94,16 +97,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ incidents, stats, 
           </div>
         </div>
 
-        <div className="glass-card stat-card">
-          <div className="stat-header">
-            <span className="stat-title">Total Vetting Cases</span>
-            <Users className="stat-icon warning" size={24} />
-          </div>
-          <div className="stat-value">{totalVettingForms}</div>
-          <div className="stat-footer">
-            <span>Forms issued to staff & contractors</span>
-          </div>
-        </div>
       </div>
 
       {/* Main dashboard visual statistics */}
@@ -179,15 +172,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ incidents, stats, 
           <div style={{ paddingTop: '1.5rem', borderTop: '1px solid hsl(var(--border-color))', marginTop: '1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <div style={{ fontSize: '0.75rem', color: 'hsl(var(--text-secondary))' }}>QUARTERLY KEY AUDITS</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 600 }}>{totalInspections} Inspections Completed</div>
+                <div style={{ fontSize: '0.75rem', color: 'hsl(var(--text-secondary))' }}>SAPS / SSA REFERRALS</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 600 }}>{sapsReferrals} {sapsReferrals === 1 ? 'Case' : 'Cases'} Reported</div>
               </div>
-              <button 
-                onClick={() => onNavigate('policy')}
-                className="btn btn-secondary" 
+              <button
+                onClick={() => onNavigate('register')}
+                className="btn btn-secondary"
                 style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem' }}
               >
-                Audits <ArrowRight size={12} />
+                Register <ArrowRight size={12} />
               </button>
             </div>
           </div>

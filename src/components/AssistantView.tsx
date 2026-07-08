@@ -171,6 +171,13 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ currentUser, onPre
           { icon: Search, label: 'Show me the overdue cases' },
           { icon: ShieldCheck, label: 'How do I appoint a temporary coordinator?' }
         ];
+      case 'system_administrator':
+        return [
+          { icon: ShieldCheck, label: 'How do I manage users and acting roles?' },
+          { icon: FileText, label: 'I want to report an incident' },
+          { icon: Search, label: 'Show me my incidents' },
+          { icon: Clock, label: 'What are the SLA deadlines?' }
+        ];
       default: // employee
         return [
           { icon: FileText, label: 'I want to report an incident' },

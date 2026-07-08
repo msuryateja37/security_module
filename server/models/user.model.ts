@@ -33,6 +33,7 @@ interface UserRow {
   passwordHash?: string | null;
   passwordChangedAt?: string | null;
   lastLoginAt?: string | null;
+  totalLeaves?: number | null;
 }
 
 const parsePreferences = (raw: string | null | undefined): UserPreferences => {
@@ -64,7 +65,8 @@ const rowToProfile = (row: UserRow): UserProfile => ({
   directorate: row.directorate ?? DEFAULT_DIRECTORATE,
   lastLoginAt: row.lastLoginAt ?? null,
   passwordChangedAt: row.passwordChangedAt ?? null,
-  preferences: parsePreferences(row.preferences)
+  preferences: parsePreferences(row.preferences),
+  totalLeaves: row.totalLeaves ?? 0
 });
 
 export const UserModel = {
@@ -90,6 +92,97 @@ export const UserModel = {
       console.error('[UserModel] Falling back to seed users:', err);
     }
     return ROLE_USERS.find(u => u.username === canonical) || null;
+  },
+
+  /** All accounts including deactivated ones — System Administrator user management (FR-036). */
+  async getAllForAdmin(): Promise<(UserProfile & { isActive: boolean })[]> {
+    try {
+      const rows = await query<UserRow>('SELECT * FROM users ORDER BY displayName');
+      return rows.map(row => ({ ...rowToProfile(row), isActive: !!row.isActive }));
+    } catch (err) {
+      console.error('[UserModel] Falling back to seed users:', err);
+      return ROLE_USERS.map(u => ({ ...u, isActive: true }));
+    }
+  },
+
+  /** True if the username exists at all, active or not (create-user duplicate check). */
+  async usernameExists(username: string): Promise<boolean> {
+    const row = await queryOne<{ username: string }>(
+      'SELECT username FROM users WHERE username = ?',
+      [username.trim().toLowerCase()]
+    );
+    return row !== null;
+  },
+
+  /** System Administrator creates a departmental account (FR-036); AD provisioning replaces this in production. */
+  async createUser(user: {
+    id: string;
+    username: string;
+    displayName: string;
+    email: string;
+    role: SecurityRole;
+    province: string;
+    office: string;
+    clearanceLevel: UserProfile['clearanceLevel'];
+    persalNumber?: string;
+    jobTitle?: string;
+    phoneNumber?: string;
+  }): Promise<boolean> {
+    const result = await execute(
+      `INSERT INTO users (id, username, displayName, email, role, roleCode, roleLabel, province, office, clearanceLevel, isActive, dateCreated, persalNumber, jobTitle, phoneNumber, directorate)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`,
+      [
+        user.id,
+        user.username,
+        user.displayName,
+        user.email,
+        user.role,
+        ROLE_CODES[user.role],
+        ROLE_LABELS[user.role],
+        user.province,
+        user.office,
+        user.clearanceLevel,
+        new Date().toISOString(),
+        user.persalNumber || '',
+        user.jobTitle || ROLE_LABELS[user.role],
+        user.phoneNumber || '',
+        DEFAULT_DIRECTORATE
+      ]
+    );
+    return result.changes > 0;
+  },
+
+  /** System Administrator modifies an account's identity/role fields (FR-036). */
+  async adminUpdate(
+    username: string,
+    fields: Partial<Pick<UserProfile, 'displayName' | 'email' | 'role' | 'province' | 'office' | 'clearanceLevel' | 'persalNumber' | 'jobTitle' | 'phoneNumber'>>
+  ): Promise<boolean> {
+    const sets: string[] = [];
+    const params: any[] = [];
+    for (const key of ['displayName', 'email', 'province', 'office', 'clearanceLevel', 'persalNumber', 'jobTitle', 'phoneNumber'] as const) {
+      if (fields[key] !== undefined) {
+        sets.push(`${key} = ?`);
+        params.push(fields[key]);
+      }
+    }
+    if (fields.role !== undefined) {
+      sets.push('role = ?', 'roleCode = ?', 'roleLabel = ?');
+      params.push(fields.role, ROLE_CODES[fields.role], ROLE_LABELS[fields.role]);
+    }
+    if (sets.length === 0) return false;
+
+    params.push(username);
+    const result = await execute(`UPDATE users SET ${sets.join(', ')} WHERE username = ?`, params);
+    return result.changes > 0;
+  },
+
+  /** Deactivate / reactivate an account. Rows are never deleted — audit history is preserved. */
+  async setActive(username: string, isActive: boolean): Promise<boolean> {
+    const result = await execute(
+      'UPDATE users SET isActive = ? WHERE username = ?',
+      [isActive ? 1 : 0, username]
+    );
+    return result.changes > 0;
   },
 
   /**
@@ -175,6 +268,15 @@ export const UserModel = {
     } catch (err) {
       console.error('[UserModel] Failed to record last login:', err);
     }
+  },
+
+  /** Chief Director sets a coordinator's running leave allocation. */
+  async updateTotalLeaves(username: string, totalLeaves: number): Promise<boolean> {
+    const result = await execute(
+      'UPDATE users SET totalLeaves = ? WHERE username = ? AND isActive = 1',
+      [totalLeaves, username]
+    );
+    return result.changes > 0;
   },
 
   /** Revoke a temporary coordinator assignment — the user returns to their permanent role. */

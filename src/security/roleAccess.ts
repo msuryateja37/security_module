@@ -2,6 +2,8 @@ import type { LucideIcon } from 'lucide-react';
 import {
   Archive,
   Briefcase,
+  CalendarCheck,
+  CalendarDays,
   ClipboardCheck,
   Clock,
   FileText,
@@ -13,7 +15,9 @@ import {
 } from 'lucide-react';
 
 // Role model — client role/responsibility matrix (July 2026).
-// Four roles: Employee, Security Coordinator, Chief Investigator, Chief Director.
+// Five roles: Employee, Security Coordinator, Chief Investigator, Chief Director,
+// System Administrator (ICT/MTS — users, roles, permissions, SLA configurations,
+// notification templates, escalation rules and overall system administration).
 // Internal keys 'security_coordinator', 'chief_security_investigator' and
 // 'security_director' are kept for backward compatibility with stored records,
 // sessions and audit logs; labels/codes carry the current official terminology.
@@ -21,7 +25,8 @@ export type SecurityRole =
   | 'employee'
   | 'security_coordinator'
   | 'chief_security_investigator'
-  | 'security_director';
+  | 'security_director'
+  | 'system_administrator';
 
 export type AppView =
   | 'dashboard'
@@ -34,7 +39,10 @@ export type AppView =
   | 'administration'
   | 'policy'
   | 'assistant'
-  | 'profile';
+  | 'profile'
+  | 'leaves'
+  | 'leave_management'
+  | 'case_detail';
 
 export type ReportSubView = 'incident' | 'bto' | 'investigation' | 'stats' | 'quarterly' | 'tra';
 
@@ -56,7 +64,11 @@ export type Permission =
   | 'reports:view_archive'
   | 'sla:view'
   | 'admin:manage_roles'
-  | 'ai:chat';
+  | 'admin:system_config'
+  | 'ai:chat'
+  | 'leave:request'
+  | 'leave:review'
+  | 'leave:manage_allocation';
 
 /** Per-user notification settings (FR-008: email AND in-system alerts; NFR-006: ≤2 min delivery). */
 export interface UserPreferences {
@@ -99,6 +111,8 @@ export interface UserProfile {
   lastLoginAt?: string | null;
   passwordChangedAt?: string | null;
   preferences?: UserPreferences;
+  /** Running leave-day allocation, managed by the Chief Director (coordinators only). */
+  totalLeaves?: number;
 }
 
 export const DEFAULT_DIRECTORATE = 'Chief Directorate: Security and Facilities Management Services';
@@ -120,14 +134,16 @@ export const ROLE_CODES: Record<SecurityRole, string> = {
   employee: 'EMP',
   security_coordinator: 'SECCO',
   chief_security_investigator: 'CHINV',
-  security_director: 'CHDIR'
+  security_director: 'CHDIR',
+  system_administrator: 'SYSADM'
 };
 
 export const ROLE_LABELS: Record<SecurityRole, string> = {
   employee: 'Employee',
   security_coordinator: 'Security Coordinator',
   chief_security_investigator: 'Chief Investigator',
-  security_director: 'Chief Director (Security Director)'
+  security_director: 'Chief Director (Security Director)',
+  system_administrator: 'System Administrator'
 };
 
 // Roles whose data scope is national (see everything across provinces)
@@ -151,7 +167,8 @@ export const ROLE_PERMISSIONS: Record<SecurityRole, Permission[]> = {
     'reports:submit_operational',
     'reports:view_archive',
     'sla:view',
-    'ai:chat'
+    'ai:chat',
+    'leave:request'
   ],
   chief_security_investigator: [
     'dashboard:view',
@@ -173,6 +190,19 @@ export const ROLE_PERMISSIONS: Record<SecurityRole, Permission[]> = {
     'reports:view_archive',
     'sla:view',
     'admin:manage_roles',
+    'ai:chat',
+    'leave:review',
+    'leave:manage_allocation'
+  ],
+  // System Administrator (ICT/MTS): manages users, roles, permissions, SLA
+  // configurations, notification templates and escalation rules (FR-036–FR-040).
+  // No incident case-data scope beyond their own reported incidents.
+  system_administrator: [
+    'dashboard:view',
+    'incident:create',
+    'incident:track_own',
+    'admin:manage_roles',
+    'admin:system_config',
     'ai:chat'
   ]
 };
@@ -215,7 +245,8 @@ export const ROLE_USERS: UserProfile[] = [
   buildUser('usr-coordinator-002', 'coordinator2', 'Security Coordinator 2 (Gauteng)', 'coordinator2.gp@dlrrd.gov.za', 'security_coordinator', 'Gauteng', 'Johannesburg Regional Office', 'Secret'),
   buildUser('usr-coordinator-wc', 'coordinator_wc', 'Security Coordinator (Western Cape)', 'coordinator.wc@dlrrd.gov.za', 'security_coordinator', 'Western Cape', 'Cape Town Provincial Office', 'Secret'),
   buildUser('usr-investigator-001', 'investigator', 'Chief Investigator', 'investigator@dlrrd.gov.za', 'chief_security_investigator', 'National', 'Field Investigation Unit', 'Top Secret'),
-  buildUser('usr-director-001', 'director', 'Chief Director', 'director@dlrrd.gov.za', 'security_director', 'National', 'National Security Directorate', 'Top Secret')
+  buildUser('usr-director-001', 'director', 'Chief Director', 'director@dlrrd.gov.za', 'security_director', 'National', 'National Security Directorate', 'Top Secret'),
+  buildUser('usr-sysadmin-001', 'sysadmin', 'System Administrator', 'sysadmin@dlrrd.gov.za', 'system_administrator', 'National', 'ICT / MTS — National Office', 'Secret')
 ];
 
 export const LOGIN_ALIASES: Record<string, string> = {
@@ -223,20 +254,22 @@ export const LOGIN_ALIASES: Record<string, string> = {
 };
 
 export const NAV_ITEMS: NavItem[] = [
-  { view: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'security_director'] },
-  { view: 'submit_reports', label: 'Submit Reports', icon: FileText, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'security_director'] },
-  { view: 'my_cases', label: 'My Cases', icon: Briefcase, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'security_director'] },
+  { view: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'security_director', 'system_administrator'] },
+  { view: 'submit_reports', label: 'Submit Reports', icon: FileText, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'security_director', 'system_administrator'] },
+  { view: 'my_cases', label: 'My Cases', icon: Briefcase, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'security_director', 'system_administrator'] },
   { view: 'register', label: 'Investigation', icon: Search, roles: ['security_coordinator', 'chief_security_investigator', 'security_director'] },
   { view: 'approval', label: 'Approval', icon: ClipboardCheck, roles: ['security_coordinator', 'security_director'] },
   { view: 'sla_monitor', label: 'SLA Monitor', icon: Clock, roles: ['security_coordinator', 'chief_security_investigator', 'security_director'] },
   { view: 'reports_archive', label: 'Reports', icon: Archive, roles: ['security_coordinator', 'chief_security_investigator', 'security_director'] },
-  { view: 'assistant', label: 'AI Assistant', icon: Sparkles, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'security_director'] },
-  { view: 'policy', label: 'Policy Hub', icon: BookOpen, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'security_director'] },
-  { view: 'administration', label: 'Administration', icon: Settings, roles: ['security_director'] }
+  { view: 'leaves', label: 'Leaves Management', icon: CalendarDays, roles: ['security_coordinator'] },
+  { view: 'leave_management', label: 'Leave Management', icon: CalendarCheck, roles: ['security_director'] },
+  { view: 'assistant', label: 'AI Assistant', icon: Sparkles, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'security_director', 'system_administrator'] },
+  { view: 'policy', label: 'Policy Hub', icon: BookOpen, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'security_director', 'system_administrator'] },
+  { view: 'administration', label: 'Administration', icon: Settings, roles: ['security_director', 'system_administrator'] }
 ];
 
 export const REPORT_TABS: ReportTab[] = [
-  { view: 'incident', label: 'Incident Notification', roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'security_director'] },
+  { view: 'incident', label: 'Incident Notification', roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'security_director', 'system_administrator'] },
   { view: 'bto', label: 'Back to Office Report', roles: ['security_coordinator', 'chief_security_investigator', 'security_director'] },
   { view: 'investigation', label: 'Investigation Report', roles: ['security_coordinator', 'chief_security_investigator', 'security_director'] },
   { view: 'stats', label: 'Monthly Performance Statistics', roles: ['security_coordinator', 'security_director'] },
@@ -251,8 +284,10 @@ export const getUserByUsername = (username: string): UserProfile | undefined => 
 };
 
 export const canAccessView = (role: SecurityRole, view: AppView) => {
-  // 'profile' is not a sidebar item — every authenticated user can open their own profile
-  if (view === 'profile') return true;
+  // 'profile' is not a sidebar item — every authenticated user can open their own profile.
+  // 'case_detail' (#/case/<id>) is reachable by every role; the server enforces
+  // record-level access to the actual case file.
+  if (view === 'profile' || view === 'case_detail') return true;
   return NAV_ITEMS.some(item => item.view === view && item.roles.includes(role));
 };
 
@@ -278,7 +313,8 @@ export const isValidRole = (role: string): role is SecurityRole =>
 
 export const getViewLabelForRole = (view: AppView, role: SecurityRole): string => {
   if (view === 'my_cases') {
-    return role === 'employee' ? 'Track My Incidents' : 'My Assigned Cases';
+    // Employees and the System Administrator only track their own reported incidents
+    return role === 'employee' || role === 'system_administrator' ? 'Track My Incidents' : 'My Assigned Cases';
   }
   if (view === 'profile') {
     return 'My Profile';

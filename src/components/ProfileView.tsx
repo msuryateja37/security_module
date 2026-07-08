@@ -64,7 +64,11 @@ const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   'reports:view_archive': 'View the reports archive and registers',
   'sla:view': 'Monitor SLA compliance and escalations',
   'admin:manage_roles': 'Administer users, roles and temporary assignments',
-  'ai:chat': 'Use the SIMS AI Assistant'
+  'admin:system_config': 'Configure SLA rules, notification templates and escalation matrices (FR-037/FR-038)',
+  'ai:chat': 'Use the SIMS AI Assistant',
+  'leave:request': 'Request leave days and track their approval',
+  'leave:review': 'Review, approve or reject coordinator leave requests',
+  'leave:manage_allocation': 'Set coordinator total leave allocations'
 };
 
 // MISS-aligned explanations of the personnel clearance levels
@@ -139,7 +143,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, initialTa
       ? `Provincial — restricted to ${currentUser.province} (FR-033 data segregation)`
       : currentUser.role === 'chief_security_investigator'
         ? 'Assigned cases only — cases routed by the Chief Director'
-        : 'Own records only — incidents you reported';
+        : currentUser.role === 'system_administrator'
+          ? 'System administration — users, roles and configuration; no incident case data beyond own reports'
+          : 'Own records only — incidents you reported';
 
   const handleSaveProfile = async () => {
     setSavingProfile(true);

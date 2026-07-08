@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import type { SecurityIncident } from '../types/security';
 import { getViewLabelForRole } from '../security/roleAccess';
-import { Briefcase, Eye, Search, UserCheck, ArrowUpCircle, X, Send } from 'lucide-react';
+import { Briefcase, Eye, Search, UserCheck, ArrowUpCircle, X, Send, Sparkles, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useModal } from './NotificationModal';
+import { triageCase } from '../utils/caseTriage';
+import type { TriageResult } from '../utils/caseTriage';
 
 interface MyCasesViewProps {
   incidents: SecurityIncident[];
@@ -23,7 +25,11 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
   const [escalationReason, setEscalationReason] = useState('');
   const [escalationNotes, setEscalationNotes] = useState('');
   const [isEscalating, setIsEscalating] = useState(false);
+  const [triageTarget, setTriageTarget] = useState<SecurityIncident | null>(null);
   const { showAlert, showConfirm } = useModal();
+
+  // Employees and the System Administrator only track incidents they reported themselves
+  const tracksOwnOnly = currentUser.role === 'employee' || currentUser.role === 'system_administrator';
 
   const isUnassignedCase = (incident: SecurityIncident) => {
     return !incident.responsiblePerson || incident.responsiblePerson === 'Unassigned' || incident.responsiblePerson.trim() === '';
@@ -73,7 +79,7 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
       return incident.responsiblePerson === currentUser.displayName;
     }
 
-    if (currentUser.role === 'employee') {
+    if (tracksOwnOnly) {
       return incident.reportedBy === currentUser.displayName || incident.contactDetails === currentUser.email;
     }
 
@@ -96,15 +102,25 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
     });
   };
 
-  const openEscalationForm = (incident: SecurityIncident) => {
+  const openEscalationForm = (incident: SecurityIncident, suggestedReason = '') => {
     setEscalationCase(incident);
     setEscalationLevel(
       incident.classification === 'Top Secret' || incident.classification === 'Secret'
         ? 'Critical'
         : 'Major'
     );
-    setEscalationReason('');
+    setEscalationReason(suggestedReason);
     setEscalationNotes('');
+  };
+
+  // Map the triage engine's strongest risk factor onto the escalation form's reason options.
+  const suggestEscalationReason = (triage: TriageResult): string => {
+    const factors = triage.reasons.filter(r => r.kind === 'risk').map(r => r.factor);
+    if (factors.some(f => f.includes('classification'))) return 'Sensitive classification or confidential information exposure';
+    if (factors.includes('Criminal matter')) return 'Potential criminal matter requiring executive visibility';
+    if (factors.some(f => f.includes('injuries') || f.includes('Injuries') || f.includes('High-risk') || f.includes('loss'))) return 'High-risk or major security breach';
+    if (factors.some(f => f.includes('overdue') || f.includes('SLA'))) return 'SLA risk or overdue investigation';
+    return 'Complex investigation requires national support';
   };
 
   const handleEscalate = () => {
@@ -142,13 +158,29 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
     }
   };
 
+  // Fine-grained workflow stage badge (falls back to the coarse status)
+  const getStageBadge = (incident: SecurityIncident) => {
+    const stage = incident.workflowStage;
+    if (!stage) return { label: incident.status, cls: getStatusClass(incident.status) };
+    const cls: Record<string, string> = {
+      'Submitted': 'danger',
+      'Under Review': 'warning',
+      'Escalated': 'danger',
+      'Investigation': 'warning',
+      'Pending Approval': 'primary',
+      'Approved': 'primary',
+      'Closed': 'success'
+    };
+    return { label: stage, cls: cls[stage] || 'muted' };
+  };
+
   return (
     <div>
       <div className="header-row">
         <div>
           <h1 className="page-title">{getViewLabelForRole('my_cases', currentUser.role)}</h1>
           <p className="page-subtitle">
-            {currentUser.role === 'employee'
+            {tracksOwnOnly
               ? 'Monitor status and reference details for security incidents you submitted'
               : 'Manage and update active security cases assigned to your portfolio'}
           </p>
@@ -194,9 +226,10 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
                 <th>Case Details</th>
                 <th>Province</th>
                 <th>Place of Occurrence</th>
-                <th>{currentUser.role === 'employee' ? 'Responsible Officer' : 'Assigned Coordinator'}</th>
+                <th>{tracksOwnOnly ? 'Responsible Officer' : 'Assigned Coordinator'}</th>
                 <th>Status</th>
                 <th>Classification</th>
+                {!tracksOwnOnly && <th>AI Suggestion</th>}
                 <th>Actions</th>
               </tr>
             </thead>
@@ -204,16 +237,40 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
               {myCases.map(incident => {
                 const isUnassigned = isUnassignedCase(incident);
                 const canEscalate = !isUnassigned && incident.status !== 'Closed' && !incident.isEscalated && ['security_coordinator', 'security_director'].includes(currentUser.role);
+                const isClosed = incident.status === 'Closed' || incident.workflowStage === 'Closed';
+                const triage = !tracksOwnOnly && !isClosed ? triageCase(incident) : null;
                 return (
                   <tr key={incident.id}>
                     <td>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                        <button
+                          onClick={() => onSelectCase(incident)}
+                          style={{
+                            background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
+                            fontWeight: 600, color: 'var(--color-primary)', textAlign: 'left',
+                            textDecoration: 'underline', fontSize: 'inherit'
+                          }}
+                          title="Open the full case file"
+                        >
                           {incident.refNo}
-                        </span>
+                        </button>
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                           Reported: {incident.dateReported}
                         </span>
+                        {incident.slaInfo && incident.status !== 'Closed' && (
+                          <span
+                            style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 600,
+                              color: incident.slaInfo.daysRemaining < 0 ? 'var(--color-danger)'
+                                : incident.slaInfo.daysRemaining <= Math.ceil(incident.slaInfo.targetDays * 0.25) ? '#d97706'
+                                : 'var(--text-muted)'
+                            }}
+                          >
+                            Day {incident.slaInfo.daysElapsed}/{incident.slaInfo.targetDays} · due {incident.slaInfo.expectedDate}
+                            {incident.slaInfo.daysRemaining < 0 ? ` · overdue by ${-incident.slaInfo.daysRemaining}d` : ''}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td>{incident.province}</td>
@@ -226,8 +283,8 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
                       )}
                     </td>
                     <td>
-                      <span className={`badge ${getStatusClass(incident.status)}`}>
-                        {incident.status}
+                      <span className={`badge ${getStageBadge(incident).cls}`}>
+                        {getStageBadge(incident).label}
                       </span>
                     </td>
                     <td>
@@ -235,6 +292,22 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
                         {incident.classification}
                       </span>
                     </td>
+                    {!tracksOwnOnly && (
+                      <td>
+                        {triage ? (
+                          <button
+                            onClick={() => setTriageTarget(incident)}
+                            className={`badge ${triage.verdict === 'Routine' ? 'success' : 'warning'}`}
+                            style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', border: 'none' }}
+                            title="Why did the AI suggest this? Click for the full reasoning."
+                          >
+                            <Sparkles size={11} /> {triage.verdict}
+                          </button>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>—</span>
+                        )}
+                      </td>
+                    )}
                     <td>
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
                         {isUnassigned && currentUser.role === 'security_coordinator' && (
@@ -246,15 +319,13 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
                             <UserCheck size={12} /> Assign to Me
                           </button>
                         )}
-                        {currentUser.role !== 'employee' && (
-                          <button 
-                            className="btn btn-secondary" 
-                            onClick={() => onSelectCase(incident)}
-                            style={{ padding: '0.4rem 0.75rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
-                          >
-                            <Eye size={12} /> View File
-                          </button>
-                        )}
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => onSelectCase(incident)}
+                          style={{ padding: '0.4rem 0.75rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                        >
+                          <Eye size={12} /> {tracksOwnOnly ? 'Track Case' : 'View File'}
+                        </button>
                         {canEscalate && (
                           <button
                             className="btn btn-primary"
@@ -271,10 +342,10 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
               })}
               {myCases.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                  <td colSpan={tracksOwnOnly ? 7 : 8} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
                     <Briefcase size={36} style={{ opacity: 0.3, marginBottom: '0.5rem' }} />
                     <p>
-                      {currentUser.role === 'employee'
+                      {tracksOwnOnly
                         ? 'No submitted incidents found matching search criteria.'
                         : currentUser.role === 'security_coordinator' && coordinatorTab === 'unassigned'
                           ? 'No unassigned provincial cases found matching search criteria.'
@@ -364,6 +435,113 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
           </div>
         </div>
       )}
+
+      {triageTarget && (() => {
+        const triage = triageCase(triageTarget);
+        const isComplex = triage.verdict === 'Complex/High-Risk';
+        const riskReasons = triage.reasons.filter(r => r.kind === 'risk');
+        const mitigatingReasons = triage.reasons.filter(r => r.kind === 'mitigating');
+        const canEscalateFromTriage = !isUnassignedCase(triageTarget) && triageTarget.status !== 'Closed'
+          && !triageTarget.isEscalated && ['security_coordinator', 'security_director'].includes(currentUser.role);
+        return (
+          <div className="drawer-backdrop" onClick={() => setTriageTarget(null)}>
+            <div className="drawer" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '620px' }}>
+              <div className="drawer-header">
+                <div>
+                  <h3 style={{ fontSize: '1.2rem', color: 'hsl(var(--color-primary))', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Sparkles size={18} /> AI Case Suggestion
+                  </h3>
+                  <span style={{ fontSize: '0.8rem', color: 'hsl(var(--text-muted))' }}>
+                    {triageTarget.refNo} | {triageTarget.classification} | {triageTarget.province}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setTriageTarget(null)}
+                  style={{ background: 'transparent', border: 'none', color: 'hsl(var(--text-primary))', cursor: 'pointer' }}
+                  aria-label="Close AI suggestion"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="drawer-content">
+                <div className="glass-card" style={{ padding: '1.25rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  {isComplex
+                    ? <ShieldAlert size={28} style={{ color: '#b45309', flexShrink: 0 }} />
+                    : <ShieldCheck size={28} style={{ color: '#15803d', flexShrink: 0 }} />}
+                  <div>
+                    <span className={`badge ${isComplex ? 'warning' : 'success'}`} style={{ marginBottom: '0.3rem', display: 'inline-block' }}>
+                      Suggested: {triage.verdict}
+                    </span>
+                    <p style={{ fontSize: '0.85rem', margin: 0 }}>{triage.recommendation}</p>
+                  </div>
+                </div>
+
+                {riskReasons.length > 0 && (
+                  <div className="glass-card" style={{ padding: '1.25rem', marginBottom: '1rem' }}>
+                    <h4 style={{ marginBottom: '0.75rem', fontSize: '0.9rem', color: '#b45309' }}>
+                      Risk factors ({riskReasons.length})
+                    </h4>
+                    {riskReasons.map((reason, i) => (
+                      <div key={i} style={{ marginBottom: i === riskReasons.length - 1 ? 0 : '0.85rem' }}>
+                        <div style={{ fontWeight: 600, fontSize: '0.83rem' }}>{reason.factor}</div>
+                        <div style={{ fontSize: '0.82rem' }}>{reason.detail}</div>
+                        {reason.basis && (
+                          <div style={{ fontSize: '0.72rem', color: 'hsl(var(--text-muted))', fontStyle: 'italic' }}>
+                            Basis: {reason.basis}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {mitigatingReasons.length > 0 && (
+                  <div className="glass-card" style={{ padding: '1.25rem', marginBottom: '1rem' }}>
+                    <h4 style={{ marginBottom: '0.75rem', fontSize: '0.9rem', color: '#15803d' }}>
+                      Factors supporting routine handling ({mitigatingReasons.length})
+                    </h4>
+                    {mitigatingReasons.map((reason, i) => (
+                      <div key={i} style={{ marginBottom: i === mitigatingReasons.length - 1 ? 0 : '0.85rem' }}>
+                        <div style={{ fontWeight: 600, fontSize: '0.83rem' }}>{reason.factor}</div>
+                        <div style={{ fontSize: '0.82rem' }}>{reason.detail}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <p style={{ fontSize: '0.75rem', color: 'hsl(var(--text-muted))', fontStyle: 'italic' }}>
+                  This is an automated suggestion based on the incident record and departmental policy rules.
+                  The decision to close or escalate rests with the responsible officer and is recorded in the audit trail.
+                </p>
+              </div>
+
+              <div className="drawer-footer">
+                <button
+                  className="btn btn-secondary"
+                  style={{ flexGrow: 1 }}
+                  onClick={() => { setTriageTarget(null); onSelectCase(triageTarget); }}
+                >
+                  <Eye size={16} /> Open Case File
+                </button>
+                {isComplex && canEscalateFromTriage && (
+                  <button
+                    className="btn btn-primary"
+                    style={{ flexGrow: 1 }}
+                    onClick={() => {
+                      const suggested = suggestEscalationReason(triage);
+                      setTriageTarget(null);
+                      openEscalationForm(triageTarget, suggested);
+                    }}
+                  >
+                    <ArrowUpCircle size={16} /> Escalate as Suggested
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

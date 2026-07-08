@@ -70,7 +70,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
             Log in to manage and report security incidents, inspections, and audit logs.
           </p>
           <div className="login-role-hint">
-            {/* One chip per role — the first seed account of each of the four roles */}
+            {/* One chip per role — the first seed account of each of the five roles */}
             {ROLE_USERS.filter(
               (user, _, all) => all.find(u => u.role === user.role) === user
             ).map(user => (

@@ -5,12 +5,18 @@ import { AuthenticatedRequest } from '../security/auth.middleware.js';
 import { AuditService } from '../security/audit.service.js';
 import { SlaService } from '../security/sla.service.js';
 import { ROLE_USERS } from '../security/roleAccess.js';
+import { LeaveService } from '../services/leave.service.js';
+import { NotificationService } from '../services/notification.service.js';
+import { ConfigService } from '../services/config.service.js';
+import { CaseEventModel } from '../models/caseEvent.model.js';
+import { UserModel } from '../models/user.model.js';
+import { notifyReporterOfProgress } from './caseWorkflow.controller.js';
 
-// Workflow: significant/big cases are escalated to the Security Director (Chief Director),
-// who then assigns a Security Investigator for field work. Escalation therefore always
-// targets the Director; investigator assignment is the Director's follow-up action.
-const getEscalationTarget = (_level?: string) => {
-  return ROLE_USERS.find(u => u.role === 'security_director');
+// Workflow: significant/big cases are escalated to the role configured in the
+// escalation matrix (default: the Security Director / Chief Director), who then
+// assigns a Security Investigator for field work.
+const getEscalationTarget = (notifyRole: string) => {
+  return ROLE_USERS.find(u => u.role === notifyRole);
 };
 
 export const IncidentController = {
@@ -22,21 +28,26 @@ export const IncidentController = {
       // Provincial Segregation (RBAC & MISS compliance, FR-033)
       if (user.role === 'security_coordinator') {
         incidents = incidents.filter(i => i.province === user.province || i.province === 'National');
-      } else if (user.role === 'employee') {
+      } else if (user.role === 'employee' || user.role === 'system_administrator') {
+        // Employees and the System Administrator only see incidents they reported themselves.
         // ownerId is authoritative; name/email matching kept for pre-migration records
         incidents = incidents.filter(i =>
           i.ownerId === user.username || i.reportedBy === user.displayName || i.contactDetails === user.email
         );
       } else if (user.role === 'chief_security_investigator') {
         // Chief Investigator only sees cases assigned to them by the Security Director
-        incidents = incidents.filter(i => i.responsiblePerson === user.displayName);
+        // (assignedInvestigator keeps history visible once the case moves to approval/closure)
+        incidents = incidents.filter(i =>
+          i.responsiblePerson === user.displayName || i.assignedInvestigator === user.displayName
+        );
       }
       // Chief Director (security_director) sees all incidents across provinces
 
-      // Attach dynamic SLA status to each incident
+      // Attach dynamic SLA status to each incident (targets from system configuration, FR-037)
+      const slaRules = await ConfigService.getSlaRules();
       const enrichedIncidents = incidents.map(inc => ({
         ...inc,
-        slaInfo: SlaService.calculateSla(inc)
+        slaInfo: SlaService.calculateSla(inc, slaRules)
       }));
 
       await AuditService.log({
@@ -67,7 +78,7 @@ export const IncidentController = {
       }
 
       // Auto-populate reporter info if missing
-      if (user.role === 'employee') {
+      if (user.role === 'employee' || user.role === 'system_administrator') {
         incident.reportedBy = user.displayName;
         incident.contactDetails = user.email;
       } else if (!incident.reportedBy) {
@@ -78,17 +89,19 @@ export const IncidentController = {
       }
       // Record ownership is always stamped from the authenticated identity, never from the client
       incident.ownerId = user.username;
+      // Every new report enters the workflow at the start, regardless of client payload
+      incident.workflowStage = 'Submitted';
 
-      // Count coordinators for the incident's province
-      const provinceCoordinators = ROLE_USERS.filter(
-        u => u.role === 'security_coordinator' && u.province === incident.province
-      );
+      // Auto-route to the province's effective coordinator (FR-006). A coordinator
+      // on approved leave is replaced in this pool by their acting substitute, so
+      // new incidents during the leave go to the leave cover automatically.
+      const provinceCoordinators = await LeaveService.getEffectiveCoordinatorsForProvince(incident.province);
 
       if (provinceCoordinators.length === 1) {
-        // Automatically assign to the single coordinator
+        // Automatically assign to the single effective coordinator
         incident.responsiblePerson = provinceCoordinators[0].displayName;
       } else {
-        // Leave unassigned for manual assignment if there are 2 or more coordinators
+        // Leave unassigned for manual assignment if there are 0 or 2+ coordinators
         incident.responsiblePerson = 'Unassigned';
       }
 
@@ -106,6 +119,57 @@ export const IncidentController = {
           details: `Created security incident ${incident.refNo} (${incident.classification})`,
           clearanceLevel: user.clearanceLevel
         });
+
+        // Workflow timeline entry (FR-010)
+        await CaseEventModel.record({
+          incidentId: incident.id,
+          eventType: 'SUBMITTED',
+          stage: 'Submitted',
+          actor: user.username,
+          actorName: user.displayName,
+          actorRole: user.role,
+          notes: `Incident ${incident.refNo} submitted and auto-routed to ${incident.responsiblePerson === 'Unassigned' ? `the ${incident.province} coordinator pool` : incident.responsiblePerson}`
+        });
+
+        const templates = await ConfigService.getNotificationTemplates();
+        const caseLink = `#/case/${incident.id}`;
+
+        // Notify the routed coordinator(s) via the configurable template (FR-006/FR-008)
+        const reportedTemplate = templates.incident_reported;
+        if (reportedTemplate) {
+          const rendered = ConfigService.renderTemplate(reportedTemplate, {
+            refNo: incident.refNo,
+            classification: incident.classification || 'Unclassified',
+            province: incident.province,
+            reportedBy: incident.reportedBy || user.displayName
+          });
+          await NotificationService.notifyMany(
+            provinceCoordinators.map(c => c.username),
+            rendered.title,
+            rendered.message,
+            caseLink
+          );
+
+          // FR-007: the national office (Security Director) is notified of ALL incidents
+          const allUsers = await UserModel.getAll();
+          await NotificationService.notifyMany(
+            allUsers.filter(u => u.role === 'security_director').map(u => u.username),
+            rendered.title,
+            rendered.message,
+            caseLink
+          );
+        }
+
+        // Confirmation back to the reporter — email + in-app with the reference number (FR-008)
+        const confirmationTemplate = templates.incident_confirmation;
+        if (confirmationTemplate) {
+          const rendered = ConfigService.renderTemplate(confirmationTemplate, {
+            refNo: incident.refNo,
+            province: incident.province,
+            natureOfCase: incident.natureOfCase || 'not specified'
+          });
+          await NotificationService.notify(user.username, rendered.title, rendered.message, caseLink);
+        }
 
         ResponseView.sendSuccess(res, incident, 'Created incident successfully', 201);
       } else {
@@ -162,6 +226,44 @@ export const IncidentController = {
           clearanceLevel: user.clearanceLevel
         });
 
+        // Responsible-coordinator change (e.g. "Assign to Me" on an unassigned case):
+        // record it on the case timeline and notify the reporter + Security Director (FR-008/FR-010)
+        const newResponsible = typeof updates.responsiblePerson === 'string' ? updates.responsiblePerson.trim() : '';
+        const assignmentChanged =
+          !!newResponsible &&
+          newResponsible !== 'Unassigned' &&
+          newResponsible !== existing.responsiblePerson;
+        if (assignmentChanged) {
+          await CaseEventModel.record({
+            incidentId: id,
+            eventType: 'COORDINATOR_ASSIGNED',
+            stage: existing.workflowStage || 'Submitted',
+            actor: user.username,
+            actorName: user.displayName,
+            actorRole: user.role,
+            notes: `${user.displayName} assigned case ${existing.refNo} to ${newResponsible}`
+          });
+
+          await notifyReporterOfProgress(existing, user,
+            `Your incident ${existing.refNo} has been assigned to ${newResponsible} (${existing.province} Security Coordinator) for preliminary review.`);
+
+          const templates = await ConfigService.getNotificationTemplates();
+          const template = templates.case_assignment_update;
+          if (template) {
+            const rendered = ConfigService.renderTemplate(template, {
+              refNo: existing.refNo,
+              province: existing.province,
+              coordinator: newResponsible,
+              actor: user.displayName
+            });
+            const allUsers = await UserModel.getAll();
+            const directors = allUsers
+              .filter(u => u.role === 'security_director' && u.username !== user.username)
+              .map(u => u.username);
+            await NotificationService.notifyMany(directors, rendered.title, rendered.message, `#/case/${id}`);
+          }
+        }
+
         ResponseView.sendSuccess(res, updates, 'Updated incident successfully');
       } else {
         ResponseView.sendError(res, 'Incident not found or no changes made', 'Operation failed', 404);
@@ -181,6 +283,17 @@ export const IncidentController = {
         return ResponseView.sendError(res, 'Escalation level and reason are required', 'Validation failed', 400);
       }
 
+      // Escalation matrix (FR-037): only levels configured by the System Administrator are accepted
+      const escalationRules = await ConfigService.getEscalationRules();
+      if (!escalationRules.levels.includes(escalationLevel)) {
+        return ResponseView.sendError(
+          res,
+          `Unknown escalation level '${escalationLevel}'. Configured levels: ${escalationRules.levels.join(', ')}`,
+          'Validation failed',
+          400
+        );
+      }
+
       const existing = await IncidentModel.getById(id);
       if (!existing) {
         return ResponseView.sendError(res, 'Incident not found', 'Operation failed', 404);
@@ -188,6 +301,15 @@ export const IncidentController = {
 
       if (existing.status === 'Closed') {
         return ResponseView.sendError(res, 'Closed incidents cannot be escalated', 'Validation failed', 400);
+      }
+
+      if (existing.workflowStage === 'Escalated') {
+        return ResponseView.sendError(
+          res,
+          `Case ${existing.refNo} has already been escalated to ${existing.escalatedTo || 'the national office'} and is awaiting action`,
+          'Validation failed',
+          400
+        );
       }
 
       if (user.role === 'security_coordinator') {
@@ -202,7 +324,7 @@ export const IncidentController = {
         }
       }
 
-      const escalationTarget = getEscalationTarget(escalationLevel);
+      const escalationTarget = getEscalationTarget(escalationRules.notifyRole);
       if (!escalationTarget) {
         return ResponseView.sendError(res, 'No national escalation target is configured', 'Configuration error', 500);
       }
@@ -215,6 +337,7 @@ export const IncidentController = {
 
       const updates = {
         status: 'Under Investigation' as const,
+        workflowStage: 'Escalated' as const,
         responsiblePerson: escalationTarget.displayName,
         isEscalated: 1,
         escalationLevel,
@@ -228,6 +351,16 @@ export const IncidentController = {
 
       const success = await IncidentModel.update(id, updates);
       if (success) {
+        await CaseEventModel.record({
+          incidentId: id,
+          eventType: 'ESCALATED',
+          stage: 'Escalated',
+          actor: user.username,
+          actorName: user.displayName,
+          actorRole: user.role,
+          notes: `Escalated to ${escalationTarget.displayName} (${escalationLevel}). Reason: ${escalationReason}.${escalationNotes ? ` Notes: ${escalationNotes}` : ''}`
+        });
+
         await AuditService.log({
           timestamp: escalatedAt,
           userId: user.id,
@@ -240,6 +373,24 @@ export const IncidentController = {
           details: `Escalated ${existing.refNo} to ${escalationTarget.displayName}. Level: ${escalationLevel}. Reason: ${escalationReason}`,
           clearanceLevel: user.clearanceLevel
         });
+
+        // Notify the escalation target via the configurable template (FR-018/FR-038)
+        const templates = await ConfigService.getNotificationTemplates();
+        const escalatedTemplate = templates.incident_escalated;
+        if (escalatedTemplate) {
+          const rendered = ConfigService.renderTemplate(escalatedTemplate, {
+            refNo: existing.refNo,
+            province: existing.province,
+            level: escalationLevel,
+            reason: escalationReason,
+            escalatedBy: user.displayName
+          });
+          await NotificationService.notify(escalationTarget.username, rendered.title, rendered.message, `#/case/${id}`);
+        }
+
+        // Progress update to the original reporter (status change: Escalated)
+        await notifyReporterOfProgress(existing, user,
+          `Your incident ${existing.refNo} has been escalated to the Security Director for national-level investigation.`);
 
         ResponseView.sendSuccess(
           res,

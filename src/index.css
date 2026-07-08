@@ -2306,3 +2306,15 @@ h1, h2, h3, h4, h5, h6 {
     gap: 0.75rem;
   }
 }
+
+/* Case workflow action buttons: visible in-flight state */
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}

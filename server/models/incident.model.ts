@@ -1,6 +1,41 @@
 import { query, execute } from '../config/db.js';
 
-export interface SecurityIncidentDb {
+// Fine-grained end-to-end workflow stage (the coarse `status` stays in sync for
+// dashboards/SLA):
+//   Submitted -> Under Review -> Closed (small case)
+//                             -> Escalated -> Investigation -> Pending Approval
+//                                -> (Returned => Investigation) | Approved -> Closed
+export type WorkflowStage =
+  | 'Submitted'
+  | 'Under Review'
+  | 'Escalated'
+  | 'Investigation'
+  | 'Pending Approval'
+  | 'Approved'
+  | 'Closed';
+
+export interface CaseWorkflowFields {
+  /** Expected resolution window selected by the reporter on the incident form. */
+  natureOfCase?: string;
+  workflowStage?: WorkflowStage | string;
+  preliminaryFindings?: string;
+  investigationFindings?: string;
+  assignedInvestigator?: string;
+  assignedInvestigatorBy?: string;
+  assignedInvestigatorAt?: string;
+  investigationSubmittedAt?: string;
+  returnReason?: string;
+  returnCount?: number;
+  approvedBy?: string;
+  approvedAt?: string;
+  approvalNotes?: string;
+  closedBy?: string;
+  closedAt?: string;
+  closureOutcome?: string;
+  closureReport?: string;
+}
+
+export interface SecurityIncidentDb extends CaseWorkflowFields {
   id: string;
   refNo: string;
   incidentType: string;
@@ -48,7 +83,7 @@ export interface SecurityIncidentDb {
   recommendations: string;
 }
 
-export interface SecurityIncident {
+export interface SecurityIncident extends CaseWorkflowFields {
   id: string;
   refNo: string;
   incidentType: string[];
@@ -122,11 +157,12 @@ export const IncidentModel = {
         id, refNo, incidentType, otherIncidentTypeDetails, department, contactDetails,
         dateTime, place, province, lossValue, natureOfLoss, injuriesFatalities, reportedBy,
         registerNumber, sapsCaseNumber, policeStation, arrests, classification, reportedToSapsSsa,
-        outcomeOfInvestigation, responsiblePerson, status, dateCreated, dateReported, ownerId, whatHappened,
+        outcomeOfInvestigation, responsiblePerson, status, natureOfCase, workflowStage,
+        dateCreated, dateReported, ownerId, whatHappened,
         whereHappened, howHappened, whoResponsible, proceduresUsed, weaponsUsed, damageDone,
         actionTaken, securityMeasuresEffectiveness, securityPersonnelReaction, otherAspects,
         lessonsLearned, recommendations
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         incident.id,
         incident.refNo,
@@ -150,6 +186,8 @@ export const IncidentModel = {
         incident.outcomeOfInvestigation,
         incident.responsiblePerson || '',
         incident.status,
+        incident.natureOfCase || '',
+        incident.workflowStage || 'Submitted',
         incident.dateCreated,
         incident.dateReported,
         incident.ownerId || null,
@@ -181,7 +219,13 @@ export const IncidentModel = {
       'reportedBy', 'registerNumber', 'sapsCaseNumber', 'policeStation', 'arrests',
       'classification', 'reportedToSapsSsa', 'outcomeOfInvestigation', 'responsiblePerson',
       'status', 'isEscalated', 'escalationLevel', 'escalationReason', 'escalationNotes',
-      'escalatedBy', 'escalatedTo', 'escalatedAt', 'dateCreated', 'dateReported', 'whatHappened', 'whereHappened', 'howHappened',
+      'escalatedBy', 'escalatedTo', 'escalatedAt',
+      'natureOfCase', 'workflowStage', 'preliminaryFindings', 'investigationFindings',
+      'assignedInvestigator', 'assignedInvestigatorBy', 'assignedInvestigatorAt',
+      'investigationSubmittedAt', 'returnReason', 'returnCount',
+      'approvedBy', 'approvedAt', 'approvalNotes',
+      'closedBy', 'closedAt', 'closureOutcome', 'closureReport',
+      'dateCreated', 'dateReported', 'whatHappened', 'whereHappened', 'howHappened',
       'whoResponsible', 'proceduresUsed', 'weaponsUsed', 'damageDone', 'actionTaken',
       'securityMeasuresEffectiveness', 'securityPersonnelReaction', 'otherAspects',
       'lessonsLearned', 'recommendations'

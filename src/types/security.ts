@@ -1,3 +1,69 @@
+// Fine-grained end-to-end workflow stage (mirrors server/models/incident.model.ts):
+//   Submitted -> Under Review -> Closed (small case)
+//                             -> Escalated -> Investigation -> Pending Approval
+//                                -> (Returned => Investigation) | Approved -> Closed
+export type WorkflowStage =
+  | 'Submitted'
+  | 'Under Review'
+  | 'Escalated'
+  | 'Investigation'
+  | 'Pending Approval'
+  | 'Approved'
+  | 'Closed';
+
+/** Expected resolution window chosen by the reporter on the incident form. */
+export const NATURE_OF_CASE_OPTIONS = [
+  '24 to 48 hours',
+  '48 hours to 7 days',
+  '7 to 14 days',
+  '14 to 30 days'
+] as const;
+
+export type NatureOfCase = typeof NATURE_OF_CASE_OPTIONS[number];
+
+export const CLOSURE_OUTCOMES = ['Closed', 'Recovered', 'Referred', 'Unfounded'] as const;
+
+export interface CaseAttachment {
+  id: string;
+  incidentId: string;
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  category: string; // reporter_document | preliminary_evidence | investigation_evidence | closure_report
+  stage: string;
+  uploadedBy: string;
+  uploadedByName: string;
+  uploadedByRole: string;
+  dateCreated: string;
+}
+
+export interface CaseEvent {
+  id: string;
+  incidentId: string;
+  eventType: string; // SUBMITTED | REVIEW_STARTED | PRELIMINARY_FINDINGS | ESCALATED | INVESTIGATOR_ASSIGNED | FINDINGS_SUBMITTED | RETURNED | APPROVED | CLOSED | ATTACHMENT_ADDED
+  stage: string;
+  actor: string;
+  actorName: string;
+  actorRole: string;
+  notes: string;
+  dateCreated: string;
+}
+
+export interface SlaInfo {
+  status: 'On Track' | 'At Risk' | 'Overdue';
+  hoursRemaining: number;
+  deadline: string;
+  isEscalated?: boolean;
+  /** Investigation due date ('YYYY-MM-DD'): report date + the working-day target. */
+  expectedDate: string;
+  /** The working-day investigation target (security policy: 14 working days). */
+  targetDays: number;
+  /** Working days used so far — frozen at closure for closed cases. */
+  daysElapsed: number;
+  /** targetDays − daysElapsed; negative once the investigation deadline has passed. */
+  daysRemaining: number;
+}
+
 export interface SecurityIncident {
   id: string;
   refNo: string;
@@ -31,7 +97,28 @@ export interface SecurityIncident {
   dateCreated: string;
   dateReported: string;
   ownerId?: string;
-  
+
+  // End-to-end case workflow fields
+  natureOfCase?: string;
+  workflowStage?: WorkflowStage | string;
+  preliminaryFindings?: string;
+  investigationFindings?: string;
+  assignedInvestigator?: string;
+  assignedInvestigatorBy?: string;
+  assignedInvestigatorAt?: string;
+  investigationSubmittedAt?: string;
+  returnReason?: string;
+  returnCount?: number;
+  approvedBy?: string;
+  approvedAt?: string;
+  approvalNotes?: string;
+  closedBy?: string;
+  closedAt?: string;
+  closureOutcome?: string;
+  closureReport?: string;
+  /** Attached by the server on reads (FR-019). */
+  slaInfo?: SlaInfo;
+
   // Incident Report detail questions
   whatHappened: string;
   whereHappened: string;
