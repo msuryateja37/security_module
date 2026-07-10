@@ -1142,6 +1142,7 @@ function App() {
           {activeView === 'dashboard' && (
             <DashboardView
               incidents={incidents}
+              currentUser={currentUser}
               onNavigate={(view) => {
                 if (view === 'report') {
                   navigateToView('submit_reports');

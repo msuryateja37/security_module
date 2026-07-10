@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Public Sans',system-ui,sans-serif;background:#F2F5F3;color:#13241D;}
+a{color:#157A5B;text-decoration:none;}a:hover{color:#0B4635;text-decoration:underline;}
+*{box-sizing:border-box;}
+input::placeholder{color:#9AA8A1;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+@keyframes pulseDot{0%,100%{transform:scale(1);opacity:1;}50%{transform:scale(1.4);opacity:.6;}}
+::-webkit-scrollbar{width:10px;height:10px;}::-webkit-scrollbar-thumb{background:#C6D2CC;border-radius:8px;}::-webkit-scrollbar-track{background:transparent;}
+</style>
+</helmet>
+
+<!-- ============ LOGIN ============ -->
+<sc-if value="{{ isLogin }}" hint-placeholder-val="{{ true }}">
+<div data-screen-label="Login" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px 20px;background:radial-gradient(1200px 800px at 50% 20%, #0A4A37 0%, #052E22 55%, #031E16 100%);">
+  <div style="width:500px;max-width:100%;background:#FFFFFF;border-radius:16px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.45);animation:fadeUp .5s ease both;">
+    <div style="background:linear-gradient(160deg,#063A2C,#052E22);padding:34px 40px 30px;text-align:center;border-bottom:3px solid #2FB98A;">
+      <div style="width:72px;height:72px;margin:0 auto 14px;background:#FFFFFF;border-radius:14px;display:flex;align-items:center;justify-content:center;">
+        <svg width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="20" fill="none" stroke="#C89B3C" stroke-width="2.5"/><circle cx="22" cy="22" r="14" fill="none" stroke="#157A5B" stroke-width="2"/><text x="22" y="27" text-anchor="middle" font-family="Public Sans" font-weight="800" font-size="12" fill="#063A2C">RSA</text></svg>
+      </div>
+      <div style="font-size:22px;font-weight:800;color:#FFFFFF;letter-spacing:-.01em;">Rural Development &amp; Land Reform</div>
+      <div style="font-size:11px;font-weight:600;color:#8FD4BA;letter-spacing:.14em;margin-top:8px;">DEPARTMENT: RURAL DEVELOPMENT AND LAND REFORM</div>
+      <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,.85);letter-spacing:.18em;margin-top:5px;">REPUBLIC OF SOUTH AFRICA</div>
+    </div>
+    <div style="padding:34px 40px 38px;">
+      <div style="text-align:center;margin-bottom:22px;">
+        <div style="font-size:21px;font-weight:800;color:#13241D;">CD: Security Services Portal</div>
+        <div style="font-size:13.5px;color:#5B6B63;margin-top:6px;line-height:1.5;">Log in to manage and report security incidents, inspections, and audit logs.</div>
+      </div>
+      <div style="font-size:11px;font-weight:700;color:#5B6B63;letter-spacing:.1em;margin-bottom:10px;">SELECT YOUR ROLE</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:24px;">
+        <sc-for list="{{ roles }}" as="r" hint-placeholder-count="5">
+          <button onClick="{{ r.go }}" style="padding:11px 8px;border-radius:9px;font-family:'Public Sans';font-size:13px;font-weight:600;cursor:pointer;transition:all .18s ease;border:1.5px solid {{ r.border }};background:{{ r.bg }};color:{{ r.color }};" style-hover="transform:translateY(-1px);box-shadow:0 4px 12px rgba(6,58,44,.15);border-color:#157A5B;" style-active="transform:translateY(0);">{{ r.name }}</button>
+        </sc-for>
+      </div>
+      <label style="display:block;font-size:13px;font-weight:700;color:#13241D;margin-bottom:7px;">Username</label>
+      <div style="position:relative;margin-bottom:18px;">
+        <svg style="position:absolute;left:14px;top:13px;" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7C8B84" stroke-width="2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <input value="{{ username }}" onChange="{{ setUsername }}" placeholder="Enter username" style="width:100%;padding:12px 14px 12px 42px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:14px;color:#13241D;outline:none;transition:border-color .15s;" style-focus="border-color:#2FB98A;box-shadow:0 0 0 3px rgba(47,185,138,.15);">
+      </div>
+      <label style="display:block;font-size:13px;font-weight:700;color:#13241D;margin-bottom:7px;">Password</label>
+      <div style="position:relative;margin-bottom:26px;">
+        <svg style="position:absolute;left:14px;top:13px;" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7C8B84" stroke-width="2" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <input value="{{ password }}" onChange="{{ setPassword }}" type="{{ pwType }}" placeholder="Enter password" style="width:100%;padding:12px 44px 12px 42px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:14px;color:#13241D;outline:none;transition:border-color .15s;" style-focus="border-color:#2FB98A;box-shadow:0 0 0 3px rgba(47,185,138,.15);">
+        <button onClick="{{ togglePw }}" style="position:absolute;right:8px;top:6px;background:none;border:none;cursor:pointer;padding:7px;border-radius:6px;" style-hover="background:#EEF3F0;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7C8B84" stroke-width="2" stroke-linecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
+      <button onClick="{{ signIn }}" style="width:100%;padding:14px;background:linear-gradient(160deg,#0B4635,#063A2C);color:#FFFFFF;border:none;border-radius:10px;font-family:'Public Sans';font-size:15px;font-weight:700;cursor:pointer;transition:all .2s ease;letter-spacing:.02em;" style-hover="transform:translateY(-1px);box-shadow:0 8px 22px rgba(6,58,44,.4);" style-active="transform:translateY(1px);box-shadow:none;">Sign In</button>
+      <div style="text-align:center;margin-top:18px;font-size:12px;color:#8A978F;">Authorised personnel only · POPIA compliant</div>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<!-- ============ APP SHELL ============ -->
+<sc-if value="{{ isApp }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;min-height:100vh;">
+
+  <!-- Sidebar -->
+  <div style="width:264px;flex:none;background:linear-gradient(180deg,#052E22 0%,#063A2C 100%);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;">
+    <div style="padding:20px 18px 14px;">
+      <div style="background:#FFFFFF;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;">
+        <svg width="34" height="34" viewBox="0 0 44 44" style="flex:none;"><circle cx="22" cy="22" r="20" fill="none" stroke="#C89B3C" stroke-width="2.5"/><circle cx="22" cy="22" r="14" fill="none" stroke="#157A5B" stroke-width="2"/><text x="22" y="27" text-anchor="middle" font-family="Public Sans" font-weight="800" font-size="12" fill="#063A2C">RSA</text></svg>
+        <div>
+          <div style="font-size:12.5px;font-weight:800;color:#0B4635;line-height:1.25;">Land Reform &amp; Rural Development</div>
+          <div style="font-size:9.5px;font-weight:600;color:#7C8B84;letter-spacing:.06em;margin-top:2px;">REPUBLIC OF SOUTH AFRICA</div>
+        </div>
+      </div>
+    </div>
+    <div style="padding:6px 14px;font-size:10.5px;font-weight:700;color:rgba(255,255,255,.38);letter-spacing:.14em;">MAIN MENU</div>
+    <div style="display:flex;flex-direction:column;gap:4px;padding:6px 12px;flex:1;">
+      <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="5">
+        <button onClick="{{ n.go }}" style="display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:9px;border:none;cursor:pointer;font-family:'Public Sans';font-size:13.5px;font-weight:600;text-align:left;transition:all .18s ease;background:{{ n.bg }};color:{{ n.color }};box-shadow:{{ n.shadow }};" style-hover="background:rgba(255,255,255,.09);color:#FFFFFF;transform:translateX(3px);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{ n.iconColor }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;transition:stroke .18s;"><path d="{{ n.icon }}"/></svg>
+          <span style="flex:1;">{{ n.label }}</span>
+          <sc-if value="{{ n.active }}" hint-placeholder-val="{{ false }}"><span style="width:6px;height:6px;border-radius:50%;background:#FFFFFF;animation:pulseDot 2s ease infinite;"></span></sc-if>
+        </button>
+      </sc-for>
+    </div>
+    <div style="padding:14px;border-top:1px solid rgba(255,255,255,.08);">
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 6px 14px;">
+        <div style="width:36px;height:36px;border-radius:50%;background:#2FB98A;display:flex;align-items:center;justify-content:center;font-weight:800;color:#052E22;font-size:14px;flex:none;">E</div>
+        <div style="min-width:0;">
+          <div style="font-size:13px;font-weight:700;color:#FFFFFF;">Employee User</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.5);">{{ roleLabel }}</div>
+        </div>
+      </div>
+      <button onClick="{{ logout }}" style="width:100%;display:flex;align-items:center;justify-content:center;gap:9px;padding:11px;border-radius:9px;border:1px solid rgba(47,185,138,.5);background:rgba(47,185,138,.12);color:#7EDDB9;font-family:'Public Sans';font-size:13.5px;font-weight:700;cursor:pointer;transition:all .18s ease;" style-hover="background:#2FB98A;color:#052E22;" style-active="transform:scale(.98);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+        Logout
+      </button>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+    <!-- Topbar -->
+    <div style="background:#FFFFFF;border-bottom:1px solid #E3EAE6;padding:0 28px;height:66px;display:flex;align-items:center;gap:18px;position:sticky;top:0;z-index:20;">
+      <div style="font-size:19px;font-weight:800;color:#13241D;letter-spacing:-.01em;flex:none;">{{ pageTitle }}</div>
+      <div style="flex:1;"></div>
+      <div style="position:relative;width:340px;max-width:32vw;">
+        <svg style="position:absolute;left:13px;top:10px;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7C8B84" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input placeholder="Search database (incidents, BTO, TI...)" style="width:100%;padding:9px 14px 9px 38px;border:1.5px solid #E3EAE6;border-radius:20px;font-family:'Public Sans';font-size:13px;background:#F6F9F7;outline:none;transition:all .15s;" style-focus="border-color:#2FB98A;background:#FFFFFF;box-shadow:0 0 0 3px rgba(47,185,138,.12);">
+      </div>
+      <button style="position:relative;width:38px;height:38px;border-radius:10px;border:1px solid #E3EAE6;background:#FFFFFF;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;" style-hover="background:#F0F5F2;border-color:#C6D2CC;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3E4E46" stroke-width="2" stroke-linecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+        <span style="position:absolute;top:7px;right:8px;width:8px;height:8px;border-radius:50%;background:#C2543B;border:1.5px solid #FFFFFF;"></span>
+      </button>
+      <button style="width:38px;height:38px;border-radius:10px;border:1px solid #E3EAE6;background:#FFFFFF;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;" style-hover="background:#F0F5F2;border-color:#C6D2CC;transform:rotate(30deg);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3E4E46" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+      </button>
+      <div style="display:flex;align-items:center;gap:10px;padding-left:6px;">
+        <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(160deg,#2FB98A,#157A5B);display:flex;align-items:center;justify-content:center;font-weight:800;color:#FFFFFF;font-size:14px;">E</div>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#13241D;line-height:1.2;">Employee User</div>
+          <div style="font-size:11px;color:#7C8B84;">{{ roleLabel }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ DASHBOARD ============ -->
+    <sc-if value="{{ isDashboard }}" hint-placeholder-val="{{ false }}">
+    <div data-screen-label="Dashboard" style="padding:26px 28px 40px;max-width:1480px;width:100%;margin:0 auto;animation:fadeUp .4s ease both;">
+
+      <!-- Executive variant: dark KPI band -->
+      <sc-if value="{{ isExec }}" hint-placeholder-val="{{ true }}">
+      <div style="background:linear-gradient(135deg,#063A2C 0%,#0B4635 60%,#0E5A43 100%);border-radius:16px;padding:24px 26px 26px;margin-bottom:22px;box-shadow:0 12px 32px rgba(6,58,44,.25);">
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
+          <div>
+            <div style="font-size:20px;font-weight:800;color:#FFFFFF;">Good morning, Employee</div>
+            <div style="font-size:13px;color:#8FD4BA;margin-top:3px;">Security overview · Friday, 10 July 2026</div>
+          </div>
+          <div style="flex:1;"></div>
+          <button onClick="{{ goSubmit }}" style="display:flex;align-items:center;gap:8px;padding:12px 20px;background:#2FB98A;color:#052E22;border:none;border-radius:10px;font-family:'Public Sans';font-size:14px;font-weight:800;cursor:pointer;transition:all .2s ease;" style-hover="transform:translateY(-2px);box-shadow:0 10px 24px rgba(47,185,138,.4);" style-active="transform:translateY(0);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            Report Incident
+          </button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;">
+          <sc-for list="{{ kpis }}" as="k" hint-placeholder-count="4">
+            <div style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:16px 18px;transition:all .2s ease;cursor:default;" style-hover="background:rgba(255,255,255,.13);transform:translateY(-3px);border-color:rgba(47,185,138,.5);">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                <div style="font-size:11px;font-weight:700;color:#8FD4BA;letter-spacing:.1em;">{{ k.label }}</div>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#7EDDB9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="{{ k.icon }}"/></svg>
+              </div>
+              <div style="font-size:34px;font-weight:800;color:#FFFFFF;line-height:1;">{{ k.value }}</div>
+              <div style="font-size:11.5px;color:rgba(255,255,255,.55);margin-top:8px;">{{ k.sub }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- Classic / Minimal variant: light KPI cards -->
+      <sc-if value="{{ isLight }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;align-items:center;margin-bottom:18px;">
+        <div>
+          <div style="font-size:20px;font-weight:800;color:#13241D;">Good morning, Employee</div>
+          <div style="font-size:13px;color:#7C8B84;margin-top:3px;">Security overview · Friday, 10 July 2026</div>
+        </div>
+        <div style="flex:1;"></div>
+        <button onClick="{{ goSubmit }}" style="display:flex;align-items:center;gap:8px;padding:12px 20px;background:linear-gradient(160deg,#0B4635,#063A2C);color:#FFFFFF;border:none;border-radius:10px;font-family:'Public Sans';font-size:14px;font-weight:700;cursor:pointer;transition:all .2s ease;" style-hover="transform:translateY(-2px);box-shadow:0 10px 24px rgba(6,58,44,.3);">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          Report Incident
+        </button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px;">
+        <sc-for list="{{ kpis }}" as="k" hint-placeholder-count="4">
+          <div style="background:#FFFFFF;border:1px solid #E3EAE6;border-radius:13px;padding:18px 20px;transition:all .2s ease;cursor:default;" style-hover="transform:translateY(-3px);box-shadow:0 12px 28px rgba(6,58,44,.12);border-color:#2FB98A;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+              <div style="font-size:11px;font-weight:700;color:#7C8B84;letter-spacing:.1em;">{{ k.label }}</div>
+              <div style="width:32px;height:32px;border-radius:9px;background:#EAF7F1;display:flex;align-items:center;justify-content:center;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#157A5B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="{{ k.icon }}"/></svg>
+              </div>
+            </div>
+            <div style="font-size:32px;font-weight:800;color:#0B4635;line-height:1;">{{ k.value }}</div>
+            <div style="font-size:11.5px;color:#8A978F;margin-top:8px;">{{ k.sub }}</div>
+          </div>
+        </sc-for>
+      </div>
+      </sc-if>
+
+      <!-- Charts row 1 -->
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:18px;margin-bottom:18px;">
+        <div style="background:#FFFFFF;border:1px solid #E3EAE6;border-radius:14px;padding:22px 24px;">
+          <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px;">
+            <div style="font-size:16px;font-weight:800;color:#13241D;">Security Incidents by Province</div>
+            <div style="flex:1;"></div>
+            <div style="font-size:12px;color:#7C8B84;">Last 12 months</div>
+          </div>
+          <div style="font-size:12.5px;color:#7C8B84;margin-bottom:18px;">Gauteng accounts for the highest volume of reported incidents</div>
+          <div style="display:flex;align-items:flex-end;gap:14px;height:190px;">
+            <sc-for list="{{ provinces }}" as="pr" hint-placeholder-count="9">
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:6px;">
+                <div style="font-size:12px;font-weight:800;color:#0B4635;">{{ pr.v }}</div>
+                <div style="width:100%;max-width:44px;height:138px;display:flex;flex-direction:column;justify-content:flex-end;flex:none;">
+                  <div style="width:100%;border-radius:7px 7px 3px 3px;background:linear-gradient(180deg,#2FB98A,#0B4635);height:{{ pr.h }};transition:filter .15s, transform .15s;cursor:default;min-height:4px;" style-hover="filter:brightness(1.25);transform:scaleX(1.08);"></div>
+                </div>
+                <div style="font-size:10.5px;font-weight:600;color:#7C8B84;white-space:nowrap;">{{ pr.name }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="background:#FFFFFF;border:1px solid #E3EAE6;border-radius:14px;padding:22px 24px;display:flex;flex-direction:column;">
+          <div style="font-size:16px;font-weight:800;color:#13241D;margin-bottom:2px;">Loss Value by Classification</div>
+          <div style="font-size:12.5px;color:#7C8B84;margin-bottom:14px;">Total estimated loss across cases</div>
+          <div style="display:flex;align-items:center;justify-content:center;position:relative;margin-bottom:14px;">
+            <svg width="176" height="176" viewBox="0 0 176 176">
+              <circle cx="88" cy="88" r="70" fill="none" stroke="#EEF3F0" stroke-width="22"/>
+              <sc-for list="{{ donutSegs }}" as="d" hint-placeholder-count="5">
+                <circle cx="88" cy="88" r="70" fill="none" stroke="{{ d.color }}" stroke-width="22" stroke-dasharray="{{ d.dash }}" stroke-dashoffset="{{ d.off }}" transform="rotate(-90 88 88)" style="transition:stroke-width .15s;" style-hover="stroke-width:26;"/>
+              </sc-for>
+            </svg>
+            <div style="position:absolute;text-align:center;">
+              <div style="font-size:11px;font-weight:700;color:#7C8B84;letter-spacing:.08em;">TOTAL LOSS</div>
+              <div style="font-size:21px;font-weight:800;color:#0B4635;">{{ lossTotal }}</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <sc-for list="{{ donutSegs }}" as="d" hint-placeholder-count="5">
+              <div style="display:flex;align-items:center;gap:9px;padding:4px 8px;border-radius:7px;transition:background .15s;" style-hover="background:#F0F5F2;">
+                <span style="width:10px;height:10px;border-radius:3px;background:{{ d.color }};flex:none;"></span>
+                <span style="font-size:12.5px;font-weight:600;color:#3E4E46;flex:1;">{{ d.label }}</span>
+                <span style="font-size:12.5px;font-weight:800;color:#13241D;">{{ d.amount }}</span>
+                <span style="font-size:11.5px;color:#8A978F;width:38px;text-align:right;">{{ d.pct }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts row 2 (hidden in Minimal) -->
+      <sc-if value="{{ showRow2 }}" hint-placeholder-val="{{ true }}">
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:18px;margin-bottom:18px;">
+        <div style="background:#FFFFFF;border:1px solid #E3EAE6;border-radius:14px;padding:22px 24px;">
+          <div style="display:flex;align-items:baseline;margin-bottom:16px;">
+            <div>
+              <div style="font-size:16px;font-weight:800;color:#13241D;">Incident Trend</div>
+              <div style="font-size:12.5px;color:#7C8B84;margin-top:2px;">Monthly reported incidents, department-wide</div>
+            </div>
+            <div style="flex:1;"></div>
+            <div style="display:flex;align-items:center;gap:7px;background:#EAF7F1;border-radius:8px;padding:6px 12px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#157A5B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/></svg>
+              <span style="font-size:12px;font-weight:800;color:#157A5B;">+12% vs last quarter</span>
+            </div>
+          </div>
+          <svg width="100%" height="200" viewBox="0 0 560 200" preserveAspectRatio="none" style="display:block;">
+            <defs>
+              <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#2FB98A" stop-opacity=".28"/>
+                <stop offset="100%" stop-color="#2FB98A" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <path d="{{ trendArea }}" fill="url(#trendFill)"/>
+            <path d="{{ trendPath }}" fill="none" stroke="#157A5B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            <sc-for list="{{ trendDots }}" as="t" hint-placeholder-count="12">
+              <circle cx="{{ t.x }}" cy="{{ t.y }}" r="4.5" fill="#FFFFFF" stroke="#157A5B" stroke-width="2.5" style="transition:r .15s;" style-hover="r:7;"/>
+            </sc-for>
+          </svg>
+          <div style="display:flex;justify-content:space-between;padding:6px 4px 0;">
+            <sc-for list="{{ months }}" as="m" hint-placeholder-count="12">
+              <span style="font-size:10.5px;font-weight:600;color:#8A978F;">{{ m.n }}</span>
+            </sc-for>
+          </div>
+        </div>
+        <div style="background:#FFFFFF;border:1px solid #E3EAE6;border-radius:14px;padding:22px 24px;display:flex;flex-direction:column;">
+          <div style="font-size:16px;font-weight:800;color:#13241D;margin-bottom:2px;">Case Status Distribution</div>
+          <div style="font-size:12.5px;color:#7C8B84;margin-bottom:18px;">All 102 active &amp; closed cases</div>
+          <div style="display:flex;height:14px;border-radius:8px;overflow:hidden;margin-bottom:20px;">
+            <sc-for list="{{ statusDist }}" as="s" hint-placeholder-count="5">
+              <div style="width:{{ s.w }};background:{{ s.color }};transition:filter .15s;" style-hover="filter:brightness(1.15);"></div>
+            </sc-for>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <sc-for list="{{ statusDist }}" as="s" hint-placeholder-count="5">
+              <div style="display:flex;align-items:center;gap:9px;padding:3px 8px;border-radius:7px;transition:background .15s;" style-hover="background:#F0F5F2;">
+                <span style="width:10px;height:10px;border-radius:50%;background:{{ s.color }};flex:none;"></span>
+                <span style="font-size:12.5px;font-weight:600;color:#3E4E46;flex:1;">{{ s.label }}</span>
+                <span style="font-size:13px;font-weight:800;color:#13241D;">{{ s.count }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="flex:1;"></div>
+          <div style="margin-top:16px;padding:14px;background:#F6F9F7;border:1px solid #E3EAE6;border-radius:10px;display:flex;align-items:center;gap:12px;">
+            <div>
+              <div style="font-size:10.5px;font-weight:700;color:#7C8B84;letter-spacing:.1em;">SAPS / SSA REFERRALS</div>
+              <div style="font-size:15px;font-weight:800;color:#13241D;margin-top:2px;">3 Cases Reported</div>
+            </div>
+            <div style="flex:1;"></div>
+            <button style="display:flex;align-items:center;gap:6px;padding:8px 14px;border:1.5px solid #0B4635;background:#FFFFFF;color:#0B4635;border-radius:8px;font-family:'Public Sans';font-size:12.5px;font-weight:700;cursor:pointer;transition:all .18s;" style-hover="background:#0B4635;color:#FFFFFF;">Register
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- Recent incidents table -->
+      <div style="background:#FFFFFF;border:1px solid #E3EAE6;border-radius:14px;overflow:hidden;">
+        <div style="display:flex;align-items:center;padding:20px 24px 16px;">
+          <div style="font-size:16px;font-weight:800;color:#13241D;">Recent Security Incidents</div>
+          <div style="flex:1;"></div>
+          <button onClick="{{ goIncidents }}" style="display:flex;align-items:center;gap:7px;padding:9px 16px;border:1.5px solid #D4DED9;background:#FFFFFF;color:#0B4635;border-radius:9px;font-family:'Public Sans';font-size:13px;font-weight:700;cursor:pointer;transition:all .18s;" style-hover="border-color:#0B4635;background:#F0F5F2;">View All Register Cases
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+        <div style="display:grid;grid-template-columns:1.2fr 1.8fr 1.2fr 0.9fr 0.9fr 0.8fr 1fr 1.1fr;gap:12px;padding:10px 24px;background:#F6F9F7;border-top:1px solid #E9EFEC;border-bottom:1px solid #E9EFEC;font-size:10.5px;font-weight:700;color:#7C8B84;letter-spacing:.08em;">
+          <div>REF NO.</div><div>DESCRIPTION</div><div>PLACE</div><div>PROVINCE</div><div>DATE</div><div>LOSS</div><div>CLASSIFICATION</div><div>STATUS</div>
+        </div>
+        <sc-for list="{{ recent }}" as="row" hint-placeholder-count="5">
+          <div onClick="{{ row.open }}" style="display:grid;grid-template-columns:1.2fr 1.8fr 1.2fr 0.9fr 0.9fr 0.8fr 1fr 1.1fr;gap:12px;padding:14px 24px;align-items:center;border-bottom:1px solid #F0F5F2;font-size:13px;cursor:pointer;transition:background .12s;" style-hover="background:#F6FBF8;">
+            <div style="font-weight:800;color:#157A5B;">{{ row.ref }}</div>
+            <div style="color:#3E4E46;">{{ row.desc }}</div>
+            <div style="color:#3E4E46;">{{ row.place }}</div>
+            <div style="color:#7C8B84;">{{ row.prov }}</div>
+            <div style="color:#7C8B84;">{{ row.date }}</div>
+            <div style="font-weight:700;color:#13241D;">{{ row.loss }}</div>
+            <div><span style="font-size:11px;font-weight:700;padding:4px 9px;border-radius:6px;background:#EEF3F0;color:#3E4E46;">{{ row.cls }}</span></div>
+            <div><span style="font-size:10.5px;font-weight:800;letter-spacing:.04em;padding:5px 10px;border-radius:20px;background:{{ row.chipBg }};color:{{ row.chipColor }};">{{ row.status }}</span></div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ============ TRACK MY INCIDENTS ============ -->
+    <sc-if value="{{ isIncidents }}" hint-placeholder-val="{{ false }}">
+    <div data-screen-label="Track My Incidents" style="padding:26px 28px 40px;max-width:1480px;width:100%;margin:0 auto;animation:fadeUp .4s ease both;">
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#7C8B84;margin-bottom:18px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        <a href="#" onClick="{{ goDashboard }}">Home</a>
+        <span>›</span>
+        <span style="font-weight:700;color:#13241D;">Track My Incidents</span>
+      </div>
+      <div style="background:linear-gradient(135deg,#063A2C,#0B4635);border-radius:14px;padding:24px 26px;margin-bottom:20px;display:flex;align-items:center;gap:20px;">
+        <div>
+          <div style="font-size:21px;font-weight:800;color:#FFFFFF;">Track My Incidents</div>
+          <div style="font-size:13px;color:#8FD4BA;margin-top:4px;">Monitor status and reference details for security incidents you submitted</div>
+        </div>
+        <div style="flex:1;"></div>
+        <div style="display:flex;gap:26px;">
+          <div style="text-align:center;"><div style="font-size:24px;font-weight:800;color:#FFFFFF;">{{ caseCount }}</div><div style="font-size:11px;font-weight:600;color:rgba(255,255,255,.55);letter-spacing:.06em;">TOTAL CASES</div></div>
+          <div style="text-align:center;"><div style="font-size:24px;font-weight:800;color:#F5C451;">{{ openCount }}</div><div style="font-size:11px;font-weight:600;color:rgba(255,255,255,.55);letter-spacing:.06em;">IN PROGRESS</div></div>
+          <div style="text-align:center;"><div style="font-size:24px;font-weight:800;color:#7EDDB9;">{{ doneCount }}</div><div style="font-size:11px;font-weight:600;color:rgba(255,255,255,.55);letter-spacing:.06em;">APPROVED</div></div>
+        </div>
+      </div>
+      <div style="background:#FFFFFF;border:1px solid #E3EAE6;border-radius:14px;overflow:hidden;">
+        <div style="padding:18px 22px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #EDF2EF;">
+          <div style="position:relative;flex:1;min-width:260px;">
+            <svg style="position:absolute;left:13px;top:11px;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7C8B84" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input value="{{ search }}" onChange="{{ setSearch }}" placeholder="Search cases by reference number, place, officer or status..." style="width:100%;padding:10px 14px 10px 38px;border:1.5px solid #E3EAE6;border-radius:9px;font-family:'Public Sans';font-size:13px;background:#F6F9F7;outline:none;transition:all .15s;" style-focus="border-color:#2FB98A;background:#FFFFFF;box-shadow:0 0 0 3px rgba(47,185,138,.12);">
+          </div>
+          <div style="display:flex;gap:7px;flex-wrap:wrap;">
+            <sc-for list="{{ filterChips }}" as="f" hint-placeholder-count="6">
+              <button onClick="{{ f.go }}" style="padding:8px 14px;border-radius:18px;border:1.5px solid {{ f.border }};background:{{ f.bg }};color:{{ f.color }};font-family:'Public Sans';font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;" style-hover="transform:translateY(-1px);border-color:#157A5B;">{{ f.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1.7fr 0.9fr 1.2fr 1.5fr 1fr 1fr 0.5fr;gap:12px;padding:10px 22px;background:#F6F9F7;border-bottom:1px solid #E9EFEC;font-size:10.5px;font-weight:700;color:#7C8B84;letter-spacing:.08em;">
+          <div>CASE DETAILS</div><div>PROVINCE</div><div>PLACE</div><div>RESPONSIBLE OFFICER</div><div>STATUS</div><div>CLASSIFICATION</div><div style="text-align:right;">VIEW</div>
+        </div>
+        <sc-for list="{{ cases }}" as="c" hint-placeholder-count="8">
+          <div onClick="{{ c.open }}" style="display:grid;grid-template-columns:1.7fr 0.9fr 1.2fr 1.5fr 1fr 1fr 0.5fr;gap:12px;padding:14px 22px;align-items:center;border-bottom:1px solid #F0F5F2;font-size:13px;cursor:pointer;transition:background .12s;" style-hover="background:#F6FBF8;">
+            <div>
+              <div style="font-weight:800;color:#157A5B;font-size:13.5px;">{{ c.ref }}</div>
+              <div style="font-size:11.5px;color:#8A978F;margin-top:3px;">Reported {{ c.date }} · {{ c.due }}</div>
+            </div>
+            <div style="color:#3E4E46;">{{ c.prov }}</div>
+            <div style="color:#3E4E46;">{{ c.place }}</div>
+            <div style="font-weight:600;color:{{ c.officerColor }};">{{ c.officer }}</div>
+            <div><span style="font-size:10.5px;font-weight:800;letter-spacing:.04em;padding:5px 10px;border-radius:20px;background:{{ c.chipBg }};color:{{ c.chipColor }};">{{ c.status }}</span></div>
+            <div><span style="font-size:11px;font-weight:700;padding:4px 9px;border-radius:6px;background:#EEF3F0;color:#3E4E46;">{{ c.cls }}</span></div>
+            <div style="text-align:right;">
+              <button onClick="{{ c.open }}" style="width:32px;height:32px;border-radius:8px;border:1px solid #E3EAE6;background:#FFFFFF;cursor:pointer;transition:all .15s;" style-hover="background:#0B4635;border-color:#0B4635;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3E4E46" stroke-width="2" stroke-linecap="round" style="vertical-align:middle;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+        </sc-for>
+        <sc-if value="{{ noResults }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:40px;text-align:center;color:#8A978F;font-size:14px;">No cases match your search.</div>
+        </sc-if>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ============ SUBMIT REPORTS ============ -->
+    <sc-if value="{{ isSubmit }}" hint-placeholder-val="{{ false }}">
+    <div data-screen-label="Submit Reports" style="padding:26px 28px 40px;max-width:1480px;width:100%;margin:0 auto;animation:fadeUp .4s ease both;">
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#7C8B84;margin-bottom:18px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        <a href="#" onClick="{{ goDashboard }}">Home</a>
+        <span>›</span>
+        <span>Submit Reports</span>
+        <span>›</span>
+        <span style="font-weight:700;color:#13241D;">Incident Notification</span>
+      </div>
+
+      <div style="background:linear-gradient(135deg,#063A2C,#0B4635);border-radius:14px;padding:24px 26px;margin-bottom:20px;display:flex;align-items:center;gap:20px;">
+        <div>
+          <div style="font-size:21px;font-weight:800;color:#FFFFFF;">Report Security Incident</div>
+          <div style="font-size:13px;color:#8FD4BA;margin-top:4px;">File incident notifications directly to the National Operations Centre</div>
+        </div>
+        <div style="flex:1;"></div>
+        <div style="text-align:right;">
+          <div style="font-size:10.5px;font-weight:700;color:rgba(255,255,255,.5);letter-spacing:.12em;">{{ schemeKicker }}</div>
+          <div style="font-size:16px;font-weight:800;color:#7EDDB9;margin-top:3px;">{{ schemeHeadline }}</div>
+        </div>
+      </div>
+
+      <!-- Scheme toggle + stepper -->
+      <div style="background:#FFFFFF;border:1px solid #E3EAE6;border-radius:14px;padding:20px 24px;margin-bottom:20px;">
+        <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;">
+          <div>
+            <div style="font-size:10.5px;font-weight:700;color:#7C8B84;letter-spacing:.12em;margin-bottom:10px;">FORM NOTIFICATION SCHEME</div>
+            <div style="display:flex;gap:10px;">
+              <sc-for list="{{ schemeBtns }}" as="sb" hint-placeholder-count="2">
+                <button onClick="{{ sb.go }}" style="display:flex;align-items:center;gap:9px;padding:11px 18px;border-radius:9px;font-family:'Public Sans';font-size:13px;font-weight:700;cursor:pointer;transition:all .18s ease;border:1.5px solid {{ sb.border }};background:{{ sb.bg }};color:{{ sb.color }};" style-hover="transform:translateY(-1px);box-shadow:0 6px 14px rgba(6,58,44,.15);">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="{{ sb.icon }}"/></svg>
+                  {{ sb.label }}
+                </button>
+              </sc-for>
+            </div>
+          </div>
+          <div style="flex:1;"></div>
+          <sc-if value="{{ showStepper }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;align-items:center;">
+            <sc-for list="{{ formSteps }}" as="fs" hint-placeholder-count="3">
+              <div style="display:flex;align-items:center;">
+                <div style="display:flex;flex-direction:column;align-items:center;gap:6px;min-width:120px;">
+                  <div style="width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;transition:all .25s ease;background:{{ fs.dotBg }};color:{{ fs.dotColor }};border:2px solid {{ fs.dotBorder }};">
+                    <sc-if value="{{ fs.done }}" hint-placeholder-val="{{ false }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></sc-if>
+                    <sc-if value="{{ fs.notDone }}" hint-placeholder-val="{{ true }}">{{ fs.n }}</sc-if>
+                  </div>
+                  <div style="font-size:11px;font-weight:700;text-align:center;color:{{ fs.labelColor }};">{{ fs.label }}</div>
+                </div>
+                <sc-if value="{{ fs.hasLine }}" hint-placeholder-val="{{ true }}"><div style="width:56px;height:2.5px;border-radius:2px;margin:0 4px 20px;background:{{ fs.lineBg }};transition:background .25s;"></div></sc-if>
+              </div>
+            </sc-for>
+          </div>
+          </sc-if>
+        </div>
+      </div>
+
+      <!-- SUCCESS -->
+      <sc-if value="{{ showSuccess }}" hint-placeholder-val="{{ false }}">
+      <div style="background:#FFFFFF;border:1px solid #E3EAE6;border-radius:14px;padding:60px 40px;text-align:center;animation:fadeUp .35s ease both;">
+        <div style="width:84px;height:84px;margin:0 auto 20px;border-radius:50%;background:#DDF5E8;display:flex;align-items:center;justify-content:center;">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#157A5B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+        </div>
+        <div style="font-size:22px;font-weight:800;color:#13241D;">{{ successTitle }}</div>
+        <div style="font-size:14px;color:#5B6B63;margin-top:8px;">Your reference number has been generated. Keep it for follow-up.</div>
+        <div style="display:inline-block;margin-top:18px;padding:14px 30px;background:#F6F9F7;border:1.5px dashed #2FB98A;border-radius:12px;font-size:24px;font-weight:800;color:#0B4635;letter-spacing:.03em;">{{ successRef }}</div>
+        <div style="font-size:12.5px;color:#8A978F;margin-top:14px;">{{ successNote }}</div>
+        <div style="display:flex;gap:12px;justify-content:center;margin-top:26px;">
+          <button onClick="{{ goIncidents }}" style="padding:12px 22px;background:#0B4635;color:#FFFFFF;border:none;border-radius:10px;font-family:'Public Sans';font-size:13.5px;font-weight:700;cursor:pointer;transition:all .18s;" style-hover="transform:translateY(-1px);box-shadow:0 8px 20px rgba(6,58,44,.3);">Track My Incidents</button>
+          <button onClick="{{ resetForm }}" style="padding:12px 22px;background:#FFFFFF;color:#0B4635;border:1.5px solid #D4DED9;border-radius:10px;font-family:'Public Sans';font-size:13.5px;font-weight:700;cursor:pointer;transition:all .18s;" style-hover="border-color:#0B4635;background:#F0F5F2;">Report Another Incident</button>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- STANDARD FORM -->
+      <sc-if value="{{ showStd }}" hint-placeholder-val="{{ true }}">
+      <div style="background:#FFFFFF;border:1px solid #E3EAE6;border-radius:14px;padding:28px 30px;">
+
+        <!-- Step 1 -->
+        <sc-if value="{{ isStep1 }}" hint-placeholder-val="{{ true }}">
+        <div style="animation:fadeUp .3s ease both;">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:22px;">
+            <div style="font-size:17px;font-weight:800;color:#13241D;">Step 1: General &amp; Contact Information</div>
+            <div style="flex:1;"></div>
+            <span style="font-size:10.5px;font-weight:800;letter-spacing:.08em;padding:6px 12px;border-radius:20px;background:#EAF7F1;color:#157A5B;">STANDARD DLRRD PROTOCOL</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px 24px;">
+            <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">Department / Institution <span style="color:#C2543B;">*</span></div><input value="Chief Directorate: Security and Facilities Management Services" readOnly style="width:100%;padding:11px 14px;border:1.5px solid #E3EAE6;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#5B6B63;background:#F6F9F7;outline:none;"></div>
+            <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">Reported By (Officer Name &amp; Rank) <span style="color:#C2543B;">*</span></div><input defaultValue="Employee User" style="width:100%;padding:11px 14px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;transition:all .15s;" style-focus="border-color:#2FB98A;box-shadow:0 0 0 3px rgba(47,185,138,.15);"></div>
+            <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">Contact Details (Tel / Email) <span style="color:#C2543B;">*</span></div><input defaultValue="employee@dlrrd.gov.za" style="width:100%;padding:11px 14px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;transition:all .15s;" style-focus="border-color:#2FB98A;box-shadow:0 0 0 3px rgba(47,185,138,.15);"></div>
+            <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">Date and Time of Occurrence <span style="color:#C2543B;">*</span></div><input type="datetime-local" style="width:100%;padding:10px 14px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;transition:all .15s;" style-focus="border-color:#2FB98A;box-shadow:0 0 0 3px rgba(47,185,138,.15);"></div>
+            <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">Place of Occurrence (Detailed Address / Office Room) <span style="color:#C2543B;">*</span></div><input placeholder="e.g. Pretoria HQ, 4th Floor Room 412" style="width:100%;padding:11px 14px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;transition:all .15s;" style-focus="border-color:#2FB98A;box-shadow:0 0 0 3px rgba(47,185,138,.15);"></div>
+            <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">Province <span style="color:#C2543B;">*</span></div><select style="width:100%;padding:11px 14px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;background:#FFFFFF;cursor:pointer;"><option>Gauteng</option><option>KwaZulu-Natal</option><option>Western Cape</option><option>Eastern Cape</option><option>Limpopo</option><option>Mpumalanga</option><option>Free State</option><option>North West</option><option>Northern Cape</option></select></div>
+            <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">Security Classification Level (Initial)</div><select style="width:100%;padding:11px 14px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;background:#FFFFFF;cursor:pointer;"><option>Unclassified</option><option>Restricted</option><option>Confidential</option><option>Secret</option><option>Top Secret</option></select></div>
+          </div>
+          <div style="display:flex;margin-top:28px;">
+            <div style="flex:1;"></div>
+            <button onClick="{{ formNext }}" style="display:flex;align-items:center;gap:9px;padding:13px 24px;background:linear-gradient(160deg,#0B4635,#063A2C);color:#FFFFFF;border:none;border-radius:10px;font-family:'Public Sans';font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;" style-hover="transform:translateY(-1px);box-shadow:0 8px 22px rgba(6,58,44,.35);">Next Step: Categorization
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- Step 2 -->
+        <sc-if value="{{ isStep2 }}" hint-placeholder-val="{{ false }}">
+        <div style="animation:fadeUp .3s ease both;">
+          <div style="font-size:17px;font-weight:800;color:#13241D;margin-bottom:6px;">Step 2: Incident Categorization &amp; Loss Details</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+            <div style="font-size:12.5px;font-weight:700;color:#13241D;">Incident Type (Select all that apply) <span style="color:#C2543B;">*</span></div>
+            <span style="font-size:11px;font-weight:800;padding:3px 10px;border-radius:14px;background:#EAF7F1;color:#157A5B;">{{ selCount }} selected</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:9px;margin-bottom:24px;">
+            <sc-for list="{{ typePills }}" as="tp" hint-placeholder-count="20">
+              <button onClick="{{ tp.go }}" style="display:flex;align-items:center;gap:7px;padding:8px 14px;border-radius:18px;font-family:'Public Sans';font-size:12.5px;font-weight:600;cursor:pointer;transition:all .15s ease;border:1.5px solid {{ tp.border }};background:{{ tp.bg }};color:{{ tp.color }};" style-hover="transform:translateY(-1px);border-color:#157A5B;">
+                <sc-if value="{{ tp.sel }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></sc-if>
+                {{ tp.label }}
+              </button>
+            </sc-for>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px 24px;">
+            <div style="grid-column:1 / -1;"><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">If other incident types, please elaborate</div><input placeholder="Elaborate details for 'other' selection" style="width:100%;padding:11px 14px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;transition:all .15s;" style-focus="border-color:#2FB98A;box-shadow:0 0 0 3px rgba(47,185,138,.15);"></div>
+            <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">Detailed Nature of Loss / Damage <span style="color:#C2543B;">*</span></div><textarea placeholder="List stolen assets, details of damage, etc." rows="3" style="width:100%;padding:11px 14px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;resize:vertical;transition:all .15s;" style-focus="border-color:#2FB98A;box-shadow:0 0 0 3px rgba(47,185,138,.15);"></textarea></div>
+            <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">Injuries or Fatalities Description</div><textarea defaultValue="None" rows="3" style="width:100%;padding:11px 14px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;resize:vertical;transition:all .15s;" style-focus="border-color:#2FB98A;box-shadow:0 0 0 3px rgba(47,185,138,.15);"></textarea></div>
+            <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">Loss Value (Replacement value in Rands) <span style="color:#C2543B;">*</span></div><div style="position:relative;"><span style="position:absolute;left:14px;top:11px;font-size:13.5px;font-weight:800;color:#7C8B84;">R</span><input type="number" placeholder="0.00" style="width:100%;padding:11px 14px 11px 32px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;transition:all .15s;" style-focus="border-color:#2FB98A;box-shadow:0 0 0 3px rgba(47,185,138,.15);"></div></div>
+            <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">Reported to SAPS or SSA?</div><select style="width:100%;padding:11px 14px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;background:#FFFFFF;cursor:pointer;"><option>No</option><option>Yes — SAPS</option><option>Yes — SSA</option><option>Yes — Both</option></select></div>
+            <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">Nature of Case (expected resolution window) <span style="color:#C2543B;">*</span></div><select style="width:100%;padding:11px 14px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;background:#FFFFFF;cursor:pointer;"><option>Select expected timeframe</option><option>Within 48 hours</option><option>48 hours to 7 days</option><option>7 to 14 days</option><option>Longer than 14 days</option></select></div>
+          </div>
+          <div style="display:flex;margin-top:28px;">
+            <button onClick="{{ formBack }}" style="display:flex;align-items:center;gap:8px;padding:13px 22px;background:#FFFFFF;color:#3E4E46;border:1.5px solid #D4DED9;border-radius:10px;font-family:'Public Sans';font-size:14px;font-weight:700;cursor:pointer;transition:all .18s;" style-hover="border-color:#0B4635;background:#F0F5F2;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>Back</button>
+            <div style="flex:1;"></div>
+            <button onClick="{{ formNext }}" style="display:flex;align-items:center;gap:9px;padding:13px 24px;background:linear-gradient(160deg,#0B4635,#063A2C);color:#FFFFFF;border:none;border-radius:10px;font-family:'Public Sans';font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;" style-hover="transform:translateY(-1px);box-shadow:0 8px 22px rgba(6,58,44,.35);">Next Step: Narrative
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- Step 3 -->
+        <sc-if value="{{ isStep3 }}" hint-placeholder-val="{{ false }}">
+        <div style="animation:fadeUp .3s ease both;">
+          <div style="font-size:17px;font-weight:800;color:#13241D;margin-bottom:20px;">Step 3: Incident Narrative Report</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px 24px;">
+            <sc-for list="{{ narrQs }}" as="nq" hint-placeholder-count="12">
+              <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">{{ nq.q }}</div><textarea rows="2" placeholder="{{ nq.ph }}" style="width:100%;padding:11px 14px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;resize:vertical;transition:all .15s;" style-focus="border-color:#2FB98A;box-shadow:0 0 0 3px rgba(47,185,138,.15);"></textarea></div>
+            </sc-for>
+          </div>
+          <div style="margin-top:20px;">
+            <div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:8px;">Supporting Documents / Evidence (photos, reports, statements)</div>
+            <div style="border:1.5px dashed #C6D2CC;border-radius:10px;padding:18px;display:flex;align-items:center;justify-content:center;gap:10px;color:#7C8B84;font-size:13px;cursor:pointer;transition:all .18s;" style-hover="border-color:#2FB98A;background:#F6FBF8;color:#157A5B;">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+              Click to attach files (max 15 MB each — PDF, Office documents, images, audio/video)
+            </div>
+          </div>
+          <div style="display:flex;margin-top:28px;">
+            <button onClick="{{ formBack }}" style="display:flex;align-items:center;gap:8px;padding:13px 22px;background:#FFFFFF;color:#3E4E46;border:1.5px solid #D4DED9;border-radius:10px;font-family:'Public Sans';font-size:14px;font-weight:700;cursor:pointer;transition:all .18s;" style-hover="border-color:#0B4635;background:#F0F5F2;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>Back</button>
+            <div style="flex:1;"></div>
+            <button onClick="{{ submitStd }}" style="display:flex;align-items:center;gap:9px;padding:13px 26px;background:#2FB98A;color:#052E22;border:none;border-radius:10px;font-family:'Public Sans';font-size:14px;font-weight:800;cursor:pointer;transition:all .2s;" style-hover="transform:translateY(-1px);box-shadow:0 10px 24px rgba(47,185,138,.4);" style-active="transform:translateY(1px);">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg>
+              Submit Standard Incident Report
+            </button>
+          </div>
+        </div>
+        </sc-if>
+      </div>
+      </sc-if>
+
+      <!-- NOC FORM -->
+      <sc-if value="{{ showNoc }}" hint-placeholder-val="{{ false }}">
+      <div style="background:#FFFFFF;border:1px solid #E3EAE6;border-radius:14px;padding:28px 30px;animation:fadeUp .3s ease both;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0B4635" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <div style="font-size:17px;font-weight:800;color:#13241D;">NOC Initial Notification (National Operations Centre)</div>
+          <div style="flex:1;"></div>
+          <span style="font-size:10px;font-weight:800;letter-spacing:.08em;padding:6px 12px;border-radius:20px;background:#FDF3D7;color:#8A6A16;">FLASH ALERT DISPATCH</span>
+        </div>
+        <div style="font-size:13px;color:#7C8B84;margin-bottom:18px;">Urgent flash incident dispatch form for immediate central monitoring in Pretoria HQ</div>
+        <div style="padding:14px 16px;background:#FFF9EC;border:1px solid #F0DFB4;border-radius:10px;display:flex;gap:11px;margin-bottom:24px;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#B98A2F" stroke-width="2" stroke-linecap="round" style="flex:none;margin-top:1px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+          <div style="font-size:12.5px;color:#7A6230;line-height:1.55;"><strong>Immediate Dispatch Mode:</strong> Submitting this NOC Initial Notification will generate an urgent reference code (<strong>NOC/SEC/2026/xxxx</strong>) and route a real-time notification to National Operations Centre supervisors.</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px 24px;">
+          <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">NOC Duty Officer / Hotline Ref</div><input placeholder="e.g. NOC-HOTLINE-0800 / Desk 4" style="width:100%;padding:11px 14px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;transition:all .15s;" style-focus="border-color:#2FB98A;box-shadow:0 0 0 3px rgba(47,185,138,.15);"></div>
+          <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">Reporting Officer Name &amp; Rank <span style="color:#C2543B;">*</span></div><input defaultValue="Employee User" style="width:100%;padding:11px 14px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;transition:all .15s;" style-focus="border-color:#2FB98A;box-shadow:0 0 0 3px rgba(47,185,138,.15);"></div>
+          <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">Contact Details (Phone / Email) <span style="color:#C2543B;">*</span></div><input defaultValue="employee@dlrrd.gov.za" style="width:100%;padding:11px 14px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;transition:all .15s;" style-focus="border-color:#2FB98A;box-shadow:0 0 0 3px rgba(47,185,138,.15);"></div>
+          <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">Date and Time of Incident <span style="color:#C2543B;">*</span></div><input type="datetime-local" style="width:100%;padding:10px 14px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;transition:all .15s;" style-focus="border-color:#2FB98A;box-shadow:0 0 0 3px rgba(47,185,138,.15);"></div>
+          <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">Place / Location of Incident <span style="color:#C2543B;">*</span></div><input placeholder="Detailed address or office location" style="width:100%;padding:11px 14px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;transition:all .15s;" style-focus="border-color:#2FB98A;box-shadow:0 0 0 3px rgba(47,185,138,.15);"></div>
+          <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">Province <span style="color:#C2543B;">*</span></div><select style="width:100%;padding:11px 14px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;background:#FFFFFF;cursor:pointer;"><option>Gauteng</option><option>KwaZulu-Natal</option><option>Western Cape</option><option>Eastern Cape</option><option>Limpopo</option><option>Mpumalanga</option><option>Free State</option><option>North West</option><option>Northern Cape</option></select></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin:24px 0 12px;">
+          <div style="font-size:12.5px;font-weight:700;color:#13241D;">Select Incident Type(s) <span style="color:#C2543B;">*</span></div>
+          <span style="font-size:11px;font-weight:800;padding:3px 10px;border-radius:14px;background:#EAF7F1;color:#157A5B;">{{ selCount }} selected</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:9px;margin-bottom:24px;">
+          <sc-for list="{{ typePills }}" as="tp2" hint-placeholder-count="20">
+            <button onClick="{{ tp2.go }}" style="display:flex;align-items:center;gap:7px;padding:8px 14px;border-radius:18px;font-family:'Public Sans';font-size:12.5px;font-weight:600;cursor:pointer;transition:all .15s ease;border:1.5px solid {{ tp2.border }};background:{{ tp2.bg }};color:{{ tp2.color }};" style-hover="transform:translateY(-1px);border-color:#157A5B;">
+              <sc-if value="{{ tp2.sel }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></sc-if>
+              {{ tp2.label }}
+            </button>
+          </sc-for>
+        </div>
+        <div style="margin-bottom:20px;"><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">Initial Notification Report Brief Details (Comprehensive Summary for NOC) <span style="color:#C2543B;">*</span></div><textarea rows="4" placeholder="Provide a concise summary of the security incident, names involved, immediate risks, and current status for NOC operational response..." style="width:100%;padding:11px 14px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;resize:vertical;transition:all .15s;" style-focus="border-color:#2FB98A;box-shadow:0 0 0 3px rgba(47,185,138,.15);"></textarea></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px 24px;margin-bottom:20px;">
+          <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">Nature of Case (expected resolution window) <span style="color:#C2543B;">*</span></div><select style="width:100%;padding:11px 14px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;background:#FFFFFF;cursor:pointer;"><option>Select expected timeframe</option><option>Within 48 hours</option><option>48 hours to 7 days</option><option>7 to 14 days</option><option>Longer than 14 days</option></select></div>
+          <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">Supporting Documents / Evidence</div><div style="border:1.5px dashed #C6D2CC;border-radius:9px;padding:11px;display:flex;align-items:center;justify-content:center;gap:9px;color:#7C8B84;font-size:12.5px;cursor:pointer;transition:all .18s;" style-hover="border-color:#2FB98A;background:#F6FBF8;color:#157A5B;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>Click to attach files</div></div>
+        </div>
+        <div style="display:flex;gap:12px;">
+          <div style="flex:1;"></div>
+          <button onClick="{{ schemeStd }}" style="padding:13px 22px;background:#FFFFFF;color:#3E4E46;border:1.5px solid #D4DED9;border-radius:10px;font-family:'Public Sans';font-size:14px;font-weight:700;cursor:pointer;transition:all .18s;" style-hover="border-color:#C2543B;color:#C2543B;">Cancel NOC Alert</button>
+          <button onClick="{{ submitNoc }}" style="display:flex;align-items:center;gap:9px;padding:13px 26px;background:linear-gradient(160deg,#0B4635,#063A2C);color:#FFFFFF;border:none;border-radius:10px;font-family:'Public Sans';font-size:14px;font-weight:800;cursor:pointer;transition:all .2s;" style-hover="transform:translateY(-1px);box-shadow:0 8px 22px rgba(6,58,44,.35);" style-active="transform:translateY(1px);">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg>
+            Submit NOC Initial Notification
+          </button>
+        </div>
+      </div>
+      </sc-if>
+
+    </div>
+    </sc-if>
+
+    <!-- ============ STUB SCREENS ============ -->
+    <sc-if value="{{ isStub }}" hint-placeholder-val="{{ false }}">
+    <div data-screen-label="Placeholder" style="flex:1;display:flex;align-items:center;justify-content:center;padding:60px 28px;animation:fadeUp .4s ease both;">
+      <div style="text-align:center;max-width:420px;">
+        <div style="width:74px;height:74px;margin:0 auto 18px;border-radius:18px;background:#EAF7F1;display:flex;align-items:center;justify-content:center;">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#157A5B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="{{ stubIcon }}"/></svg>
+        </div>
+        <div style="font-size:19px;font-weight:800;color:#13241D;">{{ stubTitle }}</div>
+        <div style="font-size:13.5px;color:#7C8B84;margin-top:8px;line-height:1.6;">This section is a placeholder in the prototype. Tell me if you'd like it designed next.</div>
+        <button onClick="{{ goDashboard }}" style="margin-top:20px;padding:11px 22px;background:#0B4635;color:#FFFFFF;border:none;border-radius:9px;font-family:'Public Sans';font-size:13.5px;font-weight:700;cursor:pointer;transition:all .18s;" style-hover="transform:translateY(-1px);box-shadow:0 8px 20px rgba(6,58,44,.3);">Back to Dashboard</button>
+      </div>
+    </div>
+    </sc-if>
+
+  </div>
+</div>
+
+<!-- ============ CASE DETAIL DRAWER ============ -->
+<sc-if value="{{ hasDetail }}" hint-placeholder-val="{{ false }}">
+  <div onClick="{{ closeCase }}" style="position:fixed;inset:0;background:rgba(3,30,22,.45);z-index:60;animation:fadeUp .2s ease both;"></div>
+  <div style="position:fixed;top:0;right:0;bottom:0;width:440px;max-width:92vw;background:#FFFFFF;z-index:61;box-shadow:-20px 0 60px rgba(3,30,22,.3);display:flex;flex-direction:column;animation:fadeUp .25s ease both;">
+    <div style="background:linear-gradient(135deg,#063A2C,#0B4635);padding:22px 26px;display:flex;align-items:flex-start;gap:12px;">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#8FD4BA;letter-spacing:.1em;">CASE REFERENCE</div>
+        <div style="font-size:20px;font-weight:800;color:#FFFFFF;margin-top:4px;">{{ dRef }}</div>
+        <span style="display:inline-block;margin-top:10px;font-size:10.5px;font-weight:800;letter-spacing:.04em;padding:5px 11px;border-radius:20px;background:{{ dChipBg }};color:{{ dChipColor }};">{{ dStatus }}</span>
+      </div>
+      <div style="flex:1;"></div>
+      <button onClick="{{ closeCase }}" style="width:32px;height:32px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.1);cursor:pointer;color:#FFFFFF;font-size:16px;line-height:1;transition:all .15s;" style-hover="background:rgba(255,255,255,.22);">✕</button>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:24px 26px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:24px;">
+        <div style="background:#F6F9F7;border-radius:10px;padding:12px 14px;"><div style="font-size:10.5px;font-weight:700;color:#7C8B84;letter-spacing:.08em;">PROVINCE</div><div style="font-size:14px;font-weight:700;color:#13241D;margin-top:4px;">{{ dProv }}</div></div>
+        <div style="background:#F6F9F7;border-radius:10px;padding:12px 14px;"><div style="font-size:10.5px;font-weight:700;color:#7C8B84;letter-spacing:.08em;">PLACE</div><div style="font-size:14px;font-weight:700;color:#13241D;margin-top:4px;">{{ dPlace }}</div></div>
+        <div style="background:#F6F9F7;border-radius:10px;padding:12px 14px;"><div style="font-size:10.5px;font-weight:700;color:#7C8B84;letter-spacing:.08em;">RESPONSIBLE OFFICER</div><div style="font-size:14px;font-weight:700;color:#13241D;margin-top:4px;">{{ dOfficer }}</div></div>
+        <div style="background:#F6F9F7;border-radius:10px;padding:12px 14px;"><div style="font-size:10.5px;font-weight:700;color:#7C8B84;letter-spacing:.08em;">CLASSIFICATION</div><div style="font-size:14px;font-weight:700;color:#13241D;margin-top:4px;">{{ dCls }}</div></div>
+      </div>
+      <div style="font-size:11px;font-weight:700;color:#7C8B84;letter-spacing:.1em;margin-bottom:14px;">CASE PROGRESS</div>
+      <div style="display:flex;flex-direction:column;">
+        <sc-for list="{{ dSteps }}" as="st" hint-placeholder-count="4">
+          <div style="display:flex;gap:14px;">
+            <div style="display:flex;flex-direction:column;align-items:center;">
+              <div style="width:26px;height:26px;border-radius:50%;background:{{ st.dotBg }};border:2.5px solid {{ st.dotBorder }};display:flex;align-items:center;justify-content:center;flex:none;">
+                <sc-if value="{{ st.done }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></sc-if>
+              </div>
+              <sc-if value="{{ st.hasLine }}" hint-placeholder-val="{{ true }}"><div style="width:2.5px;flex:1;min-height:30px;background:{{ st.lineBg }};"></div></sc-if>
+            </div>
+            <div style="padding-bottom:22px;">
+              <div style="font-size:13.5px;font-weight:800;color:{{ st.labelColor }};">{{ st.label }}</div>
+              <div style="font-size:12px;color:#8A978F;margin-top:3px;">{{ st.sub }}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="margin-top:8px;padding:14px 16px;background:#FFF9EC;border:1px solid #F0DFB4;border-radius:10px;display:flex;gap:11px;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#B98A2F" stroke-width="2" stroke-linecap="round" style="flex:none;margin-top:1px;"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+        <div style="font-size:12.5px;color:#7A6230;line-height:1.55;">{{ dDue }} — investigations must conclude within 14 working days of assignment per departmental SLA.</div>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;variant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Executive&quot;,&quot;Classic&quot;,&quot;Minimal&quot;],&quot;default&quot;:&quot;Classic&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;startOn&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;login&quot;,&quot;dashboard&quot;,&quot;incidents&quot;],&quot;default&quot;:&quot;login&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Layout&quot;}}">
+class Component extends DCLogic {
+  state = { screen: null, role: 'Employee', username: '', password: '', showPw: false, p: 0, search: '', filter: 'All', detail: null, scheme: 'standard', step: 1, types: {}, submittedRef: null };
+
+  componentDidMount() { this._anim(); }
+  componentWillUnmount() { cancelAnimationFrame(this._raf); }
+
+  _anim() {
+    cancelAnimationFrame(this._raf);
+    const t0 = performance.now();
+    const tick = (t) => {
+      const k = Math.min(1, (t - t0) / 900);
+      this.setState({ p: 1 - Math.pow(1 - k, 3) });
+      if (k < 1) this._raf = requestAnimationFrame(tick);
+    };
+    this._raf = requestAnimationFrame(tick);
+  }
+
+  _go(s) {
+    this.setState({ screen: s, detail: null });
+    if (s === 'dashboard') this._anim();
+  }
+
+  _chip(status) {
+    const map = {
+      'UNDER REVIEW': ['#FDF3D7', '#8A6A16'],
+      'SUBMITTED': ['#E8EDF2', '#3F5364'],
+      'OPEN': ['#FDE3DC', '#9C3B24'],
+      'ESCALATED': ['#FBDAD3', '#A83A22'],
+      'APPROVED': ['#DDF5E8', '#136B4A'],
+      'RESOLVED': ['#DDF5E8', '#136B4A'],
+      'UNDER INVESTIGATION': ['#FDF3D7', '#8A6A16']
+    };
+    return map[status] || ['#EEF3F0', '#3E4E46'];
+  }
+
+  _stepsFor(c) {
+    const order = ['Submitted', 'Preliminary Review', 'Investigation', 'Resolved'];
+    const idxMap = { 'SUBMITTED': 0, 'OPEN': 0, 'UNDER REVIEW': 1, 'UNDER INVESTIGATION': 2, 'ESCALATED': 2, 'APPROVED': 3, 'RESOLVED': 3 };
+    const cur = idxMap[c.status] ?? 0;
+    const subs = ['Incident logged and reference number issued', 'Security coordinator screening the report', 'Assigned investigator gathering evidence', 'Outcome recorded and case closed'];
+    return order.map((label, i) => {
+      const done = i < cur, current = i === cur;
+      return {
+        label, sub: current ? 'In progress — ' + c.officer : subs[i],
+        done,
+        dotBg: done ? '#157A5B' : current ? '#2FB98A' : '#FFFFFF',
+        dotBorder: done ? '#157A5B' : current ? '#2FB98A' : '#D4DED9',
+        lineBg: done ? '#157A5B' : '#E3EAE6',
+        labelColor: (done || current) ? '#13241D' : '#9AA8A1',
+        hasLine: i < order.length - 1
+      };
+    });
+  }
+
+  renderVals() {
+    const s = this.state;
+    const p = s.p;
+    const screen = s.screen ?? (this.props.startOn ?? 'login');
+    const variant = this.props.variant ?? 'Executive';
+    const nav = (id) => () => this._go(id);
+
+    // ---- static data ----
+    const provData = [
+      ['Gauteng', 34], ['KwaZulu-Natal', 27], ['Western Cape', 21], ['Eastern Cape', 16],
+      ['Limpopo', 12], ['Mpumalanga', 10], ['Free State', 8], ['North West', 7], ['Northern Cape', 4]
+    ];
+    const maxProv = 34;
+    const lossData = [
+      ['Unclassified', 1240000, '#2FB98A'], ['Restricted', 860000, '#157A5B'],
+      ['Confidential', 520000, '#0B4635'], ['Secret', 280000, '#C89B3C'], ['Top Secret', 84000, '#B4432D']
+    ];
+    const lossSum = lossData.reduce((a, d) => a + d[1], 0);
+    const trend = [14, 18, 16, 22, 19, 25, 28, 24, 30, 27, 33, 29];
+    const monthNames = ['Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'];
+    const statusData = [
+      ['Resolved', 41, '#2FB98A'], ['Under Review', 24, '#D6A331'], ['Submitted', 18, '#64748B'],
+      ['Under Investigation', 12, '#157A5B'], ['Escalated', 7, '#C2543B']
+    ];
+    const statusSum = statusData.reduce((a, d) => a + d[1], 0);
+
+    const fmtR = (n) => 'R ' + n.toLocaleString('en-ZA').replace(/,/g, ' ');
+    const fmtRk = (n) => n >= 1000000 ? 'R ' + (n / 1000000).toFixed(2) + 'M' : 'R ' + Math.round(n / 1000) + 'k';
+
+    const allCases = [
+      { ref: 'SEC/2026/2819', desc: 'Theft of laptop equipment', prov: 'Gauteng', place: 'Pretoria CBD Office', officer: 'Security Coordinator 1 (Gauteng)', status: 'UNDER REVIEW', cls: 'Confidential', date: '10 Jul 2026', due: 'Day 0/14 · due 30 Jul', loss: 86500 },
+      { ref: 'SEC/2026/2504', desc: 'Unauthorised access to server room', prov: 'Gauteng', place: 'Head Office, Arcadia', officer: 'Unassigned', status: 'SUBMITTED', cls: 'Secret', date: '10 Jul 2026', due: 'Day 0/14 · due 30 Jul', loss: 0 },
+      { ref: 'SEC/2026/9921', desc: 'Lost access card reported', prov: 'KwaZulu-Natal', place: 'Durban Regional Office', officer: 'Unassigned', status: 'OPEN', cls: 'Restricted', date: '08 Jul 2026', due: 'Day 2/14 · due 28 Jul', loss: 1200 },
+      { ref: 'SEC/2026/4500', desc: 'Vandalism of perimeter fencing', prov: 'Gauteng', place: 'Ekurhuleni Regional Office', officer: 'Chief Director', status: 'ESCALATED', cls: 'Unclassified', date: '08 Jul 2026', due: 'Day 2/14 · due 28 Jul', loss: 245000 },
+      { ref: 'SEC/2026/6211', desc: 'Document security breach', prov: 'Western Cape', place: 'Cape Town Office', officer: 'Chief Security Investigator', status: 'APPROVED', cls: 'Top Secret', date: '08 Jul 2026', due: 'Closed 09 Jul', loss: 412000 },
+      { ref: 'SEC/2026/5624', desc: 'Vehicle break-in, state fleet', prov: 'Gauteng', place: 'Johannesburg Office', officer: 'Security Coordinator 1 (Gauteng)', status: 'UNDER REVIEW', cls: 'Unclassified', date: '08 Jul 2026', due: 'Day 2/14 · due 28 Jul', loss: 38900 },
+      { ref: 'SEC/2026/3310', desc: 'Suspicious individual on premises', prov: 'Limpopo', place: 'Polokwane Office', officer: 'Chief Director', status: 'ESCALATED', cls: 'Restricted', date: '07 Jul 2026', due: 'Day 3/14 · due 27 Jul', loss: 0 },
+      { ref: 'SEC/2026/1529', desc: 'Missing survey equipment', prov: 'Gauteng', place: 'Tshwane Office', officer: 'Security Coordinator 1 (Gauteng)', status: 'APPROVED', cls: 'Confidential', date: '07 Jul 2026', due: 'Closed 08 Jul', loss: 132000 }
+    ];
+
+    const withChip = (c) => {
+      const [bg, col] = this._chip(c.status);
+      return { ...c, chipBg: bg, chipColor: col, officerColor: c.officer === 'Unassigned' ? '#C2543B' : '#13241D', loss: fmtR(c.loss), open: () => this.setState({ detail: c }) };
+    };
+
+    // ---- filtering (incidents page) ----
+    const q = s.search.toLowerCase();
+    const filtered = allCases
+      .filter(c => s.filter === 'All' || c.status === s.filter)
+      .filter(c => !q || [c.ref, c.place, c.prov, c.officer, c.status, c.desc].join(' ').toLowerCase().includes(q))
+      .map(withChip);
+
+    const filters = ['All', 'SUBMITTED', 'UNDER REVIEW', 'OPEN', 'ESCALATED', 'APPROVED'];
+
+    // ---- donut ----
+    const C = 2 * Math.PI * 70;
+    let acc = 0;
+    const donutSegs = lossData.map(([label, v, color]) => {
+      const frac = v / lossSum;
+      const len = Math.max(0, frac * C * p - 3);
+      const seg = { label, color, amount: fmtRk(v), pct: Math.round(frac * 100) + '%', dash: len.toFixed(1) + ' ' + (C - len).toFixed(1), off: (-acc * C).toFixed(1) };
+      acc += frac;
+      return seg;
+    });
+
+    // ---- trend ----
+    const maxT = 35;
+    const pts = trend.map((v, i) => [i * (560 / 11), 185 - (v / maxT) * 165 * p]);
+    const trendPath = 'M' + pts.map(pt => pt[0].toFixed(1) + ' ' + pt[1].toFixed(1)).join(' L');
+    const trendArea = trendPath + ' L560 200 L0 200 Z';
+
+    // ---- KPIs ----
+    const kpiData = [
+      ['MY REPORTED INCIDENTS', 24, 'Security incidents you have submitted', 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'],
+      ['AWAITING REVIEW', 6, 'Pending preliminary review by coordinator', 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15l2 2 4-4'],
+      ['UNDER INVESTIGATION', 5, 'Investigations in progress on your reports', 'M23 6l-9.5 9.5-5-5L1 18M17 6h6v6'],
+      ['RESOLVED', 13, 'Closed with outcome recorded', 'M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4L12 14.01l-3-3']
+    ];
+
+    const detail = s.detail;
+
+    return {
+      // routing
+      isLogin: screen === 'login',
+      isApp: screen !== 'login',
+      isDashboard: screen === 'dashboard',
+      isIncidents: screen === 'incidents',
+      isStub: ['ai', 'policy'].includes(screen),
+      isSubmit: screen === 'submit',
+      isExec: variant === 'Executive',
+      isLight: variant !== 'Executive',
+      showRow2: variant !== 'Minimal',
+      pageTitle: { dashboard: 'Dashboard', incidents: 'Track My Incidents', submit: 'Submit Security Reports', ai: 'AI Assistant', policy: 'Policy Hub' }[screen] || 'Dashboard',
+      roleLabel: s.role,
+      goDashboard: (e) => { if (e && e.preventDefault) e.preventDefault(); this._go('dashboard'); },
+      goIncidents: nav('incidents'),
+      goSubmit: nav('submit'),
+      logout: nav('login'),
+
+      // login
+      roles: ['Employee', 'Security Coordinator', 'Chief Investigator', 'Chief Security Director', 'System Administrator'].map(name => {
+        const sel = s.role === name;
+        return { name, bg: sel ? '#0B4635' : '#FFFFFF', color: sel ? '#FFFFFF' : '#3E4E46', border: sel ? '#0B4635' : '#D4DED9', go: () => this.setState({ role: name, username: name.toLowerCase().replace(/ /g, '.') + '@drdlr.gov.za' }) };
+      }),
+      username: s.username, password: s.password,
+      setUsername: (e) => this.setState({ username: e.target.value }),
+      setPassword: (e) => this.setState({ password: e.target.value }),
+      pwType: s.showPw ? 'text' : 'password',
+      togglePw: () => this.setState({ showPw: !s.showPw }),
+      signIn: () => this._go('dashboard'),
+
+      // sidebar
+      navItems: [
+        ['dashboard', 'Dashboard', 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z'],
+        ['submit', 'Submit Reports', 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h6'],
+        ['incidents', 'Track My Incidents', 'M3 7h18v13H3zM8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18'],
+        ['ai', 'AI Assistant', 'M12 3l1.8 4.8L18 9.6l-4.2 1.8L12 16l-1.8-4.6L6 9.6l4.2-1.8zM19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z'],
+        ['policy', 'Policy Hub', 'M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15zM4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5']
+      ].map(([id, label, icon]) => {
+        const active = screen === id;
+        return { label, icon, active, go: nav(id), bg: active ? 'linear-gradient(90deg,#2FB98A,#1E9E71)' : 'transparent', color: active ? '#052E22' : 'rgba(255,255,255,.72)', iconColor: active ? '#052E22' : '#7EDDB9', shadow: active ? '0 6px 16px rgba(47,185,138,.35)' : 'none' };
+      }),
+
+      // dashboard
+      kpis: kpiData.map(([label, v, sub, icon]) => ({ label, sub, icon, value: Math.round(v * p) })),
+      provinces: provData.map(([name, v]) => ({ name: name.length > 9 ? name.slice(0, 8) + '…' : name, v, h: ((v / maxProv) * 100 * p).toFixed(1) + '%' })),
+      donutSegs, lossTotal: fmtRk(lossSum),
+      trendPath, trendArea,
+      trendDots: pts.map(pt => ({ x: pt[0].toFixed(1), y: pt[1].toFixed(1) })),
+      months: monthNames.map(n => ({ n })),
+      statusDist: statusData.map(([label, count, color]) => ({ label, count, color, w: ((count / statusSum) * 100 * p).toFixed(1) + '%' })),
+      recent: allCases.slice(0, 5).map(withChip),
+
+      // incidents page
+      search: s.search,
+      setSearch: (e) => this.setState({ search: e.target.value }),
+      filterChips: filters.map(f => {
+        const active = s.filter === f;
+        return { label: f === 'All' ? 'All Cases' : f.charAt(0) + f.slice(1).toLowerCase(), go: () => this.setState({ filter: f }), bg: active ? '#0B4635' : '#FFFFFF', color: active ? '#FFFFFF' : '#3E4E46', border: active ? '#0B4635' : '#D4DED9' };
+      }),
+      cases: filtered,
+      noResults: filtered.length === 0,
+      caseCount: allCases.length,
+      openCount: allCases.filter(c => !['APPROVED', 'RESOLVED'].includes(c.status)).length,
+      doneCount: allCases.filter(c => ['APPROVED', 'RESOLVED'].includes(c.status)).length,
+
+      // submit reports form
+      ...(() => {
+        const isNoc = s.scheme === 'noc';
+        const submitted = !!s.submittedRef;
+        const typeNames = ['Loss of information', 'Armed Robbery', 'Violence (workplace)', 'Conflict of interest', 'Malicious damage to property', 'Trespassing', 'Bomb Threat', 'Robbery', 'Fraud', 'Extortion', 'Sabotage', 'Drugs', 'Harassment', 'Assault', 'Theft', 'Kidnapping', 'Arson', 'Poaching', 'Accidental discharge of a firearm', 'Acts of terrorism / terror', 'Violation of permit system', 'Fire', 'Explosion', 'Hostage situation', 'Firearm related', 'Permit related', 'Firearm left unattended', 'Accidental damage to property'];
+        const stepLabels = ['General & Contact Info', 'Categorization & Loss', 'Narrative Report'];
+        const narrData = [
+          ['What happened?', 'Describe the incident'], ['Where did it happen?', 'Exact location'],
+          ['How did it happen?', 'Sequence of events'], ['Who is responsible?', 'Known or suspected persons'],
+          ['What weapons were used (if any)?', 'Firearms, tools, etc.'], ['What security procedures were used?', 'Protocols followed'],
+          ['What damage was done (include rand value)?', 'Estimated damage'], ['Any other aspects to report?', 'Additional context'],
+          ['How did security personnel react?', 'Response actions'], ['How effective were existing security measures?', 'Assessment'],
+          ['What was done about the incident? (Actions Taken)', 'Immediate remediation'], ['What lessons can be learnt?', 'Preventative insight'],
+          ['Any recommendations?', 'Suggested improvements']
+        ];
+        return {
+          schemeKicker: isNoc ? 'FLASH DISPATCH PROTOCOL' : 'STEP ' + s.step + ' OF 3',
+          schemeHeadline: isNoc ? 'Direct NOC Alert Dispatch' : stepLabels[s.step - 1],
+          schemeBtns: [
+            { label: 'DLRRD Standard Form', icon: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h6', key: 'standard' },
+            { label: 'NOC Initial Notification', icon: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z', key: 'noc' }
+          ].map(b => {
+            const active = s.scheme === b.key;
+            return { ...b, go: () => this.setState({ scheme: b.key, submittedRef: null }), bg: active ? '#0B4635' : '#FFFFFF', color: active ? '#FFFFFF' : '#3E4E46', border: active ? '#0B4635' : '#D4DED9' };
+          }),
+          showStepper: !isNoc && !submitted,
+          formSteps: stepLabels.map((label, i) => {
+            const n = i + 1, done = n < s.step, current = n === s.step;
+            return { n, label, done, notDone: !done, hasLine: n < 3, dotBg: done ? '#157A5B' : current ? '#0B4635' : '#FFFFFF', dotColor: current ? '#FFFFFF' : '#9AA8A1', dotBorder: (done || current) ? (done ? '#157A5B' : '#0B4635') : '#D4DED9', labelColor: (done || current) ? '#13241D' : '#9AA8A1', lineBg: done ? '#157A5B' : '#E3EAE6' };
+          }),
+          showStd: !isNoc && !submitted,
+          showNoc: isNoc && !submitted,
+          showSuccess: submitted,
+          isStep1: s.step === 1, isStep2: s.step === 2, isStep3: s.step === 3,
+          formNext: () => this.setState({ step: Math.min(3, s.step + 1) }),
+          formBack: () => this.setState({ step: Math.max(1, s.step - 1) }),
+          typePills: typeNames.map(t => {
+            const sel = !!s.types[t];
+            return { label: t, sel, go: () => this.setState({ types: { ...s.types, [t]: !sel } }), bg: sel ? '#0B4635' : '#FFFFFF', color: sel ? '#FFFFFF' : '#3E4E46', border: sel ? '#0B4635' : '#D4DED9' };
+          }),
+          selCount: Object.values(s.types).filter(Boolean).length,
+          narrQs: narrData.map(([q, ph]) => ({ q, ph })),
+          submitStd: () => this.setState({ submittedRef: 'SEC/2026/' + (1000 + Math.floor(Math.random() * 9000)), step: 1, types: {} }),
+          submitNoc: () => this.setState({ submittedRef: 'NOC/SEC/2026/' + (1000 + Math.floor(Math.random() * 9000)), types: {} }),
+          schemeStd: () => this.setState({ scheme: 'standard' }),
+          resetForm: () => this.setState({ submittedRef: null, step: 1, types: {}, scheme: 'standard' }),
+          successTitle: isNoc ? 'NOC Flash Alert Dispatched' : 'Incident Report Submitted',
+          successRef: s.submittedRef || '',
+          successNote: isNoc ? 'National Operations Centre supervisors have been notified in real time.' : 'Your report is queued for preliminary review by the security coordinator (14-day SLA).'
+        };
+      })(),
+
+      // stub
+      stubTitle: { submit: 'Submit Reports', ai: 'AI Assistant', policy: 'Policy Hub' }[screen] || '',
+      stubIcon: { submit: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h6', ai: 'M12 3l1.8 4.8L18 9.6l-4.2 1.8L12 16l-1.8-4.6L6 9.6l4.2-1.8z', policy: 'M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15zM4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5' }[screen] || '',
+
+      // drawer
+      hasDetail: !!detail,
+      closeCase: () => this.setState({ detail: null }),
+      dRef: detail ? detail.ref : '', dProv: detail ? detail.prov : '', dPlace: detail ? detail.place : '',
+      dOfficer: detail ? detail.officer : '', dCls: detail ? detail.cls : '', dStatus: detail ? detail.status : '',
+      dChipBg: detail ? this._chip(detail.status)[0] : '#EEF3F0', dChipColor: detail ? this._chip(detail.status)[1] : '#3E4E46',
+      dDue: detail ? detail.due : '',
+      dSteps: detail ? this._stepsFor(detail) : []
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,22 +1,95 @@
 import React from 'react';
+import type { LucideIcon } from 'lucide-react';
 import type { SecurityIncident } from '../types/security';
-import { Shield, AlertTriangle, CheckCircle, TrendingUp, DollarSign, ArrowRight, FileSearch } from 'lucide-react';
+import type { UserProfile } from '../security/roleAccess';
+import { Shield, AlertTriangle, CheckCircle, TrendingUp, DollarSign, ArrowRight, FileSearch, FileText, Briefcase, Clock, ClipboardCheck, ArrowUpRight } from 'lucide-react';
 import { PROVINCES } from '../data/mockData';
 
 interface DashboardViewProps {
   incidents: SecurityIncident[];
+  currentUser: UserProfile;
   onNavigate: (view: string) => void;
 }
 
-export const DashboardView: React.FC<DashboardViewProps> = ({ incidents, onNavigate }) => {
+interface KpiCard {
+  title: string;
+  icon: LucideIcon;
+  iconClass: 'primary' | 'warning' | 'success' | 'danger';
+  value: string;
+  footer: string;
+}
+
+const isCaseClosed = (i: SecurityIncident) =>
+  i.status === 'Closed' || i.workflowStage === 'Closed';
+
+// Submitted / Under Review — waiting on the coordinator's preliminary review.
+const isAwaitingReview = (i: SecurityIncident) =>
+  !isCaseClosed(i) &&
+  (i.workflowStage
+    ? i.workflowStage === 'Submitted' || i.workflowStage === 'Under Review'
+    : i.status === 'Open');
+
+// Escalated onwards — an investigation is underway or awaiting sign-off.
+const isInInvestigation = (i: SecurityIncident) =>
+  !isCaseClosed(i) && !isAwaitingReview(i);
+
+// FR-019: SLA status indicators (At Risk / Overdue) surfaced on dashboards.
+const needsSlaAttention = (i: SecurityIncident) =>
+  !isCaseClosed(i) && (i.slaInfo?.status === 'At Risk' || i.slaInfo?.status === 'Overdue');
+
+// Role-based dashboards (FR-029): each role's KPIs reflect its own workload.
+// `incidents` is already scoped by the server (own / province / assigned / national).
+const getKpisForRole = (user: UserProfile, incidents: SecurityIncident[]): KpiCard[] => {
+  const activeCases = incidents.filter(i => !isCaseClosed(i)).length;
+  const closedCases = incidents.filter(isCaseClosed).length;
+  const awaitingReview = incidents.filter(isAwaitingReview).length;
+  const inInvestigation = incidents.filter(isInInvestigation).length;
+  const slaAttention = incidents.filter(needsSlaAttention).length;
+  const totalLoss = incidents.reduce((sum, i) => sum + i.lossValue, 0);
+
+  switch (user.role) {
+    case 'security_coordinator':
+      return [
+        { title: 'Open Provincial Cases', icon: AlertTriangle, iconClass: 'primary', value: String(activeCases), footer: `Active cases in ${user.province}` },
+        { title: 'Pending My Review', icon: FileSearch, iconClass: 'warning', value: String(awaitingReview), footer: 'Submitted cases awaiting preliminary review' },
+        { title: 'SLA At Risk / Overdue', icon: Clock, iconClass: 'danger', value: String(slaAttention), footer: 'Investigations nearing or past the 14-day target' },
+        { title: 'Provincial Value of Loss', icon: DollarSign, iconClass: 'danger', value: `R ${totalLoss.toLocaleString()}`, footer: `Estimated losses recorded in ${user.province}` }
+      ];
+
+    case 'chief_security_investigator':
+      return [
+        { title: 'Assigned Investigations', icon: Briefcase, iconClass: 'primary', value: String(activeCases), footer: 'Active cases in your portfolio' },
+        { title: 'Findings to Submit', icon: FileText, iconClass: 'warning', value: String(inInvestigation), footer: 'Escalated cases with investigations underway' },
+        { title: 'SLA At Risk / Overdue', icon: Clock, iconClass: 'danger', value: String(slaAttention), footer: 'Investigations nearing or past the 14-day target' },
+        { title: 'Completed Investigations', icon: CheckCircle, iconClass: 'success', value: String(closedCases), footer: 'Cases closed with findings approved' }
+      ];
+
+    case 'security_director': {
+      const pendingApproval = incidents.filter(i => !isCaseClosed(i) && i.workflowStage === 'Pending Approval').length;
+      const escalated = incidents.filter(i => !isCaseClosed(i) && Boolean(i.isEscalated)).length;
+      return [
+        { title: 'National Active Cases', icon: AlertTriangle, iconClass: 'primary', value: String(activeCases), footer: 'Open cases across all provinces' },
+        { title: 'Pending My Approval', icon: ClipboardCheck, iconClass: 'warning', value: String(pendingApproval), footer: 'Investigation findings awaiting your decision' },
+        { title: 'Escalated Cases', icon: ArrowUpRight, iconClass: 'danger', value: String(escalated), footer: 'Cases escalated for national attention' },
+        { title: 'National Value of Loss', icon: DollarSign, iconClass: 'danger', value: `R ${totalLoss.toLocaleString()}`, footer: 'Estimated losses across all provinces' }
+      ];
+    }
+
+    // Employees and the System Administrator only track incidents they reported.
+    default:
+      return [
+        { title: 'My Reported Incidents', icon: Shield, iconClass: 'primary', value: String(incidents.length), footer: 'Security incidents you have submitted' },
+        { title: 'Awaiting Review', icon: FileSearch, iconClass: 'warning', value: String(awaitingReview), footer: 'Pending preliminary review by the coordinator' },
+        { title: 'Under Investigation', icon: TrendingUp, iconClass: 'primary', value: String(inInvestigation), footer: 'Investigations in progress on your reports' },
+        { title: 'Resolved', icon: CheckCircle, iconClass: 'success', value: String(closedCases), footer: 'Closed with outcome recorded' }
+      ];
+  }
+};
+
+export const DashboardView: React.FC<DashboardViewProps> = ({ incidents, currentUser, onNavigate }) => {
   // All KPIs are computed from the incidents the server returned for this user
   // (already scoped to their province/role) — no seeded statistics.
-  const activeCases = incidents.filter(i => i.status !== 'Closed').length;
-  const closedCases = incidents.filter(i => i.status === 'Closed').length;
-  const underReviewCases = incidents.filter(i =>
-    i.status !== 'Closed' &&
-    (i.workflowStage ? i.workflowStage === 'Under Review' : i.status === 'Under Investigation')
-  ).length;
+  const kpis = getKpisForRole(currentUser, incidents);
   const totalLoss = incidents.reduce((sum, i) => sum + i.lossValue, 0);
   const sapsReferrals = incidents.filter(i => i.reportedToSapsSsa === 'Yes' || i.status === 'SAPS Case').length;
 
@@ -51,52 +124,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ incidents, onNavig
         </button>
       </div>
 
-      {/* KPI Cards Grid */}
+      {/* KPI Cards Grid — personalized per role (FR-029) */}
       <div className="grid-cols-4">
-        <div className="glass-card stat-card">
-          <div className="stat-header">
-            <span className="stat-title">Active Security Cases</span>
-            <AlertTriangle className="stat-icon primary" size={24} />
-          </div>
-          <div className="stat-value">{activeCases}</div>
-          <div className="stat-footer">
-            <span>Currently under active investigation</span>
-          </div>
-        </div>
-
-        <div className="glass-card stat-card">
-          <div className="stat-header">
-            <span className="stat-title">Under Review</span>
-            <FileSearch className="stat-icon warning" size={24} />
-          </div>
-          <div className="stat-value">{underReviewCases}</div>
-          <div className="stat-footer">
-            <span>Preliminary review by coordinator</span>
-          </div>
-        </div>
-
-        <div className="glass-card stat-card">
-          <div className="stat-header">
-            <span className="stat-title">Resolved Cases</span>
-            <CheckCircle className="stat-icon success" size={24} />
-          </div>
-          <div className="stat-value">{closedCases}</div>
-          <div className="stat-footer">
-            <span>Closed with outcome recorded</span>
-          </div>
-        </div>
-
-        <div className="glass-card stat-card">
-          <div className="stat-header">
-            <span className="stat-title">Total Value of Loss</span>
-            <DollarSign className="stat-icon danger" size={24} />
-          </div>
-          <div className="stat-value">R {totalLoss.toLocaleString()}</div>
-          <div className="stat-footer">
-            <span className="stat-trend-down">Estimated replacement value</span>
-          </div>
-        </div>
-
+        {kpis.map(kpi => {
+          const Icon = kpi.icon;
+          return (
+            <div className="glass-card stat-card" key={kpi.title}>
+              <div className="stat-header">
+                <span className="stat-title">{kpi.title}</span>
+                <Icon className={`stat-icon ${kpi.iconClass}`} size={24} />
+              </div>
+              <div className="stat-value">{kpi.value}</div>
+              <div className="stat-footer">
+                <span>{kpi.footer}</span>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Main dashboard visual statistics */}

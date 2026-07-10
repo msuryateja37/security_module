@@ -198,7 +198,8 @@ export const CaseWorkflowController = {
       const attachmentId = `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       let stored;
       try {
-        stored = FileStorageService.saveBase64(id, attachmentId, fileName, dataBase64);
+        // Folder-per-case in the document store, named after the case reference
+        stored = await FileStorageService.saveBase64(incident.refNo || id, attachmentId, fileName, dataBase64, mimeType);
       } catch (err: any) {
         return ResponseView.sendError(res, err.message || 'Failed to store file', 'Validation failed', 400);
       }
@@ -246,14 +247,18 @@ export const CaseWorkflowController = {
       if (!attachment || attachment.incidentId !== id) {
         return ResponseView.sendError(res, 'Attachment not found', 'Operation failed', 404);
       }
-      if (!FileStorageService.exists(attachment.storagePath)) {
+      if (!(await FileStorageService.exists(attachment.storagePath))) {
         return ResponseView.sendError(res, 'Stored file is missing from the upload store', 'Operation failed', 410);
       }
 
       await audit(user, 'READ', id, `Downloaded attachment "${attachment.fileName}" from ${incident.refNo}`);
 
       res.setHeader('Content-Type', attachment.mimeType || 'application/octet-stream');
-      res.download(FileStorageService.resolve(attachment.storagePath), attachment.fileName);
+      res.setHeader('Content-Length', attachment.fileSize);
+      res.setHeader('Content-Disposition', `attachment; filename="${attachment.fileName.replace(/[^\w.\- ()]/g, '_')}"`);
+      const stream = await FileStorageService.openReadStream(attachment.storagePath);
+      stream.on('error', () => res.destroy());
+      stream.pipe(res);
     } catch (error) {
       ResponseView.sendError(res, error as any, 'Failed to download attachment');
     }
