@@ -1136,7 +1136,7 @@ function App() {
         </header>
 
         {/* Main Content Area */}
-        <main className="main-content" style={{ flexGrow: 1, padding: '2rem' }}>
+        <main className="main-content" style={{ flexGrow: 1 }}>
           <Breadcrumbs items={getBreadcrumbs()} />
 
           {activeView === 'dashboard' && (

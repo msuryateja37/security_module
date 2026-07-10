@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import type { SecurityIncident } from '../types/security';
 import { getViewLabelForRole } from '../security/roleAccess';
-import { Briefcase, Eye, Search, UserCheck, ArrowUpCircle, X, Send, Sparkles, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { Briefcase, Eye, Search, UserCheck, ArrowUpCircle, X, Send, Sparkles, ShieldAlert, ShieldCheck, Check, Info } from 'lucide-react';
 import { useModal } from './NotificationModal';
 import { triageCase } from '../utils/caseTriage';
 import type { TriageResult } from '../utils/caseTriage';
+import { getCaseStageLabel, getCaseTimeline, getStatusChipColors } from '../utils/statusChips';
 
 interface MyCasesViewProps {
   incidents: SecurityIncident[];
@@ -17,8 +18,12 @@ interface MyCasesViewProps {
   onSelectCase: (incident: SecurityIncident) => void;
 }
 
+// Status filter chips shown in the register filter bar (design handoff §4)
+const STATUS_FILTERS = ['All Cases', 'Submitted', 'Under Review', 'Investigation', 'Escalated', 'Approved'];
+
 export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser, onUpdateIncident, onEscalateIncident, onSelectCase }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All Cases');
   const [coordinatorTab, setCoordinatorTab] = useState<'assigned' | 'unassigned'>('assigned');
   const [escalationCase, setEscalationCase] = useState<SecurityIncident | null>(null);
   const [escalationLevel, setEscalationLevel] = useState<SecurityIncident['escalationLevel']>('Major');
@@ -26,6 +31,8 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
   const [escalationNotes, setEscalationNotes] = useState('');
   const [isEscalating, setIsEscalating] = useState(false);
   const [triageTarget, setTriageTarget] = useState<SecurityIncident | null>(null);
+  // Quick-view case drawer (right-side panel per design handoff)
+  const [drawerCase, setDrawerCase] = useState<SecurityIncident | null>(null);
   const { showAlert, showConfirm } = useModal();
 
   // Employees and the System Administrator only track incidents they reported themselves
@@ -43,7 +50,7 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
       incident.status.toLowerCase().includes(searchTerm.toLowerCase())
     );
   };
-  
+
   const coordinatorAssignedCount = useMemo(() => {
     if (currentUser.role !== 'security_coordinator') return 0;
     return incidents.filter(incident =>
@@ -60,9 +67,8 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
     ).length;
   }, [currentUser, incidents]);
 
-  const myCases = incidents.filter(incident => {
-    if (!matchesSearch(incident)) return false;
-
+  // Role scoping first (server already scopes; this narrows for portfolio tabs)
+  const scopedCases = incidents.filter(incident => {
     if (currentUser.role === 'security_coordinator') {
       const isProvincialMatch = incident.province === currentUser.province;
       const isAssignedToMe = incident.responsiblePerson === currentUser.displayName;
@@ -85,6 +91,19 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
 
     return true;
   });
+
+  const matchesStatusFilter = (incident: SecurityIncident) => {
+    if (statusFilter === 'All Cases') return true;
+    return getCaseStageLabel(incident).toLowerCase() === statusFilter.toLowerCase();
+  };
+
+  const myCases = scopedCases.filter(incident => matchesSearch(incident) && matchesStatusFilter(incident));
+
+  // Header band statistics for the current scope
+  const isClosed = (i: SecurityIncident) => i.status === 'Closed' || i.workflowStage === 'Closed';
+  const totalCases = scopedCases.length;
+  const doneCases = scopedCases.filter(isClosed).length;
+  const openCases = totalCases - doneCases;
 
   const handleAssignToMe = (incident: SecurityIncident) => {
     showConfirm({
@@ -149,39 +168,35 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
       .finally(() => setIsEscalating(false));
   };
 
-  const getStatusClass = (status: string) => {
-    switch (status) {
-      case 'Open': return 'danger';
-      case 'Under Investigation': return 'warning';
-      case 'SAPS Case': return 'primary';
-      default: return 'success';
-    }
+  // Some stored records carry a full ISO timestamp in dateReported — show a clean date.
+  const fmtDate = (value: string) => {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime())
+      ? value
+      : d.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' });
   };
 
-  // Fine-grained workflow stage badge (falls back to the coarse status).
-  // Completed cases are labelled "Approved" in this list (client preference);
-  // the stored status/stage remains 'Closed' per the BRS.
-  const getStageBadge = (incident: SecurityIncident) => {
-    const stage = incident.workflowStage;
-    if (!stage) {
-      const label = incident.status === 'Closed' ? 'Approved' : incident.status;
-      return { label, cls: getStatusClass(incident.status) };
-    }
-    const cls: Record<string, string> = {
-      'Submitted': 'danger',
-      'Under Review': 'warning',
-      'Escalated': 'danger',
-      'Investigation': 'warning',
-      'Pending Approval': 'primary',
-      'Approved': 'primary',
-      'Closed': 'success'
-    };
-    const label = stage === 'Closed' ? 'Approved' : stage;
-    return { label, cls: cls[stage] || 'muted' };
+  const gridCols = tracksOwnOnly
+    ? '1.7fr 0.9fr 1.2fr 1.5fr 1fr 1fr 0.5fr'
+    : '1.7fr 0.8fr 1.1fr 1.3fr 1fr 0.9fr 0.9fr 1.5fr';
+
+  const slaLine = (incident: SecurityIncident) => {
+    if (!incident.slaInfo || incident.status === 'Closed') return null;
+    const { daysElapsed, targetDays, expectedDate, daysRemaining } = incident.slaInfo;
+    const color = daysRemaining < 0 ? 'var(--color-danger)'
+      : daysRemaining <= Math.ceil(targetDays * 0.25) ? '#B98A2F'
+      : '#8A978F';
+    return (
+      <span className="cell-sub" style={{ display: 'block', fontWeight: 600, color }}>
+        Day {daysElapsed}/{targetDays} · due {expectedDate}
+        {daysRemaining < 0 ? ` · overdue by ${-daysRemaining}d` : ''}
+      </span>
+    );
   };
 
   return (
-    <div>
+    <div className="screen-fade-up">
+      {/* Header band */}
       <div className="header-row">
         <div>
           <h1 className="page-title">{getViewLabelForRole('my_cases', currentUser.role)}</h1>
@@ -191,196 +206,277 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
               : 'Manage and update active security cases assigned to your portfolio'}
           </p>
         </div>
+        <div className="header-band-stats">
+          <div className="header-band-stat">
+            <div className="val">{totalCases}</div>
+            <div className="lbl">Total Cases</div>
+          </div>
+          <div className="header-band-stat">
+            <div className="val amber">{openCases}</div>
+            <div className="lbl">In Progress</div>
+          </div>
+          <div className="header-band-stat">
+            <div className="val mint">{doneCases}</div>
+            <div className="lbl">Approved</div>
+          </div>
+        </div>
       </div>
 
-      <div className="glass-card" style={{ padding: '1.5rem', marginBottom: '2rem' }}>
-        {currentUser.role === 'security_coordinator' && (
-          <div className="horizontal-tab-bar" style={{ marginBottom: '1rem' }}>
-            <button
-              className={`horizontal-tab ${coordinatorTab === 'assigned' ? 'active' : ''}`}
-              onClick={() => setCoordinatorTab('assigned')}
-            >
-              Assigned to Me ({coordinatorAssignedCount})
-            </button>
-            <button
-              className={`horizontal-tab ${coordinatorTab === 'unassigned' ? 'active' : ''}`}
-              onClick={() => setCoordinatorTab('unassigned')}
-            >
-              Unassigned in {currentUser.province || 'My Province'} ({coordinatorUnassignedCount})
-            </button>
-          </div>
-        )}
+      {currentUser.role === 'security_coordinator' && (
+        <div className="horizontal-tab-bar" style={{ marginBottom: '16px' }}>
+          <button
+            className={`horizontal-tab ${coordinatorTab === 'assigned' ? 'active' : ''}`}
+            onClick={() => setCoordinatorTab('assigned')}
+          >
+            Assigned to Me ({coordinatorAssignedCount})
+          </button>
+          <button
+            className={`horizontal-tab ${coordinatorTab === 'unassigned' ? 'active' : ''}`}
+            onClick={() => setCoordinatorTab('unassigned')}
+          >
+            Unassigned in {currentUser.province || 'My Province'} ({coordinatorUnassignedCount})
+          </button>
+        </div>
+      )}
 
-        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
-          <div style={{ position: 'relative', flexGrow: 1 }}>
-            <Search style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} size={16} />
-            <input 
-              type="text" 
-              className="form-input" 
-              style={{ paddingLeft: '2.5rem' }}
-              placeholder="Search cases by reference number, province, place or status..." 
+      <div className="list-card">
+        {/* Filter bar: search + status chips */}
+        <div style={{ padding: '18px 22px', display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap', borderBottom: '1px solid #EDF2EF' }}>
+          <div className="filter-search-wrap">
+            <Search size={16} />
+            <input
+              type="text"
+              className="filter-search-input"
+              placeholder="Search cases by reference number, province, place or status..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          <div style={{ display: 'flex', gap: '7px', flexWrap: 'wrap' }}>
+            {STATUS_FILTERS.map(f => (
+              <button
+                key={f}
+                className={`filter-chip ${statusFilter === f ? 'active' : ''}`}
+                onClick={() => setStatusFilter(f)}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="table-container">
-          <table className="custom-table">
-            <thead>
-              <tr>
-                <th>Case Details</th>
-                <th>Province</th>
-                <th>Place of Occurrence</th>
-                <th>{tracksOwnOnly ? 'Responsible Officer' : 'Assigned Coordinator'}</th>
-                <th>Status</th>
-                <th>Classification</th>
-                {!tracksOwnOnly && <th>AI Suggestion</th>}
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {myCases.map(incident => {
-                const isUnassigned = isUnassignedCase(incident);
-                const canEscalate = !isUnassigned && incident.status !== 'Closed' && !incident.isEscalated && ['security_coordinator', 'security_director'].includes(currentUser.role);
-                const isClosed = incident.status === 'Closed' || incident.workflowStage === 'Closed';
-                const triage = !tracksOwnOnly && !isClosed ? triageCase(incident) : null;
-                return (
-                  <tr key={incident.id}>
-                    <td>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', whiteSpace: 'nowrap' }}>
-                        <button
-                          onClick={() => onSelectCase(incident)}
-                          style={{
-                            background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
-                            fontWeight: 600, color: 'var(--color-primary)', textAlign: 'left',
-                            textDecoration: 'underline', fontSize: '0.8rem'
-                          }}
-                          title="Open the full case file"
-                        >
-                          {incident.refNo}
-                        </button>
-                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                          Reported: {incident.dateReported}
-                        </span>
-                        {incident.slaInfo && incident.status !== 'Closed' && (
-                          <span
-                            style={{
-                              fontSize: '0.66rem',
-                              fontWeight: 600,
-                              color: incident.slaInfo.daysRemaining < 0 ? 'var(--color-danger)'
-                                : incident.slaInfo.daysRemaining <= Math.ceil(incident.slaInfo.targetDays * 0.25) ? '#d97706'
-                                : 'var(--text-muted)'
-                            }}
-                          >
-                            Day {incident.slaInfo.daysElapsed}/{incident.slaInfo.targetDays} · due {incident.slaInfo.expectedDate}
-                            {incident.slaInfo.daysRemaining < 0 ? ` · overdue by ${-incident.slaInfo.daysRemaining}d` : ''}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{incident.province}</td>
-                    <td style={{ maxWidth: '180px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={incident.place}>
-                      {incident.place}
-                    </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      {isUnassigned ? (
-                        <span style={{ color: 'var(--color-danger)', fontWeight: 600, fontSize: '0.78rem' }}>Unassigned</span>
-                      ) : (
-                        <span style={{ fontWeight: 500 }}>{incident.responsiblePerson}</span>
-                      )}
-                    </td>
-                    <td>
-                      <span className={`badge ${getStageBadge(incident).cls}`}>
-                        {getStageBadge(incident).label}
-                      </span>
-                    </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      <span style={{ fontSize: '0.76rem', fontWeight: 600, opacity: 0.9 }}>
-                        {incident.classification}
-                      </span>
-                    </td>
-                    {!tracksOwnOnly && (
-                      <td>
-                        {triage ? (
-                          <button
-                            onClick={() => setTriageTarget(incident)}
-                            className={`badge ${triage.verdict === 'Routine' ? 'success' : 'warning'}`}
-                            style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', border: 'none' }}
-                            title="Why did the AI suggest this? Click for the full reasoning."
-                          >
-                            <Sparkles size={11} /> {triage.verdict}
-                          </button>
-                        ) : (
-                          <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>—</span>
-                        )}
-                      </td>
-                    )}
-                    <td>
-                      <div style={{ display: 'flex', gap: '0.4rem', whiteSpace: 'nowrap' }}>
-                        {isUnassigned && currentUser.role === 'security_coordinator' && (
-                          <button
-                            className="btn btn-primary"
-                            onClick={() => handleAssignToMe(incident)}
-                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}
-                          >
-                            <UserCheck size={12} /> Assign to Me
-                          </button>
-                        )}
-                        <button
-                          className="btn btn-secondary"
-                          onClick={() => onSelectCase(incident)}
-                          title={tracksOwnOnly ? 'Track Case' : 'View File'}
-                          style={{ padding: '0.3rem 0.45rem', display: 'flex', alignItems: 'center' }}
-                        >
-                          <Eye size={14} />
-                        </button>
-                        {canEscalate && (
-                          <button
-                            className="btn btn-primary"
-                            onClick={() => openEscalationForm(incident)}
-                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}
-                          >
-                            <ArrowUpCircle size={12} /> Escalate
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {myCases.length === 0 && (
-                <tr>
-                  <td colSpan={tracksOwnOnly ? 7 : 8} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-                    <Briefcase size={36} style={{ opacity: 0.3, marginBottom: '0.5rem' }} />
-                    <p>
-                      {tracksOwnOnly
-                        ? 'No submitted incidents found matching search criteria.'
-                        : currentUser.role === 'security_coordinator' && coordinatorTab === 'unassigned'
-                          ? 'No unassigned provincial cases found matching search criteria.'
-                          : 'No assigned cases found matching search criteria.'}
-                    </p>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        {/* Column headers */}
+        <div className="list-grid-head" style={{ gridTemplateColumns: gridCols }}>
+          <div>Case Details</div>
+          <div>Province</div>
+          <div>Place</div>
+          <div>{tracksOwnOnly ? 'Responsible Officer' : 'Assigned Coordinator'}</div>
+          <div>Status</div>
+          <div>Classification</div>
+          {!tracksOwnOnly && <div>AI Suggestion</div>}
+          <div style={{ textAlign: 'right' }}>{tracksOwnOnly ? 'View' : 'Actions'}</div>
         </div>
+
+        {myCases.map(incident => {
+          const isUnassigned = isUnassignedCase(incident);
+          const canEscalate = !isUnassigned && incident.status !== 'Closed' && !incident.isEscalated && ['security_coordinator', 'security_director'].includes(currentUser.role);
+          const caseClosed = isClosed(incident);
+          const triage = !tracksOwnOnly && !caseClosed ? triageCase(incident) : null;
+          const stage = getCaseStageLabel(incident);
+          return (
+            <div
+              key={incident.id}
+              className="list-grid-row"
+              style={{ gridTemplateColumns: gridCols }}
+              onClick={() => setDrawerCase(incident)}
+            >
+              <div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onSelectCase(incident); }}
+                  className="cell-ref"
+                  style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}
+                  title="Open the full case file"
+                >
+                  {incident.refNo}
+                </button>
+                <span className="cell-sub" style={{ display: 'block' }}>Reported {fmtDate(incident.dateReported)}</span>
+                {slaLine(incident)}
+              </div>
+              <div className="cell-body">{incident.province}</div>
+              <div className="cell-body" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={incident.place}>
+                {incident.place}
+              </div>
+              <div style={{ fontWeight: 700, color: isUnassigned ? 'var(--color-danger)' : 'var(--text-primary)', fontSize: '13px' }}>
+                {isUnassigned ? 'Unassigned' : incident.responsiblePerson}
+              </div>
+              <div>
+                <span className="chip-status" style={getStatusChipColors(stage)}>{stage}</span>
+              </div>
+              <div>
+                <span className="chip-neutral">{incident.classification}</span>
+              </div>
+              {!tracksOwnOnly && (
+                <div>
+                  {triage ? (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setTriageTarget(incident); }}
+                      className={`badge ${triage.verdict === 'Routine' ? 'success' : 'warning'}`}
+                      style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', border: 'none' }}
+                      title="Why did the AI suggest this? Click for the full reasoning."
+                    >
+                      <Sparkles size={11} /> {triage.verdict}
+                    </button>
+                  ) : (
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>—</span>
+                  )}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end', whiteSpace: 'nowrap', alignItems: 'center' }}>
+                {isUnassigned && currentUser.role === 'security_coordinator' && (
+                  <button
+                    className="btn btn-primary"
+                    onClick={(e) => { e.stopPropagation(); handleAssignToMe(incident); }}
+                    style={{ padding: '6px 10px', fontSize: '11.5px' }}
+                  >
+                    <UserCheck size={12} /> Assign to Me
+                  </button>
+                )}
+                <button
+                  className="row-icon-btn"
+                  onClick={(e) => { e.stopPropagation(); setDrawerCase(incident); }}
+                  title={tracksOwnOnly ? 'Track Case' : 'Quick View'}
+                >
+                  <Eye size={15} />
+                </button>
+                {canEscalate && (
+                  <button
+                    className="btn btn-primary"
+                    onClick={(e) => { e.stopPropagation(); openEscalationForm(incident); }}
+                    style={{ padding: '6px 10px', fontSize: '11.5px' }}
+                  >
+                    <ArrowUpCircle size={12} /> Escalate
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+        {myCases.length === 0 && (
+          <div className="list-empty">
+            <Briefcase size={36} style={{ opacity: 0.3, marginBottom: '0.5rem' }} />
+            <p>
+              {tracksOwnOnly
+                ? 'No submitted incidents found matching search criteria.'
+                : currentUser.role === 'security_coordinator' && coordinatorTab === 'unassigned'
+                  ? 'No unassigned provincial cases found matching search criteria.'
+                  : 'No assigned cases found matching search criteria.'}
+            </p>
+          </div>
+        )}
       </div>
+
+      {/* Case quick-view drawer (design handoff §4) */}
+      {drawerCase && (() => {
+        const stage = getCaseStageLabel(drawerCase);
+        const chip = getStatusChipColors(stage);
+        const timeline = getCaseTimeline(drawerCase);
+        const sla = drawerCase.slaInfo;
+        const caseDone = isClosed(drawerCase);
+        return (
+          <>
+            <div className="case-drawer-backdrop" onClick={() => setDrawerCase(null)} />
+            <div className="case-drawer">
+              <div className="case-drawer-header">
+                <div>
+                  <div className="kick">CASE REFERENCE</div>
+                  <div className="ref">{drawerCase.refNo}</div>
+                  <span className="chip-status" style={{ ...chip, display: 'inline-block', marginTop: '10px' }}>{stage}</span>
+                </div>
+                <div style={{ flex: 1 }} />
+                <button className="case-drawer-close" onClick={() => setDrawerCase(null)} aria-label="Close case panel">
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="case-drawer-body">
+                <div className="case-meta-grid">
+                  <div className="case-meta-tile">
+                    <div className="lbl">Province</div>
+                    <div className="val">{drawerCase.province}</div>
+                  </div>
+                  <div className="case-meta-tile">
+                    <div className="lbl">Place</div>
+                    <div className="val">{drawerCase.place}</div>
+                  </div>
+                  <div className="case-meta-tile">
+                    <div className="lbl">Responsible Officer</div>
+                    <div className="val" style={isUnassignedCase(drawerCase) ? { color: 'var(--color-danger)' } : undefined}>
+                      {isUnassignedCase(drawerCase) ? 'Unassigned' : drawerCase.responsiblePerson}
+                    </div>
+                  </div>
+                  <div className="case-meta-tile">
+                    <div className="lbl">Classification</div>
+                    <div className="val">{drawerCase.classification}</div>
+                  </div>
+                </div>
+
+                <div className="overline-label" style={{ letterSpacing: '0.1em', marginBottom: '14px' }}>Case Progress</div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  {timeline.map((step, i) => (
+                    <div className="timeline-step" key={step.label}>
+                      <div className="timeline-rail">
+                        <div className={`timeline-dot ${step.done ? 'done' : step.current ? 'current' : ''}`}>
+                          {step.done && <Check size={12} strokeWidth={3.5} />}
+                        </div>
+                        {i < timeline.length - 1 && (
+                          <div className={`timeline-line ${step.done ? 'done' : ''}`} />
+                        )}
+                      </div>
+                      <div className="timeline-copy">
+                        <div className={`ttl ${step.done || step.current ? 'reached' : ''}`}>{step.label}</div>
+                        <div className="sub">{step.sub}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="amber-note" style={{ marginTop: '8px' }}>
+                  <Info size={17} strokeWidth={2} />
+                  <div className="txt">
+                    {caseDone
+                      ? 'This case has been finalised and the outcome recorded in the register.'
+                      : sla
+                        ? `Day ${sla.daysElapsed}/${sla.targetDays} · due ${sla.expectedDate} — investigations must conclude within ${sla.targetDays} working days of assignment per departmental SLA.`
+                        : 'Investigations must conclude within 14 working days of assignment per departmental SLA.'}
+                  </div>
+                </div>
+
+                <button
+                  className="btn btn-primary"
+                  style={{ width: '100%', marginTop: '20px', padding: '12px' }}
+                  onClick={() => { const c = drawerCase; setDrawerCase(null); onSelectCase(c); }}
+                >
+                  <Eye size={15} /> Open Full Case File
+                </button>
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       {escalationCase && (
         <div className="drawer-backdrop" onClick={() => setEscalationCase(null)}>
           <div className="drawer" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '560px' }}>
             <div className="drawer-header">
               <div>
-                <h3 style={{ fontSize: '1.2rem', color: 'hsl(var(--color-primary))' }}>Escalate Case</h3>
-                <span style={{ fontSize: '0.8rem', color: 'hsl(var(--text-muted))' }}>
+                <h3 style={{ fontSize: '1.2rem', color: 'var(--color-primary)' }}>Escalate Case</h3>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                   {escalationCase.refNo} | {escalationCase.classification} | {escalationCase.province}
                 </span>
               </div>
               <button
                 onClick={() => setEscalationCase(null)}
-                style={{ background: 'transparent', border: 'none', color: 'hsl(var(--text-primary))', cursor: 'pointer' }}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer' }}
                 aria-label="Close escalation form"
               >
                 <X size={20} />
@@ -457,16 +553,16 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
             <div className="drawer" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '620px' }}>
               <div className="drawer-header">
                 <div>
-                  <h3 style={{ fontSize: '1.2rem', color: 'hsl(var(--color-primary))', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <h3 style={{ fontSize: '1.2rem', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                     <Sparkles size={18} /> AI Case Suggestion
                   </h3>
-                  <span style={{ fontSize: '0.8rem', color: 'hsl(var(--text-muted))' }}>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                     {triageTarget.refNo} | {triageTarget.classification} | {triageTarget.province}
                   </span>
                 </div>
                 <button
                   onClick={() => setTriageTarget(null)}
-                  style={{ background: 'transparent', border: 'none', color: 'hsl(var(--text-primary))', cursor: 'pointer' }}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer' }}
                   aria-label="Close AI suggestion"
                 >
                   <X size={20} />
@@ -476,8 +572,8 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
               <div className="drawer-content">
                 <div className="glass-card" style={{ padding: '1.25rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                   {isComplex
-                    ? <ShieldAlert size={28} style={{ color: '#b45309', flexShrink: 0 }} />
-                    : <ShieldCheck size={28} style={{ color: '#15803d', flexShrink: 0 }} />}
+                    ? <ShieldAlert size={28} style={{ color: '#B98A2F', flexShrink: 0 }} />
+                    : <ShieldCheck size={28} style={{ color: '#157A5B', flexShrink: 0 }} />}
                   <div>
                     <span className={`badge ${isComplex ? 'warning' : 'success'}`} style={{ marginBottom: '0.3rem', display: 'inline-block' }}>
                       Suggested: {triage.verdict}
@@ -488,7 +584,7 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
 
                 {riskReasons.length > 0 && (
                   <div className="glass-card" style={{ padding: '1.25rem', marginBottom: '1rem' }}>
-                    <h4 style={{ marginBottom: '0.75rem', fontSize: '0.9rem', color: '#b45309' }}>
+                    <h4 style={{ marginBottom: '0.75rem', fontSize: '0.9rem', color: '#B98A2F' }}>
                       Risk factors ({riskReasons.length})
                     </h4>
                     {riskReasons.map((reason, i) => (
@@ -496,7 +592,7 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
                         <div style={{ fontWeight: 600, fontSize: '0.83rem' }}>{reason.factor}</div>
                         <div style={{ fontSize: '0.82rem' }}>{reason.detail}</div>
                         {reason.basis && (
-                          <div style={{ fontSize: '0.72rem', color: 'hsl(var(--text-muted))', fontStyle: 'italic' }}>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
                             Basis: {reason.basis}
                           </div>
                         )}
@@ -507,7 +603,7 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
 
                 {mitigatingReasons.length > 0 && (
                   <div className="glass-card" style={{ padding: '1.25rem', marginBottom: '1rem' }}>
-                    <h4 style={{ marginBottom: '0.75rem', fontSize: '0.9rem', color: '#15803d' }}>
+                    <h4 style={{ marginBottom: '0.75rem', fontSize: '0.9rem', color: '#157A5B' }}>
                       Factors supporting routine handling ({mitigatingReasons.length})
                     </h4>
                     {mitigatingReasons.map((reason, i) => (
@@ -519,7 +615,7 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
                   </div>
                 )}
 
-                <p style={{ fontSize: '0.75rem', color: 'hsl(var(--text-muted))', fontStyle: 'italic' }}>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
                   This is an automated suggestion based on the incident record and departmental policy rules.
                   The decision to close or escalate rests with the responsible officer and is recorded in the audit trail.
                 </p>

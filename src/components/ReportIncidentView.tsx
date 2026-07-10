@@ -3,7 +3,7 @@ import type { SecurityIncident, ProvinceType } from '../types/security';
 import { NATURE_OF_CASE_OPTIONS } from '../types/security';
 import type { UserProfile } from '../security/roleAccess';
 import { PROVINCES } from '../data/mockData';
-import { Shield, FileText, CheckCircle2, ArrowRight, ArrowLeft, AlertTriangle, Paperclip, X, UploadCloud } from 'lucide-react';
+import { Shield, FileText, CheckCircle2, ArrowRight, ArrowLeft, AlertTriangle, Paperclip, X, UploadCloud, Check, Send } from 'lucide-react';
 import { useModal } from './NotificationModal';
 
 interface ReportIncidentViewProps {
@@ -38,6 +38,10 @@ const INCIDENT_TYPES_LIST = [
   'Violation of permit system', 'Fire', 'Explosion', 'Hostage situation', 'Firearm related',
   'Permit related', 'Firearm left unattended', 'Accidental damage to property'
 ];
+
+const STEP_LABELS = ['General & Contact Info', 'Categorization & Loss', 'Narrative Report'];
+
+const RequiredStar = () => <span className="required-star"> *</span>;
 
 export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddIncident, onNavigate, currentUser, initialData }) => {
   const [formType, setFormType] = useState<'standard' | 'noc'>('standard');
@@ -108,7 +112,7 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
   const [otherAspects, setOtherAspects] = useState('');
   const [lessonsLearned, setLessonsLearned] = useState('');
   const [recommendations, setRecommendations] = useState('');
-  
+
   // NOC specific initial notification brief
   const [nocBriefDetails, setNocBriefDetails] = useState('');
   const [nocDutyRef, setNocDutyRef] = useState('');
@@ -116,7 +120,7 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
   const [generatedRefNo, setGeneratedRefNo] = useState('');
   const [generatedRegNo, setGeneratedRegNo] = useState('');
 
-  // Toggle incident type checkbox
+  // Toggle incident type pill
   const handleToggleType = (type: string) => {
     if (selectedTypes.includes(type)) {
       setSelectedTypes(selectedTypes.filter(t => t !== type));
@@ -247,7 +251,7 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
       workflowStage: 'Submitted',
       dateCreated: new Date().toISOString().split('T')[0],
       dateReported: new Date().toISOString().split('T')[0],
-      
+
       whatHappened: formType === 'noc' ? `[NOC FLASH BRIEF] ${nocBriefDetails} (Duty Ref: ${nocDutyRef || 'Direct'})` : whatHappened,
       whereHappened: whereHappened || place,
       howHappened,
@@ -281,19 +285,37 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
     }
   };
 
+  // Pill-style incident type selector with live "n selected" counter (handoff §5)
+  const typePillSelector = (
+    <div className="type-pills">
+      {incidentTypes.map(type => {
+        const selected = selectedTypes.includes(type);
+        return (
+          <button
+            type="button"
+            key={type}
+            className={`type-pill ${selected ? 'selected' : ''}`}
+            onClick={() => handleToggleType(type)}
+          >
+            {selected && <Check size={12} strokeWidth={3.5} />}
+            {type}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  const selectedCountBadge = (
+    <span className="selected-count-badge">{selectedTypes.length} selected</span>
+  );
+
   // Supporting documents picker (FR-004) — shared by the standard and NOC forms
-  const attachmentSection = (
-    <div className="form-group" style={{ marginTop: '1.25rem' }}>
-      <label className="form-label">Supporting Documents / Evidence (photos, reports, statements)</label>
-      <label
-        style={{
-          display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.9rem 1rem',
-          border: '1.5px dashed var(--border-color)', borderRadius: 'var(--radius-sm)',
-          cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.85rem'
-        }}
-      >
-        <UploadCloud size={20} />
-        <span>Click to attach files (max 15 MB each — PDF, Office documents, images, audio/video)</span>
+  const attachmentSection = (compact = false) => (
+    <div className="form-group" style={{ marginTop: compact ? 0 : '1.25rem', marginBottom: 0 }}>
+      <label className="form-label">Supporting Documents / Evidence {compact ? '' : '(photos, reports, statements)'}</label>
+      <label className="dropzone" style={compact ? { padding: '11px', fontSize: '12.5px' } : undefined}>
+        <UploadCloud size={compact ? 15 : 17} />
+        <span>Click to attach files {compact ? '' : '(max 15 MB each — PDF, Office documents, images, audio/video)'}</span>
         <input
           type="file"
           multiple
@@ -305,14 +327,7 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
       {attachedFiles.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.6rem' }}>
           {attachedFiles.map((file, idx) => (
-            <div
-              key={`${file.name}-${idx}`}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.45rem 0.75rem',
-                background: 'rgba(0,0,0,0.03)', border: '1px solid var(--border-color)',
-                borderRadius: 'var(--radius-sm)', fontSize: '0.8rem'
-              }}
-            >
+            <div key={`${file.name}-${idx}`} className="attached-file-row">
               <Paperclip size={14} style={{ flexShrink: 0 }} />
               <span style={{ flexGrow: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
               <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{formatFileSize(file.size)}</span>
@@ -333,7 +348,7 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
 
   const natureOfCaseSelect = (
     <div className="form-group">
-      <label className="form-label">Nature of Case (expected resolution window) *</label>
+      <label className="form-label">Nature of Case (expected resolution window)<RequiredStar /></label>
       <select className="form-input" value={natureOfCase} onChange={(e) => setNatureOfCase(e.target.value)} required>
         <option value="">Select expected timeframe</option>
         {NATURE_OF_CASE_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
@@ -342,58 +357,66 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
   );
 
   return (
-    <div>
+    <div className="screen-fade-up">
+      {/* Header band with scheme/step kicker */}
       <div className="header-row">
         <div>
           <h1 className="page-title">Report Security Incident</h1>
           <p className="page-subtitle">File incident notifications directly to the National Operations Centre</p>
         </div>
+        {currentStep < 4 && (
+          <div className="header-band-kicker">
+            <div className="kick">{formType === 'noc' ? 'Flash Dispatch Protocol' : `Step ${currentStep} of 3`}</div>
+            <div className="head">{formType === 'noc' ? 'Direct NOC Alert Dispatch' : STEP_LABELS[currentStep - 1]}</div>
+          </div>
+        )}
       </div>
 
+      {/* Scheme toggle + stepper card */}
       {currentStep < 4 && (
-        <div className="glass-card step-banner">
-          <div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-              Form Notification Scheme
+        <div className="chart-card" style={{ padding: '20px 24px', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flexWrap: 'wrap' }}>
+            <div>
+              <div className="overline-label" style={{ marginBottom: '10px' }}>Form Notification Scheme</div>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className={formType === 'standard' ? 'btn btn-primary' : 'btn btn-secondary'}
+                  style={{ padding: '11px 18px', fontSize: '13px' }}
+                  onClick={() => { setFormType('standard'); setCurrentStep(1); }}
+                >
+                  <FileText size={15} /> DLRRD Standard Form
+                </button>
+                <button
+                  type="button"
+                  className={formType === 'noc' ? 'btn btn-primary' : 'btn btn-secondary'}
+                  style={{ padding: '11px 18px', fontSize: '13px' }}
+                  onClick={() => { setFormType('noc'); }}
+                >
+                  <Shield size={15} /> NOC Initial Notification
+                </button>
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-              <button 
-                type="button"
-                className={`btn ${formType === 'standard' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => { setFormType('standard'); setCurrentStep(1); }}
-              >
-                <FileText size={16} /> DLRRD Standard Form
-              </button>
-              <button 
-                type="button"
-                className={`btn ${formType === 'noc' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => { setFormType('noc'); }}
-              >
-                <Shield size={16} /> NOC Initial Notification
-              </button>
-            </div>
-          </div>
-          <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-            {formType === 'standard' ? (
-              <>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  STEP {currentStep} OF 3
-                </div>
-                <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--color-primary)' }}>
-                  {currentStep === 1 && 'General & Contact Info'}
-                  {currentStep === 2 && 'Incident Categorization & Loss'}
-                  {currentStep === 3 && 'Incident Narrative Report'}
-                </div>
-              </>
-            ) : (
-              <>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  FLASH DISPATCH PROTOCOL
-                </div>
-                <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--color-primary)' }}>
-                  Direct NOC Alert Dispatch
-                </div>
-              </>
+            <div style={{ flex: 1 }} />
+            {formType === 'standard' && (
+              <div className="stepper">
+                {STEP_LABELS.map((label, i) => {
+                  const n = i + 1;
+                  const done = n < currentStep;
+                  const current = n === currentStep;
+                  return (
+                    <div key={label} style={{ display: 'flex', alignItems: 'center' }}>
+                      <div className="stepper-node">
+                        <div className={`stepper-dot ${done ? 'done' : current ? 'current' : ''}`}>
+                          {done ? <Check size={14} strokeWidth={3.5} /> : n}
+                        </div>
+                        <div className={`stepper-label ${done || current ? 'reached' : ''}`}>{label}</div>
+                      </div>
+                      {n < 3 && <div className={`stepper-line ${done ? 'done' : ''}`} />}
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>
@@ -401,88 +424,84 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
 
       {/* DEDICATED NOC INITIAL NOTIFICATION FORM VIEW */}
       {formType === 'noc' && currentStep < 4 && (
-        <form onSubmit={handleSubmit} className="glass-card" style={{ padding: '1.75rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem' }}>
-            <div>
-              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Shield size={22} color="var(--color-primary)" /> NOC Initial Notification (National Operations Centre)
-              </h3>
-              <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                Urgent flash incident dispatch form for immediate central monitoring in Pretoria HQ
-              </p>
-            </div>
-            <span className="badge warning">
-              Flash Alert Dispatch
-            </span>
+        <form onSubmit={handleSubmit} className="chart-card form-step-panel" style={{ padding: '28px 30px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px', flexWrap: 'wrap' }}>
+            <Shield size={20} color="var(--color-primary)" />
+            <div className="form-step-title">NOC Initial Notification (National Operations Centre)</div>
+            <div style={{ flex: 1 }} />
+            <span className="protocol-pill amber">Flash Alert Dispatch</span>
+          </div>
+          <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '18px' }}>
+            Urgent flash incident dispatch form for immediate central monitoring in Pretoria HQ
           </div>
 
-          <div style={{ background: 'rgba(245, 158, 11, 0.08)', padding: '0.875rem 1.25rem', borderRadius: 'var(--radius-sm)', marginBottom: '1.5rem', border: '1px solid rgba(245, 158, 11, 0.2)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <AlertTriangle size={20} color="#b45309" />
-            <div style={{ fontSize: '0.85rem', color: '#b45309' }}>
-              <strong>Immediate Dispatch Mode:</strong> Submitting this NOC Initial Notification will generate an urgent reference code (<strong>NOC/SEC/2026/xxxx</strong>) and route a real-time notification to National Operations Centre supervisors.
+          <div className="amber-note" style={{ marginBottom: '24px' }}>
+            <AlertTriangle size={17} />
+            <div className="txt">
+              <strong>Immediate Dispatch Mode:</strong> Submitting this NOC Initial Notification will generate an urgent reference code (<strong>NOC/SEC/{new Date().getFullYear()}/xxxx</strong>) and route a real-time notification to National Operations Centre supervisors.
             </div>
           </div>
 
           <div className="form-grid">
             <div className="form-group">
               <label className="form-label">NOC Duty Officer / Hotline Ref</label>
-              <input 
-                type="text" 
-                className="form-input" 
-                placeholder="e.g. NOC-HOTLINE-0800 / Desk 4" 
+              <input
+                type="text"
+                className="form-input"
+                placeholder="e.g. NOC-HOTLINE-0800 / Desk 4"
                 value={nocDutyRef}
                 onChange={(e) => setNocDutyRef(e.target.value)}
               />
             </div>
             <div className="form-group">
-              <label className="form-label">Reporting Officer Name & Rank *</label>
-              <input 
-                type="text" 
-                className="form-input" 
-                value={reportedBy} 
+              <label className="form-label">Reporting Officer Name & Rank<RequiredStar /></label>
+              <input
+                type="text"
+                className="form-input"
+                value={reportedBy}
                 onChange={(e) => setReportedBy(e.target.value)}
-                required 
+                required
               />
             </div>
           </div>
 
           <div className="form-grid">
             <div className="form-group">
-              <label className="form-label">Contact Details (Phone / Email) *</label>
-              <input 
-                type="text" 
-                className="form-input" 
-                value={contactDetails} 
+              <label className="form-label">Contact Details (Phone / Email)<RequiredStar /></label>
+              <input
+                type="text"
+                className="form-input"
+                value={contactDetails}
                 onChange={(e) => setContactDetails(e.target.value)}
-                required 
+                required
               />
             </div>
             <div className="form-group">
-              <label className="form-label">Date and Time of Incident *</label>
-              <input 
-                type="datetime-local" 
-                className="form-input" 
-                value={dateTime} 
+              <label className="form-label">Date and Time of Incident<RequiredStar /></label>
+              <input
+                type="datetime-local"
+                className="form-input"
+                value={dateTime}
                 onChange={(e) => setDateTime(e.target.value)}
-                required 
+                required
               />
             </div>
           </div>
 
           <div className="form-grid">
             <div className="form-group">
-              <label className="form-label">Place / Location of Incident *</label>
-              <input 
-                type="text" 
-                className="form-input" 
-                placeholder="e.g. Pretoria HQ, 4th Floor Server Room" 
-                value={place} 
+              <label className="form-label">Place / Location of Incident<RequiredStar /></label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="e.g. Pretoria HQ, 4th Floor Server Room"
+                value={place}
                 onChange={(e) => setPlace(e.target.value)}
-                required 
+                required
               />
             </div>
             <div className="form-group">
-              <label className="form-label">Province *</label>
+              <label className="form-label">Province<RequiredStar /></label>
               <select className="form-input" value={province} onChange={(e) => setProvince(e.target.value as ProvinceType)}>
                 {PROVINCES.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
@@ -490,20 +509,16 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
           </div>
 
           <div className="form-group" style={{ marginTop: '1rem' }}>
-            <label className="form-label">Select Incident Type(s) *</label>
-            <div className="incident-types-grid">
-              {incidentTypes.map(type => (
-                <label key={type} className="checkbox-label">
-                  <input type="checkbox" checked={selectedTypes.includes(type)} onChange={() => handleToggleType(type)} />
-                  {type}
-                </label>
-              ))}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <label className="form-label" style={{ marginBottom: 0 }}>Select Incident Type(s)<RequiredStar /></label>
+              {selectedCountBadge}
             </div>
+            {typePillSelector}
           </div>
 
           <div className="form-group" style={{ marginTop: '1.25rem' }}>
             <label className="form-label">
-              Initial Notification Report Brief Details (Comprehensive Summary for NOC) *
+              Initial Notification Report Brief Details (Comprehensive Summary for NOC)<RequiredStar />
             </label>
             <textarea
               rows={4}
@@ -512,74 +527,73 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
               value={nocBriefDetails}
               onChange={(e) => setNocBriefDetails(e.target.value)}
               required
+              style={{ resize: 'vertical' }}
             />
           </div>
 
           <div className="form-grid">
             {natureOfCaseSelect}
+            {attachmentSection(true)}
           </div>
 
-          {attachmentSection}
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '2rem', gap: '0.75rem' }}>
-            <button type="button" className="btn btn-secondary" onClick={() => setFormType('standard')} disabled={isSubmitting}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '28px', gap: '12px' }}>
+            <button type="button" className="btn btn-secondary btn-cancel-rust" onClick={() => setFormType('standard')} disabled={isSubmitting}>
               Cancel NOC Alert
             </button>
-            <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-              {isSubmitting ? 'Dispatching...' : 'Submit NOC Initial Notification'}
+            <button type="submit" className="btn btn-primary" style={{ padding: '13px 26px', fontWeight: 800 }} disabled={isSubmitting}>
+              <Send size={15} strokeWidth={2.5} /> {isSubmitting ? 'Dispatching...' : 'Submit NOC Initial Notification'}
             </button>
           </div>
         </form>
       )}
 
       {/* STANDARD DLRRD MULTI-STEP FORM */}
-      {formType === 'standard' && (
+      {formType === 'standard' && currentStep < 4 && (
         <form onSubmit={handleSubmit}>
           {currentStep === 1 && (
-            <div className="glass-card" style={{ padding: '1.75rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
-                <h3 style={{ margin: 0 }}>Step 1: General & Contact Information</h3>
-                <span className="badge muted">
-                  Standard DLRRD Protocol
-                </span>
+            <div className="chart-card form-step-panel" style={{ padding: '28px 30px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '22px', flexWrap: 'wrap' }}>
+                <div className="form-step-title">Step 1: General & Contact Information</div>
+                <div style={{ flex: 1 }} />
+                <span className="protocol-pill">Standard DLRRD Protocol</span>
               </div>
 
               <div className="form-grid">
                 <div className="form-group">
-                  <label className="form-label">Department / Institution *</label>
-                  <input type="text" className="form-input" value={department} onChange={(e) => setDepartment(e.target.value)} required />
+                  <label className="form-label">Department / Institution<RequiredStar /></label>
+                  <input type="text" className="form-input" value={department} onChange={(e) => setDepartment(e.target.value)} required readOnly />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Reported By (Officer Name & Rank) *</label>
+                  <label className="form-label">Reported By (Officer Name & Rank)<RequiredStar /></label>
                   <input type="text" className="form-input" placeholder="e.g. Snr Security Officer John Doe" value={reportedBy} onChange={(e) => setReportedBy(e.target.value)} required />
                 </div>
               </div>
 
               <div className="form-grid">
                 <div className="form-group">
-                  <label className="form-label">Contact Details (Tel / Email) *</label>
+                  <label className="form-label">Contact Details (Tel / Email)<RequiredStar /></label>
                   <input type="text" className="form-input" placeholder="e.g. 012 312 8624 / john.doe@dlrrd.gov.za" value={contactDetails} onChange={(e) => setContactDetails(e.target.value)} required />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Date and Time of Occurrence *</label>
+                  <label className="form-label">Date and Time of Occurrence<RequiredStar /></label>
                   <input type="datetime-local" className="form-input" value={dateTime} onChange={(e) => setDateTime(e.target.value)} required />
                 </div>
               </div>
 
               <div className="form-grid">
                 <div className="form-group">
-                  <label className="form-label">Place of Occurrence (Detailed Address / Office Room) *</label>
+                  <label className="form-label">Place of Occurrence (Detailed Address / Office Room)<RequiredStar /></label>
                   <input type="text" className="form-input" placeholder="e.g. Pretoria HQ, 4th Floor Room 412" value={place} onChange={(e) => setPlace(e.target.value)} required />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Province *</label>
+                  <label className="form-label">Province<RequiredStar /></label>
                   <select className="form-input" value={province} onChange={(e) => setProvince(e.target.value as ProvinceType)}>
                     {PROVINCES.map(p => <option key={p} value={p}>{p}</option>)}
                   </select>
                 </div>
               </div>
 
-              <div className="form-group" style={{ maxWidth: '300px' }}>
+              <div className="form-group" style={{ maxWidth: '340px' }}>
                 <label className="form-label">Security Classification Level (Initial)</label>
                 <select className="form-input" value={classification} onChange={(e) => setClassification(e.target.value as SecurityIncident['classification'])}>
                   <option value="Unclassified">Unclassified</option>
@@ -590,52 +604,51 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
                 </select>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '2rem' }}>
-                <button type="button" className="btn btn-primary" onClick={handleNextStep}>
-                  Next Step: Categorization <ArrowRight size={16} />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '28px' }}>
+                <button type="button" className="btn btn-primary" style={{ padding: '13px 24px', fontSize: '14px' }} onClick={handleNextStep}>
+                  Next Step: Categorization <ArrowRight size={15} strokeWidth={2.5} />
                 </button>
               </div>
             </div>
           )}
 
           {currentStep === 2 && (
-            <div className="glass-card" style={{ padding: '1.75rem' }}>
-              <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+            <div className="chart-card form-step-panel" style={{ padding: '28px 30px' }}>
+              <div className="form-step-title" style={{ marginBottom: '14px' }}>
                 Step 2: Incident Categorization & Loss Details
-              </h3>
-
-              <div className="form-group">
-                <label className="form-label">Incident Type (Select all that apply) *</label>
-                <div className="incident-types-grid">
-                  {incidentTypes.map(type => (
-                    <label key={type} className="checkbox-label">
-                      <input type="checkbox" checked={selectedTypes.includes(type)} onChange={() => handleToggleType(type)} />
-                      {type}
-                    </label>
-                  ))}
-                </div>
               </div>
 
               <div className="form-group">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+                  <label className="form-label" style={{ marginBottom: 0 }}>Incident Type (Select all that apply)<RequiredStar /></label>
+                  {selectedCountBadge}
+                </div>
+                {typePillSelector}
+              </div>
+
+              <div className="form-group" style={{ marginTop: '1.25rem' }}>
                 <label className="form-label">If other incident types, please elaborate</label>
                 <input type="text" className="form-input" placeholder="Elaborate details for 'other' selection" value={otherTypeDetails} onChange={(e) => setOtherTypeDetails(e.target.value)} />
               </div>
 
               <div className="form-grid">
                 <div className="form-group">
-                  <label className="form-label">Detailed Nature of Loss / Damage *</label>
-                  <textarea rows={3} className="form-input" placeholder="List stolen assets, details of damage, etc." value={natureOfLoss} onChange={(e) => setNatureOfLoss(e.target.value)} required />
+                  <label className="form-label">Detailed Nature of Loss / Damage<RequiredStar /></label>
+                  <textarea rows={3} className="form-input" placeholder="List stolen assets, details of damage, etc." value={natureOfLoss} onChange={(e) => setNatureOfLoss(e.target.value)} required style={{ resize: 'vertical' }} />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Injuries or Fatalities Description</label>
-                  <textarea rows={3} className="form-input" value={injuriesFatalities} onChange={(e) => setInjuriesFatalities(e.target.value)} />
+                  <textarea rows={3} className="form-input" value={injuriesFatalities} onChange={(e) => setInjuriesFatalities(e.target.value)} style={{ resize: 'vertical' }} />
                 </div>
               </div>
 
               <div className="form-grid">
                 <div className="form-group">
-                  <label className="form-label">Loss Value (Replacement value in South African Rands R) *</label>
-                  <input type="number" className="form-input" value={lossValue} onChange={(e) => setLossValue(e.target.value)} required />
+                  <label className="form-label">Loss Value (Replacement value in Rands)<RequiredStar /></label>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontSize: '13.5px', fontWeight: 800, color: 'var(--text-muted)' }}>R</span>
+                    <input type="number" className="form-input" placeholder="0.00" style={{ paddingLeft: '32px' }} value={lossValue} onChange={(e) => setLossValue(e.target.value)} required />
+                  </div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Reported to SAPS or SSA?</label>
@@ -664,104 +677,104 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
                 </div>
               )}
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2rem' }}>
-                <button type="button" className="btn btn-secondary" onClick={handlePrevStep}>
-                  <ArrowLeft size={16} /> Back
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '28px' }}>
+                <button type="button" className="btn btn-secondary" style={{ padding: '13px 22px', fontSize: '14px' }} onClick={handlePrevStep}>
+                  <ArrowLeft size={15} strokeWidth={2.5} /> Back
                 </button>
-                <button type="button" className="btn btn-primary" onClick={handleNextStep}>
-                  Next Step: Narrative <ArrowRight size={16} />
+                <button type="button" className="btn btn-primary" style={{ padding: '13px 24px', fontSize: '14px' }} onClick={handleNextStep}>
+                  Next Step: Narrative <ArrowRight size={15} strokeWidth={2.5} />
                 </button>
               </div>
             </div>
           )}
 
           {currentStep === 3 && (
-            <div className="glass-card" style={{ padding: '1.75rem' }}>
-              <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+            <div className="chart-card form-step-panel" style={{ padding: '28px 30px' }}>
+              <div className="form-step-title" style={{ marginBottom: '20px' }}>
                 Step 3: Incident Narrative Report
-              </h3>
+              </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                 <div className="form-grid">
                   <div className="form-group">
                     <label className="form-label">What happened?</label>
-                    <textarea rows={3} className="form-input" value={whatHappened} onChange={(e) => setWhatHappened(e.target.value)} />
+                    <textarea rows={3} className="form-input" placeholder="Describe the incident" value={whatHappened} onChange={(e) => setWhatHappened(e.target.value)} style={{ resize: 'vertical' }} />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Where did it happen?</label>
-                    <textarea rows={3} className="form-input" value={whereHappened} onChange={(e) => setWhereHappened(e.target.value)} />
+                    <textarea rows={3} className="form-input" placeholder="Exact location" value={whereHappened} onChange={(e) => setWhereHappened(e.target.value)} style={{ resize: 'vertical' }} />
                   </div>
                 </div>
 
                 <div className="form-grid">
                   <div className="form-group">
                     <label className="form-label">How did it happen?</label>
-                    <textarea rows={3} className="form-input" value={howHappened} onChange={(e) => setHowHappened(e.target.value)} />
+                    <textarea rows={3} className="form-input" placeholder="Sequence of events" value={howHappened} onChange={(e) => setHowHappened(e.target.value)} style={{ resize: 'vertical' }} />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Who is responsible?</label>
-                    <textarea rows={3} className="form-input" value={whoResponsible} onChange={(e) => setWhoResponsible(e.target.value)} />
+                    <textarea rows={3} className="form-input" placeholder="Known or suspected persons" value={whoResponsible} onChange={(e) => setWhoResponsible(e.target.value)} style={{ resize: 'vertical' }} />
                   </div>
                 </div>
 
                 <div className="form-grid">
                   <div className="form-group">
                     <label className="form-label">What weapons were used (if any)?</label>
-                    <textarea rows={2} className="form-input" value={weaponsUsed} onChange={(e) => setWeaponsUsed(e.target.value)} />
+                    <textarea rows={2} className="form-input" placeholder="Firearms, tools, etc." value={weaponsUsed} onChange={(e) => setWeaponsUsed(e.target.value)} style={{ resize: 'vertical' }} />
                   </div>
                   <div className="form-group">
                     <label className="form-label">What security procedures were used?</label>
-                    <textarea rows={2} className="form-input" value={proceduresUsed} onChange={(e) => setProceduresUsed(e.target.value)} />
+                    <textarea rows={2} className="form-input" placeholder="Protocols followed" value={proceduresUsed} onChange={(e) => setProceduresUsed(e.target.value)} style={{ resize: 'vertical' }} />
                   </div>
                 </div>
 
                 <div className="form-grid">
                   <div className="form-group">
                     <label className="form-label">What damage was done (include rand value)?</label>
-                    <textarea rows={2} className="form-input" value={damageDone} onChange={(e) => setDamageDone(e.target.value)} />
+                    <textarea rows={2} className="form-input" placeholder="Estimated damage" value={damageDone} onChange={(e) => setDamageDone(e.target.value)} style={{ resize: 'vertical' }} />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Any other aspects to report?</label>
-                    <textarea rows={2} className="form-input" value={otherAspects} onChange={(e) => setOtherAspects(e.target.value)} />
+                    <textarea rows={2} className="form-input" placeholder="Additional context" value={otherAspects} onChange={(e) => setOtherAspects(e.target.value)} style={{ resize: 'vertical' }} />
                   </div>
                 </div>
 
                 <div className="form-grid">
                   <div className="form-group">
                     <label className="form-label">How did security personnel react to the incident?</label>
-                    <textarea rows={2} className="form-input" value={securityPersonnelReaction} onChange={(e) => setSecurityPersonnelReaction(e.target.value)} />
+                    <textarea rows={2} className="form-input" placeholder="Response actions" value={securityPersonnelReaction} onChange={(e) => setSecurityPersonnelReaction(e.target.value)} style={{ resize: 'vertical' }} />
                   </div>
                   <div className="form-group">
                     <label className="form-label">How effective were the existing security measures?</label>
-                    <textarea rows={2} className="form-input" value={securityMeasuresEffectiveness} onChange={(e) => setSecurityMeasuresEffectiveness(e.target.value)} />
+                    <textarea rows={2} className="form-input" placeholder="Assessment" value={securityMeasuresEffectiveness} onChange={(e) => setSecurityMeasuresEffectiveness(e.target.value)} style={{ resize: 'vertical' }} />
                   </div>
                 </div>
 
                 <div className="form-group">
                   <label className="form-label">What was done about the incident? (Actions Taken)</label>
-                  <textarea rows={2} className="form-input" value={actionTaken} onChange={(e) => setActionTaken(e.target.value)} />
+                  <textarea rows={2} className="form-input" placeholder="Immediate remediation" value={actionTaken} onChange={(e) => setActionTaken(e.target.value)} style={{ resize: 'vertical' }} />
                 </div>
 
                 <div className="form-grid">
                   <div className="form-group">
                     <label className="form-label">What lessons can be learnt from the incident?</label>
-                    <textarea rows={3} className="form-input" value={lessonsLearned} onChange={(e) => setLessonsLearned(e.target.value)} />
+                    <textarea rows={3} className="form-input" placeholder="Preventative insight" value={lessonsLearned} onChange={(e) => setLessonsLearned(e.target.value)} style={{ resize: 'vertical' }} />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Any recommendations?</label>
-                    <textarea rows={3} className="form-input" value={recommendations} onChange={(e) => setRecommendations(e.target.value)} />
+                    <textarea rows={3} className="form-input" placeholder="Suggested improvements" value={recommendations} onChange={(e) => setRecommendations(e.target.value)} style={{ resize: 'vertical' }} />
                   </div>
                 </div>
               </div>
 
-              {attachmentSection}
+              {attachmentSection()}
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginTop: '2rem' }}>
-                <button type="button" className="btn btn-secondary" onClick={handlePrevStep} disabled={isSubmitting}>
-                  <ArrowLeft size={16} /> Back
+              <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginTop: '28px' }}>
+                <button type="button" className="btn btn-secondary" style={{ padding: '13px 22px', fontSize: '14px' }} onClick={handlePrevStep} disabled={isSubmitting}>
+                  <ArrowLeft size={15} strokeWidth={2.5} /> Back
                 </button>
-                <button type="submit" className="btn btn-success" disabled={isSubmitting}>
-                  {isSubmitting ? 'Submitting & Uploading...' : 'Submit Standard Incident Report'}
+                <button type="submit" className="btn btn-success" style={{ padding: '13px 26px', fontSize: '14px' }} disabled={isSubmitting}>
+                  <Send size={15} strokeWidth={2.5} /> {isSubmitting ? 'Submitting & Uploading...' : 'Submit Standard Incident Report'}
                 </button>
               </div>
             </div>
@@ -769,39 +782,44 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
         </form>
       )}
 
+      {/* SUCCESS STATE */}
       {currentStep === 4 && (
-        <div className="glass-card" style={{ padding: '3rem', textAlign: 'center', maxWidth: '600px', margin: '2rem auto' }}>
-          <CheckCircle2 size={64} color="hsl(var(--color-success))" style={{ margin: '0 auto 1.5rem auto' }} />
-          <h2 style={{ marginBottom: '0.75rem' }}>{formType === 'noc' ? 'NOC Flash Notification Dispatched' : 'Incident Report Logged'}</h2>
-          
-          <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1.25rem', margin: '1.5rem 0', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <div>
-              <span style={{ fontSize: '0.7rem', color: 'hsl(var(--text-secondary))', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>Reference Number (Case ID)</span>
-              <span style={{ fontSize: '1.4rem', fontWeight: 700, color: 'hsl(var(--color-accent))' }}>{generatedRefNo}</span>
-            </div>
-            <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.5rem' }}>
-              <span style={{ fontSize: '0.7rem', color: 'hsl(var(--text-secondary))', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>Official Register Number</span>
-              <span style={{ fontSize: '0.95rem', fontWeight: 600 }}>{generatedRegNo}</span>
-            </div>
+        <div className="success-card">
+          <div className="success-orb">
+            <CheckCircle2 size={40} strokeWidth={2.5} />
+          </div>
+          <h2 style={{ fontSize: '22px', fontWeight: 800, marginBottom: 0 }}>
+            {formType === 'noc' ? 'NOC Flash Alert Dispatched' : 'Incident Report Submitted'}
+          </h2>
+          <div style={{ fontSize: '14px', color: '#5B6B63', marginTop: '8px' }}>
+            Your reference number has been generated. Keep it for follow-up.
           </div>
 
-          <p style={{ color: 'hsl(var(--text-secondary))', marginBottom: '0.75rem' }}>
+          <div className="success-ref-tile">{generatedRefNo}</div>
+          <div style={{ fontSize: '12.5px', color: '#8A978F', marginTop: '14px' }}>
+            Official Register Number: <strong style={{ color: 'var(--text-secondary)' }}>{generatedRegNo}</strong>
+          </div>
+
+          <p style={{ fontSize: '13px', color: '#5B6B63', margin: '18px auto 0', maxWidth: '520px', lineHeight: 1.6 }}>
             {formType === 'noc'
               ? 'The NOC Flash Initial Notification has been immediately dispatched to the National Operations Centre emergency board.'
               : 'The incident report has been securely registered and auto-routed to your Provincial Security Coordinator and the National Office.'}
-          </p>
-          <p style={{ color: 'hsl(var(--text-secondary))', marginBottom: '2rem', fontSize: '0.85rem' }}>
-            A confirmation has been sent to you by email and in-app alert.
+            {' '}A confirmation has been sent to you by email and in-app alert.
             {uploadedCount > 0 && ` ${uploadedCount} supporting document${uploadedCount === 1 ? '' : 's'} uploaded to the case file.`}
             {' '}You will be notified automatically as the case progresses.
           </p>
 
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
-            <button type="button" className="btn btn-primary" onClick={() => onNavigate('my_cases')}>
-              Track My Incident
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginTop: '26px' }}>
+            <button type="button" className="btn btn-primary" style={{ padding: '12px 22px' }} onClick={() => onNavigate('my_cases')}>
+              Track My Incidents
             </button>
-            <button type="button" className="btn btn-secondary" onClick={() => { setFormType('standard'); setCurrentStep(1); setSelectedTypes([]); setNatureOfLoss(''); setLossValue(''); setNocBriefDetails(''); setNatureOfCase(''); setAttachedFiles([]); setUploadedCount(0); }}>
-              Log Another Incident
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ padding: '12px 22px' }}
+              onClick={() => { setFormType('standard'); setCurrentStep(1); setSelectedTypes([]); setNatureOfLoss(''); setLossValue(''); setNocBriefDetails(''); setNatureOfCase(''); setAttachedFiles([]); setUploadedCount(0); }}
+            >
+              Report Another Incident
             </button>
           </div>
         </div>

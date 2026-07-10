@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import type { SecurityIncident } from '../types/security';
 import type { UserProfile } from '../security/roleAccess';
-import { Shield, AlertTriangle, CheckCircle, TrendingUp, DollarSign, ArrowRight, FileSearch, FileText, Briefcase, Clock, ClipboardCheck, ArrowUpRight } from 'lucide-react';
+import { Shield, AlertTriangle, CheckCircle, TrendingUp, DollarSign, ArrowRight, FileSearch, FileText, Briefcase, Clock, ClipboardCheck, ArrowUpRight, Plus } from 'lucide-react';
 import { PROVINCES } from '../data/mockData';
+import { getCaseStageLabel, getStatusChipColors } from '../utils/statusChips';
 
 interface DashboardViewProps {
   incidents: SecurityIncident[];
@@ -86,24 +87,101 @@ const getKpisForRole = (user: UserProfile, incidents: SecurityIncident[]): KpiCa
   }
 };
 
+// Single progress value 0→1 (~900ms, ease-out cubic) driving the KPI
+// count-ups, bar heights, donut sweep and line reveal per the handoff.
+// Restarts when the incident data arrives so the charts still animate
+// when the server responds after mount.
+const useChartProgress = (dataKey: number) => {
+  const [progress, setProgress] = useState(0);
+  useEffect(() => {
+    let raf = 0;
+    const t0 = performance.now();
+    const tick = (t: number) => {
+      const k = Math.min(1, (t - t0) / 900);
+      setProgress(1 - Math.pow(1 - k, 3));
+      if (k < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [dataKey]);
+  return progress;
+};
+
+// Animate the numeric portion of a KPI value ("12" or "R 86 500") during mount.
+const animatedKpiValue = (value: string, p: number): string => {
+  const numeric = Number(value.replace(/[^\d.]/g, ''));
+  if (!Number.isFinite(numeric)) return value;
+  const shown = Math.round(numeric * p);
+  return value.startsWith('R') ? `R ${shown.toLocaleString()}` : String(shown);
+};
+
+const fmtRk = (n: number): string => {
+  if (n >= 1_000_000) return `R ${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 10_000) return `R ${Math.round(n / 1000)}k`;
+  return `R ${Math.round(n).toLocaleString()}`;
+};
+
+// Donut colors per handoff — loss by classification
+const CLASSIFICATION_COLORS: Record<string, string> = {
+  'Unclassified': '#2FB98A',
+  'Restricted': '#157A5B',
+  'Confidential': '#0B4635',
+  'Secret': '#C89B3C',
+  'Top Secret': '#B4432D'
+};
+
+// Status distribution series colors per handoff
+const STATUS_DIST_COLORS: Record<string, string> = {
+  'Resolved': '#2FB98A',
+  'Under Review': '#D6A331',
+  'Submitted': '#64748B',
+  'Under Investigation': '#157A5B',
+  'Escalated': '#C2543B'
+};
+
+// Bucket a case into the 5 status-distribution series.
+const statusBucket = (i: SecurityIncident): keyof typeof STATUS_DIST_COLORS => {
+  if (isCaseClosed(i)) return 'Resolved';
+  const stage = i.workflowStage;
+  if (stage === 'Escalated') return 'Escalated';
+  if (stage === 'Under Review') return 'Under Review';
+  if (stage === 'Investigation' || stage === 'Pending Approval' || stage === 'Approved') return 'Under Investigation';
+  if (stage === 'Submitted') return 'Submitted';
+  if (i.status === 'Under Investigation' || i.status === 'SAPS Case') return 'Under Investigation';
+  return 'Submitted';
+};
+
 export const DashboardView: React.FC<DashboardViewProps> = ({ incidents, currentUser, onNavigate }) => {
   // All KPIs are computed from the incidents the server returned for this user
   // (already scoped to their province/role) — no seeded statistics.
   const kpis = getKpisForRole(currentUser, incidents);
   const totalLoss = incidents.reduce((sum, i) => sum + i.lossValue, 0);
   const sapsReferrals = incidents.filter(i => i.reportedToSapsSsa === 'Yes' || i.status === 'SAPS Case').length;
+  const progress = useChartProgress(incidents.length);
 
-  // Province distribution for Chart
-  const provinceCounts = PROVINCES.map(p => {
-    return {
-      province: p,
-      count: incidents.filter(i => i.province === p).length
-    };
-  });
+  // Employees / SysAdmins track their own incidents ("Track My Incidents");
+  // other roles review the full register.
+  const casesView = currentUser.role === 'employee' || currentUser.role === 'system_administrator' ? 'my_cases' : 'register';
+
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 12) return 'Good morning';
+    if (h < 17) return 'Good afternoon';
+    return 'Good evening';
+  })();
+  const today = new Date().toLocaleDateString('en-ZA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const firstName = currentUser.displayName.split(' ')[0];
+
+  // Province distribution for the bar chart
+  const provinceCounts = PROVINCES.map(p => ({
+    province: p,
+    count: incidents.filter(i => i.province === p).length
+  }));
   const maxProvinceCount = Math.max(...provinceCounts.map(c => c.count), 1);
+  const topProvince = provinceCounts.reduce((best, c) => (c.count > best.count ? c : best), provinceCounts[0]);
 
-  // Loss by classification
-  const classificationLosses = {
+  // Loss by classification (donut)
+  const classificationLosses: Record<string, number> = {
     'Unclassified': 0,
     'Restricted': 0,
     'Confidential': 0,
@@ -116,11 +194,74 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ incidents, current
     }
   });
 
+  const DONUT_R = 70;
+  const DONUT_C = 2 * Math.PI * DONUT_R;
+  let donutAcc = 0;
+  const donutSegs = Object.entries(classificationLosses).map(([label, value]) => {
+    const frac = totalLoss > 0 ? value / totalLoss : 0;
+    const len = Math.max(0, frac * DONUT_C * progress - 3);
+    const seg = {
+      label,
+      value,
+      color: CLASSIFICATION_COLORS[label],
+      pct: totalLoss > 0 ? `${Math.round(frac * 100)}%` : '0%',
+      dash: `${len.toFixed(1)} ${(DONUT_C - len).toFixed(1)}`,
+      offset: (-donutAcc * DONUT_C).toFixed(1)
+    };
+    donutAcc += frac;
+    return seg;
+  });
+
+  // Incident trend — reported incidents per month, last 12 months
+  const now = new Date();
+  const trendMonths = Array.from({ length: 12 }, (_, idx) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - (11 - idx), 1);
+    return {
+      label: d.toLocaleDateString('en-ZA', { month: 'short' }),
+      year: d.getFullYear(),
+      month: d.getMonth()
+    };
+  });
+  const trendCounts = trendMonths.map(m =>
+    incidents.filter(i => {
+      const d = new Date(i.dateTime);
+      return d.getFullYear() === m.year && d.getMonth() === m.month;
+    }).length
+  );
+  const maxTrend = Math.max(...trendCounts, 1);
+  const trendPts = trendCounts.map((v, i) => [
+    i * (560 / 11),
+    185 - (v / maxTrend) * 165 * progress
+  ] as const);
+  const trendPath = 'M' + trendPts.map(pt => `${pt[0].toFixed(1)} ${pt[1].toFixed(1)}`).join(' L');
+  const trendArea = `${trendPath} L560 200 L0 200 Z`;
+  const half = Math.floor(trendCounts.length / 2);
+  const firstHalf = trendCounts.slice(0, half).reduce((a, b) => a + b, 0);
+  const secondHalf = trendCounts.slice(half).reduce((a, b) => a + b, 0);
+  const trendDeltaPct = firstHalf > 0 ? Math.round(((secondHalf - firstHalf) / firstHalf) * 100) : (secondHalf > 0 ? 100 : 0);
+
+  // Case status distribution (stacked bar)
+  const statusCounts: Record<string, number> = { 'Resolved': 0, 'Under Review': 0, 'Submitted': 0, 'Under Investigation': 0, 'Escalated': 0 };
+  incidents.forEach(i => { statusCounts[statusBucket(i)] += 1; });
+  const statusTotal = incidents.length;
+
+  const recentIncidents = [...incidents]
+    .sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime())
+    .slice(0, 5);
+
+  const tableCols = '1.2fr 1.8fr 1.2fr 0.9fr 0.9fr 0.8fr 1fr 1.1fr';
+
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1.5rem' }}>
-        <button className="btn btn-primary" onClick={() => onNavigate('report')}>
-          + Report Incident
+    <div className="screen-fade-up">
+      {/* Greeting row */}
+      <div className="dash-greeting-row">
+        <div>
+          <div className="dash-greeting-title">{greeting}, {firstName}</div>
+          <div className="dash-greeting-sub">Security overview · {today}</div>
+        </div>
+        <div style={{ flex: 1 }} />
+        <button className="btn btn-primary" style={{ padding: '12px 20px', fontSize: '14px' }} onClick={() => onNavigate('report')}>
+          <Plus size={16} strokeWidth={2.5} /> Report Incident
         </button>
       </div>
 
@@ -129,12 +270,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ incidents, current
         {kpis.map(kpi => {
           const Icon = kpi.icon;
           return (
-            <div className="glass-card stat-card" key={kpi.title}>
+            <div className="stat-card" key={kpi.title}>
               <div className="stat-header">
                 <span className="stat-title">{kpi.title}</span>
-                <Icon className={`stat-icon ${kpi.iconClass}`} size={24} />
+                <Icon className={`stat-icon ${kpi.iconClass}`} size={30} />
               </div>
-              <div className="stat-value">{kpi.value}</div>
+              <div className="stat-value">{animatedKpiValue(kpi.value, progress)}</div>
               <div className="stat-footer">
                 <span>{kpi.footer}</span>
               </div>
@@ -143,158 +284,191 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ incidents, current
         })}
       </div>
 
-      {/* Main dashboard visual statistics */}
+      {/* Row 1 — province bars + loss donut */}
       <div className="grid-dashboard">
-        {/* SVG Analytics Bar Chart */}
-        <div className="glass-card" style={{ padding: '1.5rem' }}>
-          <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <TrendingUp size={20} color="hsl(var(--color-primary))" />
-            Security Incidents by Province
-          </h3>
-          <div style={{ paddingBottom: '1.5rem' }}>
-            <div className="chart-container">
-              {/* Y Axis labels */}
-              <div className="chart-y-axis">
-                <span>{maxProvinceCount}</span>
-                <span>{Math.ceil(maxProvinceCount / 2)}</span>
-                <span>0</span>
+        <div className="chart-card">
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '4px' }}>
+            <div className="chart-card-title">Security Incidents by Province</div>
+            <div style={{ flex: 1 }} />
+            <div className="chart-kicker">Last 12 months</div>
+          </div>
+          <div className="chart-card-sub">
+            {topProvince.count > 0
+              ? `${topProvince.province} accounts for the highest volume of reported incidents`
+              : 'No incidents recorded for your scope yet'}
+          </div>
+          <div className="prov-bars">
+            {provinceCounts.map(item => (
+              <div className="prov-bar-col" key={item.province} title={`${item.province}: ${item.count} incident${item.count === 1 ? '' : 's'}`}>
+                <div className="prov-bar-value">{item.count}</div>
+                <div className="prov-bar-track">
+                  <div
+                    className="prov-bar-fill"
+                    style={{ height: `${((item.count / maxProvinceCount) * 100 * progress).toFixed(1)}%` }}
+                  />
+                </div>
+                <div className="prov-bar-label">
+                  {item.province.length > 9 ? `${item.province.slice(0, 8)}…` : item.province}
+                </div>
               </div>
-              
-              {/* Bars */}
-              {provinceCounts.map(item => {
-                const heightPercentage = (item.count / maxProvinceCount) * 100;
-                return (
-                  <div 
-                    key={item.province}
-                    className="chart-bar" 
-                    style={{ height: `${Math.max(heightPercentage, 6)}%` }}
-                  >
-                    <div className="chart-tooltip">
-                      {item.province}: {item.count} {item.count === 1 ? 'incident' : 'incidents'}
-                    </div>
-                    <div className="chart-label" style={{ fontSize: '0.65rem' }}>
-                      {item.province.substring(0, 4)}..
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            ))}
           </div>
         </div>
 
-        {/* Breakdown Panel */}
-        <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-          <div>
-            <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Shield size={20} color="hsl(var(--color-warning))" />
-              Loss Value by Classification
-            </h3>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {Object.entries(classificationLosses).map(([classType, value]) => {
-                const percentage = totalLoss > 0 ? (value / totalLoss) * 100 : 0;
-                let barColor = 'hsl(var(--color-primary))';
-                if (classType === 'Secret') barColor = 'hsl(var(--color-warning))';
-                if (classType === 'Top Secret') barColor = 'hsl(var(--color-danger))';
-                if (classType === 'Restricted') barColor = 'hsl(var(--text-secondary))';
-
-                return (
-                  <div key={classType}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '0.25rem' }}>
-                      <span style={{ fontWeight: 500 }}>{classType}</span>
-                      <span style={{ color: 'hsl(var(--text-secondary))' }}>R {value.toLocaleString()} ({Math.round(percentage)}%)</span>
-                    </div>
-                    <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '999px', overflow: 'hidden' }}>
-                      <div style={{ width: `${percentage}%`, height: '100%', background: barColor, borderRadius: '999px' }} />
-                    </div>
-                  </div>
-                );
-              })}
+        <div className="chart-card" style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className="chart-card-title">Loss Value by Classification</div>
+          <div className="chart-card-sub">Total estimated loss across cases</div>
+          <div className="donut-wrap">
+            <svg width="176" height="176" viewBox="0 0 176 176">
+              <circle cx="88" cy="88" r={DONUT_R} fill="none" stroke="#EEF3F0" strokeWidth="22" />
+              {donutSegs.filter(d => d.value > 0).map(d => (
+                <circle
+                  key={d.label}
+                  className="donut-seg"
+                  cx="88" cy="88" r={DONUT_R}
+                  fill="none"
+                  stroke={d.color}
+                  strokeWidth="22"
+                  strokeDasharray={d.dash}
+                  strokeDashoffset={d.offset}
+                  transform="rotate(-90 88 88)"
+                />
+              ))}
+            </svg>
+            <div className="donut-center">
+              <div className="lbl">TOTAL LOSS</div>
+              <div className="val">{fmtRk(totalLoss * progress)}</div>
             </div>
           </div>
-
-          <div style={{ paddingTop: '1.5rem', borderTop: '1px solid hsl(var(--border-color))', marginTop: '1.5rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontSize: '0.75rem', color: 'hsl(var(--text-secondary))' }}>SAPS / SSA REFERRALS</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 600 }}>{sapsReferrals} {sapsReferrals === 1 ? 'Case' : 'Cases'} Reported</div>
+          <div className="legend-rows">
+            {donutSegs.map(d => (
+              <div className="legend-row" key={d.label}>
+                <span className="legend-swatch" style={{ background: d.color }} />
+                <span className="legend-label">{d.label}</span>
+                <span className="legend-amount">{fmtRk(d.value)}</span>
+                <span className="legend-pct">{d.pct}</span>
               </div>
-              <button
-                onClick={() => onNavigate('register')}
-                className="btn btn-secondary"
-                style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem' }}
-              >
-                Register <ArrowRight size={12} />
-              </button>
-            </div>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Recent Incidents Panel */}
-      <div className="glass-card" style={{ padding: '1.5rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-          <h3>Recent Security Incidents</h3>
-          <button className="btn btn-secondary" onClick={() => onNavigate('register')} style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}>
-            View All Register Cases
+      {/* Row 2 — trend line + status distribution */}
+      <div className="grid-dashboard">
+        <div className="chart-card">
+          <div style={{ display: 'flex', alignItems: 'baseline', marginBottom: '16px', gap: '10px', flexWrap: 'wrap' }}>
+            <div>
+              <div className="chart-card-title">Incident Trend</div>
+              <div className="chart-card-sub">Monthly reported incidents in your scope</div>
+            </div>
+            <div style={{ flex: 1 }} />
+            <div className="trend-badge">
+              <TrendingUp size={14} strokeWidth={2.5} />
+              <span>{trendDeltaPct >= 0 ? '+' : ''}{trendDeltaPct}% vs previous 6 months</span>
+            </div>
+          </div>
+          <svg width="100%" height="200" viewBox="0 0 560 200" preserveAspectRatio="none" style={{ display: 'block' }}>
+            <defs>
+              <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#2FB98A" stopOpacity="0.28" />
+                <stop offset="100%" stopColor="#2FB98A" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <path d={trendArea} fill="url(#trendFill)" />
+            <path d={trendPath} fill="none" stroke="#157A5B" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+            {trendPts.map((pt, i) => (
+              <circle key={i} cx={pt[0].toFixed(1)} cy={pt[1].toFixed(1)} r="4.5" fill="#FFFFFF" stroke="#157A5B" strokeWidth="2.5">
+                <title>{`${trendMonths[i].label}: ${trendCounts[i]} incident${trendCounts[i] === 1 ? '' : 's'}`}</title>
+              </circle>
+            ))}
+          </svg>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 4px 0' }}>
+            {trendMonths.map((m, i) => (
+              <span key={i} style={{ fontSize: '10.5px', fontWeight: 600, color: '#8A978F' }}>{m.label}</span>
+            ))}
+          </div>
+        </div>
+
+        <div className="chart-card" style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className="chart-card-title">Case Status Distribution</div>
+          <div className="chart-card-sub" style={{ marginBottom: '18px' }}>
+            {statusTotal > 0 ? `All ${statusTotal} active & closed cases` : 'No cases recorded yet'}
+          </div>
+          <div className="status-stack">
+            {Object.entries(statusCounts).filter(([, count]) => count > 0).map(([label, count]) => (
+              <div
+                key={label}
+                className="status-stack-seg"
+                title={`${label}: ${count}`}
+                style={{
+                  width: `${statusTotal > 0 ? ((count / statusTotal) * 100 * progress).toFixed(1) : 0}%`,
+                  background: STATUS_DIST_COLORS[label]
+                }}
+              />
+            ))}
+          </div>
+          <div className="legend-rows" style={{ gap: '10px' }}>
+            {Object.entries(statusCounts).map(([label, count]) => (
+              <div className="legend-row" key={label} style={{ padding: '3px 8px' }}>
+                <span className="legend-swatch round" style={{ background: STATUS_DIST_COLORS[label] }} />
+                <span className="legend-label">{label}</span>
+                <span className="legend-amount" style={{ fontSize: '13px' }}>{count}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ flex: 1 }} />
+          <div className="saps-inset">
+            <div>
+              <div className="lbl">SAPS / SSA REFERRALS</div>
+              <div className="val">{sapsReferrals} {sapsReferrals === 1 ? 'Case' : 'Cases'} Reported</div>
+            </div>
+            <div style={{ flex: 1 }} />
+            <button className="btn-outline-green fill-hover" onClick={() => onNavigate(casesView)} style={{ borderColor: 'var(--color-primary)', padding: '8px 14px', fontSize: '12.5px' }}>
+              Register <ArrowRight size={13} strokeWidth={2.5} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Recent incidents */}
+      <div className="list-card">
+        <div className="list-card-header">
+          <div className="chart-card-title">Recent Security Incidents</div>
+          <div style={{ flex: 1 }} />
+          <button className="btn-outline-green" onClick={() => onNavigate(casesView)}>
+            View All Register Cases <ArrowRight size={13} strokeWidth={2.5} />
           </button>
         </div>
-
-        <div className="table-container">
-          <table className="custom-table">
-            <thead>
-              <tr>
-                <th>Ref No.</th>
-                <th>Incident Description</th>
-                <th>Place of occurrence</th>
-                <th>Province</th>
-                <th>Date of incident</th>
-                <th>Value of Loss</th>
-                <th>Classification</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {incidents.slice(0, 3).map(inc => {
-                let badgeClass = 'badge primary';
-                if (inc.status === 'Closed') badgeClass = 'badge success';
-                if (inc.status === 'SAPS Case') badgeClass = 'badge danger';
-                if (inc.status === 'Under Investigation') badgeClass = 'badge warning';
-
-                let classificationBadge = 'badge muted';
-                if (inc.classification === 'Secret') classificationBadge = 'badge warning';
-                if (inc.classification === 'Top Secret') classificationBadge = 'badge danger';
-                if (inc.classification === 'Restricted') classificationBadge = 'badge primary';
-
-                return (
-                  <tr key={inc.id}>
-                    <td style={{ fontWeight: 600, color: 'hsl(var(--color-primary))' }}>{inc.refNo}</td>
-                    <td style={{ maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {inc.natureOfLoss}
-                    </td>
-                    <td>{inc.place}</td>
-                    <td>{inc.province}</td>
-                    <td>{new Date(inc.dateTime).toLocaleDateString()}</td>
-                    <td>R {inc.lossValue.toLocaleString()}</td>
-                    <td>
-                      <span className={classificationBadge}>{inc.classification}</span>
-                    </td>
-                    <td>
-                      <span className={badgeClass}>{inc.status}</span>
-                    </td>
-                  </tr>
-                );
-              })}
-              {incidents.length === 0 && (
-                <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '2rem', color: 'hsl(var(--text-muted))' }}>
-                    No security incidents registered.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="list-grid-head" style={{ gridTemplateColumns: tableCols }}>
+          <div>Ref No.</div><div>Description</div><div>Place</div><div>Province</div><div>Date</div><div>Loss</div><div>Classification</div><div>Status</div>
         </div>
+        {recentIncidents.map(inc => {
+          const stage = getCaseStageLabel(inc);
+          return (
+            <div
+              key={inc.id}
+              className="list-grid-row"
+              style={{ gridTemplateColumns: tableCols }}
+              onClick={() => onNavigate(casesView)}
+            >
+              <div className="cell-ref">{inc.refNo}</div>
+              <div className="cell-body" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={inc.natureOfLoss}>
+                {inc.natureOfLoss}
+              </div>
+              <div className="cell-body" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={inc.place}>
+                {inc.place}
+              </div>
+              <div className="cell-muted">{inc.province}</div>
+              <div className="cell-muted">{new Date(inc.dateTime).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+              <div className="cell-strong">R {inc.lossValue.toLocaleString()}</div>
+              <div><span className="chip-neutral">{inc.classification}</span></div>
+              <div><span className="chip-status" style={getStatusChipColors(stage)}>{stage}</span></div>
+            </div>
+          );
+        })}
+        {recentIncidents.length === 0 && (
+          <div className="list-empty">No security incidents registered.</div>
+        )}
       </div>
     </div>
   );
