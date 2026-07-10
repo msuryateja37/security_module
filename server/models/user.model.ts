@@ -186,7 +186,7 @@ export const UserModel = {
   },
 
   /**
-   * Chief Director appoints an employee as temporary Security Coordinator
+   * Chief Security Director appoints an employee as temporary Security Coordinator
    * (e.g. leave cover). The permanent role is preserved in baseRole; the acting
    * coordinator receives the full rights of a permanent Security Coordinator.
    */
@@ -270,7 +270,7 @@ export const UserModel = {
     }
   },
 
-  /** Chief Director sets a coordinator's running leave allocation. */
+  /** Chief Security Director sets a coordinator's running leave allocation. */
   async updateTotalLeaves(username: string, totalLeaves: number): Promise<boolean> {
     const result = await execute(
       'UPDATE users SET totalLeaves = ? WHERE username = ? AND isActive = 1',

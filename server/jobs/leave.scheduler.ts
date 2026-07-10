@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import { LeaveService } from '../services/leave.service.js';
 
-// Daily leave sweep: expire undecided requests, remind the Chief Director of
+// Daily leave sweep: expire undecided requests, remind the Chief Security Director of
 // requests starting tomorrow, promote today's acting coordinators (with
 // incident handover), and revert covers whose leave window has passed.
 //

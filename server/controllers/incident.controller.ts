@@ -13,7 +13,7 @@ import { UserModel } from '../models/user.model.js';
 import { notifyReporterOfProgress } from './caseWorkflow.controller.js';
 
 // Workflow: significant/big cases are escalated to the role configured in the
-// escalation matrix (default: the Security Director / Chief Director), who then
+// escalation matrix (default: the Chief Security Director), who then
 // assigns a Security Investigator for field work.
 const getEscalationTarget = (notifyRole: string) => {
   return ROLE_USERS.find(u => u.role === notifyRole);
@@ -35,13 +35,13 @@ export const IncidentController = {
           i.ownerId === user.username || i.reportedBy === user.displayName || i.contactDetails === user.email
         );
       } else if (user.role === 'chief_security_investigator') {
-        // Chief Investigator only sees cases assigned to them by the Security Director
+        // Chief Investigator only sees cases assigned to them by the Chief Security Director
         // (assignedInvestigator keeps history visible once the case moves to approval/closure)
         incidents = incidents.filter(i =>
           i.responsiblePerson === user.displayName || i.assignedInvestigator === user.displayName
         );
       }
-      // Chief Director (security_director) sees all incidents across provinces
+      // Chief Security Director (security_director) sees all incidents across provinces
 
       // Attach dynamic SLA status to each incident (targets from system configuration, FR-037)
       const slaRules = await ConfigService.getSlaRules();
@@ -150,7 +150,7 @@ export const IncidentController = {
             caseLink
           );
 
-          // FR-007: the national office (Security Director) is notified of ALL incidents
+          // FR-007: the national office (Chief Security Director) is notified of ALL incidents
           const allUsers = await UserModel.getAll();
           await NotificationService.notifyMany(
             allUsers.filter(u => u.role === 'security_director').map(u => u.username),
@@ -208,7 +208,7 @@ export const IncidentController = {
       }
 
       if (updates.province && user.role !== 'security_director' && updates.province !== existing.province) {
-        return ResponseView.sendError(res, 'Only the security director may transfer an incident across provinces', 'Forbidden', 403);
+        return ResponseView.sendError(res, 'Only the Chief Security Director may transfer an incident across provinces', 'Forbidden', 403);
       }
       
       const success = await IncidentModel.update(id, updates);
@@ -227,7 +227,7 @@ export const IncidentController = {
         });
 
         // Responsible-coordinator change (e.g. "Assign to Me" on an unassigned case):
-        // record it on the case timeline and notify the reporter + Security Director (FR-008/FR-010)
+        // record it on the case timeline and notify the reporter + Chief Security Director (FR-008/FR-010)
         const newResponsible = typeof updates.responsiblePerson === 'string' ? updates.responsiblePerson.trim() : '';
         const assignmentChanged =
           !!newResponsible &&
@@ -390,7 +390,7 @@ export const IncidentController = {
 
         // Progress update to the original reporter (status change: Escalated)
         await notifyReporterOfProgress(existing, user,
-          `Your incident ${existing.refNo} has been escalated to the Security Director for national-level investigation.`);
+          `Your incident ${existing.refNo} has been escalated to the Chief Security Director for national-level investigation.`);
 
         ResponseView.sendSuccess(
           res,

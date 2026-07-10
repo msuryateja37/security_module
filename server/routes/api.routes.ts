@@ -31,11 +31,11 @@ router.post('/auth/change-password', requirePermission('dashboard:view'), AuthCo
 router.get('/auth/my-activity', requirePermission('dashboard:view'), AuthController.myActivity);
 router.get('/auth/permissions', requirePermission('dashboard:view'), AuthController.permissions);
 router.get('/users', requirePermission('admin:manage_roles'), AuthController.users);
-// User account management (FR-036 — System Administrator / Chief Director)
+// User account management (FR-036 — System Administrator / Chief Security Director)
 router.post('/users', requirePermission('admin:manage_roles'), AdminController.createUser);
 router.put('/users/:username/details', requirePermission('admin:manage_roles'), AdminController.updateUser);
 router.put('/users/:username/active', requirePermission('admin:manage_roles'), AdminController.setUserActive);
-// Temporary Security Coordinator management (Chief Director only — leave cover, matrix item 2)
+// Temporary Security Coordinator management (Chief Security Director only — leave cover, matrix item 2)
 router.post('/users/:username/temp-coordinator', requirePermission('admin:manage_roles'), AuthController.assignTempCoordinator);
 router.delete('/users/:username/temp-coordinator', requirePermission('admin:manage_roles'), AuthController.revokeTempCoordinator);
 router.get('/roles', requirePermission('admin:manage_roles'), AuthController.roles);
@@ -100,7 +100,7 @@ router.post('/tra-audits', requirePermission('reports:submit_operational'), Repo
 
 router.get('/search', requirePermission('dashboard:view'), SearchController.search);
 
-// Leave Management (coordinator request/calendar + Chief Director review)
+// Leave Management (coordinator request/calendar + Chief Security Director review)
 router.get('/leaves/mine', requirePermission('leave:request'), LeaveController.mine);
 router.post('/leaves', requirePermission('leave:request'), LeaveController.request);
 router.put('/leaves/days/:dayId/cancel', requirePermission('leave:request'), LeaveController.cancel);
@@ -108,7 +108,7 @@ router.get('/leaves', requirePermission('leave:review'), LeaveController.getAll)
 router.get('/leaves/:batchId/substitutes', requirePermission('leave:review'), LeaveController.substitutes);
 router.put('/leaves/:batchId/decide', requirePermission('leave:review'), LeaveController.decide);
 router.put('/leaves/days/:dayId/revoke', requirePermission('leave:review'), LeaveController.revoke);
-// Coordinator leave allocation (Chief Director > coordinator profile management)
+// Coordinator leave allocation (Chief Security Director > coordinator profile management)
 router.put('/users/:username/leave-allocation', requirePermission('leave:manage_allocation'), LeaveController.updateAllocation);
 
 // In-app notifications (FR-008) — each user sees only their own feed

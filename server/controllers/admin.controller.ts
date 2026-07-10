@@ -319,7 +319,7 @@ export const AdminController = {
       if (!isActive && target.role === 'security_director' && target.isActive) {
         const activeDirectors = all.filter(u => u.role === 'security_director' && u.isActive);
         if (activeDirectors.length <= 1) {
-          return ResponseView.sendError(res, 'Cannot deactivate the last active Chief Director — escalations and approvals would have no target', 'Validation failed', 400);
+          return ResponseView.sendError(res, 'Cannot deactivate the last active Chief Security Director — escalations and approvals would have no target', 'Validation failed', 400);
         }
       }
 

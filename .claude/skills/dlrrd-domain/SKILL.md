@@ -38,6 +38,8 @@ For pixel-level screen layouts, the source `docs/DLRRD - SECURITY SCREENS.docx` 
 
 ## Cross-cutting cautions
 
+- **Role rename (July 2026, client instruction):** the role the BRS/docs call "Security Director" or "Chief Director" (internal key `security_director`) is now displayed as **"Chief Security Director"** everywhere in the app. The reference docs predate the rename — keep their requirements but use the new name in UI, notifications, and reports.
+
 - The SIMS BRS document's opening sections contain copy-pasted land-rights/restitution text — it is boilerplate; ignore it (details in sims-brs.md).
 - Empty register values are shown as "Nil"/"N/A", not blank — matches the official xlsx.
 - Incident `classification` relates to the government classification scheme (up to Top Secret); treat classified fields conservatively in logs and exports.

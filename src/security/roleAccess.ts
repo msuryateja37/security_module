@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 
 // Role model — client role/responsibility matrix (July 2026).
-// Five roles: Employee, Security Coordinator, Chief Investigator, Chief Director,
+// Five roles: Employee, Security Coordinator, Chief Investigator, Chief Security Director,
 // System Administrator (ICT/MTS — users, roles, permissions, SLA configurations,
 // notification templates, escalation rules and overall system administration).
 // Internal keys 'security_coordinator', 'chief_security_investigator' and
@@ -98,7 +98,7 @@ export interface UserProfile {
   clearanceLevel: 'Public' | 'Restricted' | 'Confidential' | 'Secret' | 'Top Secret';
   /** Set while the user is acting as a temporary Security Coordinator — holds their permanent role. */
   baseRole?: SecurityRole | null;
-  /** Username of the Chief Director who made the temporary assignment. */
+  /** Username of the Chief Security Director who made the temporary assignment. */
   tempAssignedBy?: string | null;
   /** PERSAL number — government HR identifier. HR/AD-sourced (FR-005), read-only in the portal. */
   persalNumber?: string;
@@ -111,7 +111,7 @@ export interface UserProfile {
   lastLoginAt?: string | null;
   passwordChangedAt?: string | null;
   preferences?: UserPreferences;
-  /** Running leave-day allocation, managed by the Chief Director (coordinators only). */
+  /** Running leave-day allocation, managed by the Chief Security Director (coordinators only). */
   totalLeaves?: number;
 }
 
@@ -142,7 +142,7 @@ export const ROLE_LABELS: Record<SecurityRole, string> = {
   employee: 'Employee',
   security_coordinator: 'Security Coordinator',
   chief_security_investigator: 'Chief Investigator',
-  security_director: 'Chief Director (Security Director)',
+  security_director: 'Chief Security Director',
   system_administrator: 'System Administrator'
 };
 
@@ -245,7 +245,7 @@ export const ROLE_USERS: UserProfile[] = [
   buildUser('usr-coordinator-002', 'coordinator2', 'Security Coordinator 2 (Gauteng)', 'coordinator2.gp@dlrrd.gov.za', 'security_coordinator', 'Gauteng', 'Johannesburg Regional Office', 'Secret'),
   buildUser('usr-coordinator-wc', 'coordinator_wc', 'Security Coordinator (Western Cape)', 'coordinator.wc@dlrrd.gov.za', 'security_coordinator', 'Western Cape', 'Cape Town Provincial Office', 'Secret'),
   buildUser('usr-investigator-001', 'investigator', 'Chief Investigator', 'investigator@dlrrd.gov.za', 'chief_security_investigator', 'National', 'Field Investigation Unit', 'Top Secret'),
-  buildUser('usr-director-001', 'director', 'Chief Director', 'director@dlrrd.gov.za', 'security_director', 'National', 'National Security Directorate', 'Top Secret'),
+  buildUser('usr-director-001', 'director', 'Chief Security Director', 'director@dlrrd.gov.za', 'security_director', 'National', 'National Security Directorate', 'Top Secret'),
   buildUser('usr-sysadmin-001', 'sysadmin', 'System Administrator', 'sysadmin@dlrrd.gov.za', 'system_administrator', 'National', 'ICT / MTS — National Office', 'Secret')
 ];
 

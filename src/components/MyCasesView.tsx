@@ -158,10 +158,15 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
     }
   };
 
-  // Fine-grained workflow stage badge (falls back to the coarse status)
+  // Fine-grained workflow stage badge (falls back to the coarse status).
+  // Completed cases are labelled "Approved" in this list (client preference);
+  // the stored status/stage remains 'Closed' per the BRS.
   const getStageBadge = (incident: SecurityIncident) => {
     const stage = incident.workflowStage;
-    if (!stage) return { label: incident.status, cls: getStatusClass(incident.status) };
+    if (!stage) {
+      const label = incident.status === 'Closed' ? 'Approved' : incident.status;
+      return { label, cls: getStatusClass(incident.status) };
+    }
     const cls: Record<string, string> = {
       'Submitted': 'danger',
       'Under Review': 'warning',
@@ -171,7 +176,8 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
       'Approved': 'primary',
       'Closed': 'success'
     };
-    return { label: stage, cls: cls[stage] || 'muted' };
+    const label = stage === 'Closed' ? 'Approved' : stage;
+    return { label, cls: cls[stage] || 'muted' };
   };
 
   return (
@@ -194,13 +200,13 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
               className={`horizontal-tab ${coordinatorTab === 'assigned' ? 'active' : ''}`}
               onClick={() => setCoordinatorTab('assigned')}
             >
-              My Assigned ({coordinatorAssignedCount})
+              Assigned to Me ({coordinatorAssignedCount})
             </button>
             <button
               className={`horizontal-tab ${coordinatorTab === 'unassigned' ? 'active' : ''}`}
               onClick={() => setCoordinatorTab('unassigned')}
             >
-              Unassigned in My Province ({coordinatorUnassignedCount})
+              Unassigned in {currentUser.province || 'My Province'} ({coordinatorUnassignedCount})
             </button>
           </div>
         )}
@@ -242,25 +248,25 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
                 return (
                   <tr key={incident.id}>
                     <td>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', whiteSpace: 'nowrap' }}>
                         <button
                           onClick={() => onSelectCase(incident)}
                           style={{
                             background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
                             fontWeight: 600, color: 'var(--color-primary)', textAlign: 'left',
-                            textDecoration: 'underline', fontSize: 'inherit'
+                            textDecoration: 'underline', fontSize: '0.8rem'
                           }}
                           title="Open the full case file"
                         >
                           {incident.refNo}
                         </button>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
                           Reported: {incident.dateReported}
                         </span>
                         {incident.slaInfo && incident.status !== 'Closed' && (
                           <span
                             style={{
-                              fontSize: '0.72rem',
+                              fontSize: '0.66rem',
                               fontWeight: 600,
                               color: incident.slaInfo.daysRemaining < 0 ? 'var(--color-danger)'
                                 : incident.slaInfo.daysRemaining <= Math.ceil(incident.slaInfo.targetDays * 0.25) ? '#d97706'
@@ -273,11 +279,13 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
                         )}
                       </div>
                     </td>
-                    <td>{incident.province}</td>
-                    <td>{incident.place}</td>
-                    <td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{incident.province}</td>
+                    <td style={{ maxWidth: '180px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={incident.place}>
+                      {incident.place}
+                    </td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
                       {isUnassigned ? (
-                        <span style={{ color: 'var(--color-danger)', fontWeight: 600, fontSize: '0.8rem' }}>Unassigned</span>
+                        <span style={{ color: 'var(--color-danger)', fontWeight: 600, fontSize: '0.78rem' }}>Unassigned</span>
                       ) : (
                         <span style={{ fontWeight: 500 }}>{incident.responsiblePerson}</span>
                       )}
@@ -287,8 +295,8 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
                         {getStageBadge(incident).label}
                       </span>
                     </td>
-                    <td>
-                      <span style={{ fontSize: '0.8rem', fontWeight: 600, opacity: 0.9 }}>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: '0.76rem', fontWeight: 600, opacity: 0.9 }}>
                         {incident.classification}
                       </span>
                     </td>
@@ -309,12 +317,12 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
                       </td>
                     )}
                     <td>
-                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', gap: '0.4rem', whiteSpace: 'nowrap' }}>
                         {isUnassigned && currentUser.role === 'security_coordinator' && (
-                          <button 
+                          <button
                             className="btn btn-primary"
                             onClick={() => handleAssignToMe(incident)}
-                            style={{ padding: '0.4rem 0.75rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}
                           >
                             <UserCheck size={12} /> Assign to Me
                           </button>
@@ -322,15 +330,16 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
                         <button
                           className="btn btn-secondary"
                           onClick={() => onSelectCase(incident)}
-                          style={{ padding: '0.4rem 0.75rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                          title={tracksOwnOnly ? 'Track Case' : 'View File'}
+                          style={{ padding: '0.3rem 0.45rem', display: 'flex', alignItems: 'center' }}
                         >
-                          <Eye size={12} /> {tracksOwnOnly ? 'Track Case' : 'View File'}
+                          <Eye size={14} />
                         </button>
                         {canEscalate && (
                           <button
                             className="btn btn-primary"
                             onClick={() => openEscalationForm(incident)}
-                            style={{ padding: '0.4rem 0.75rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}
                           >
                             <ArrowUpCircle size={12} /> Escalate
                           </button>
@@ -411,7 +420,7 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
                 </div>
 
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">Notes for Chief / National Office</label>
+                  <label className="form-label">Notes for Chief Security Director / National Office</label>
                   <textarea
                     rows={5}
                     className="form-input"

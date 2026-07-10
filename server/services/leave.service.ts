@@ -8,7 +8,7 @@ import { addDays, isWorkingDay, sastToday } from './workdays.service.js';
 
 // Leave-cover orchestration. The scheduler marks its own temporary-coordinator
 // assignments with tempAssignedBy = 'leave-cover:<coordinator username>' so it
-// never reverts an acting role that the Chief Director assigned manually.
+// never reverts an acting role that the Chief Security Director assigned manually.
 export const LEAVE_COVER_PREFIX = 'leave-cover:';
 
 interface OpenIncidentRow {
@@ -155,7 +155,7 @@ export const LeaveService = {
     }
   },
 
-  /** 24h-before nudge to the Chief Director for still-pending requests. */
+  /** 24h-before nudge to the Chief Security Director for still-pending requests. */
   async remindDirectorsOfPending(today: string): Promise<void> {
     const tomorrow = addDays(today, 1);
     const pending = await LeaveModel.getPendingOnDate(tomorrow);

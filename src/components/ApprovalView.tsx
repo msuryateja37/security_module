@@ -3,9 +3,10 @@ import type { SecurityIncident, BackToOfficeReport, InvestigationReport } from '
 import type { UserProfile } from '../security/roleAccess';
 import { ClipboardCheck, ShieldAlert, Award, CheckCircle2, FileText, FolderOpen, Search, UserPlus } from 'lucide-react';
 import { useModal } from './NotificationModal';
+import { useBreadcrumbTail } from './Breadcrumbs';
 
 // Approval Control Panel — role-aware workflow queues.
-// Chief Director: escalated cases awaiting an investigator, investigations
+// Chief Security Director: escalated cases awaiting an investigator, investigations
 // awaiting approval, approved cases awaiting closure.
 // Security Coordinator: open provincial cases and approved cases ready to close.
 // All case actions (assign / approve / return / close) live on the case file
@@ -55,6 +56,8 @@ export const ApprovalView: React.FC<ApprovalViewProps> = ({ incidents, btoReport
   const [activeTab, setActiveTab] = useState<QueueKey>(tabs[0].key);
   const activeQueue: SecurityIncident[] = activeTab === 'reports' ? [] : queues[activeTab] || [];
 
+  useBreadcrumbTail(tabs.find(t => t.key === activeTab)?.label);
+
   const pendingBto = btoReports.slice(0, 3);
   const pendingInv = invReports.slice(0, 3);
 
@@ -69,8 +72,8 @@ export const ApprovalView: React.FC<ApprovalViewProps> = ({ incidents, btoReport
   const queueHint: Record<QueueKey, string> = {
     assign: 'Open a case file to assign a Chief Investigator for the field investigation.',
     approvals: 'Review the submitted field findings, then approve the investigation or return it to the investigator.',
-    closure: 'The Security Director approved these investigations — close each case with an outcome classification to notify the reporter.',
-    open: 'Review each new case: close small cases with a report, or escalate significant cases to the Security Director.',
+    closure: 'The Chief Security Director approved these investigations — close each case with an outcome classification to notify the reporter.',
+    open: 'Review each new case: close small cases with a report, or escalate significant cases to the Chief Security Director.',
     reports: ''
   };
 
@@ -82,7 +85,7 @@ export const ApprovalView: React.FC<ApprovalViewProps> = ({ incidents, btoReport
           <p className="page-subtitle">
             {isDirector
               ? 'Assign investigators, approve or return field investigations, and oversee closures'
-              : 'Review open provincial cases and close cases approved by the Security Director'}
+              : 'Review open provincial cases and close cases approved by the Chief Security Director'}
           </p>
         </div>
       </div>

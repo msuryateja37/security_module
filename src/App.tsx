@@ -41,6 +41,8 @@ import { ProfileView } from './components/ProfileView';
 import { LeavesView } from './components/LeavesView';
 import { LeaveManagementView } from './components/LeaveManagementView';
 import { relativeTime } from './utils/workdays';
+import { Breadcrumbs, BreadcrumbTailProvider } from './components/Breadcrumbs';
+import type { Crumb } from './components/Breadcrumbs';
 import type { AppNotification } from './types/leave';
 import {
   Settings,
@@ -82,6 +84,13 @@ function App() {
   });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+  // Breadcrumb trail — views with internal tabs publish their sub-location
+  // through the BreadcrumbTailProvider; App builds the leading crumbs.
+  const [breadcrumbTail, setBreadcrumbTail] = useState<Crumb[]>([]);
+  // The view a case file was opened from (My Cases, Approval, …) so the
+  // breadcrumb and its parent link lead back to where the user came from.
+  const [caseOrigin, setCaseOrigin] = useState<AppView | null>(null);
+
   // URL Hash Routing synchronization
   useEffect(() => {
     const handleHashChange = () => {
@@ -116,9 +125,19 @@ function App() {
   }, [activeView, currentUser, caseDetailId]);
 
   const openCaseFile = (incidentId: string) => {
+    if (activeView !== 'case_detail') {
+      setCaseOrigin(activeView);
+    }
     setCaseDetailId(incidentId);
     setActiveView('case_detail');
   };
+
+  // Forget the case origin once the user is no longer on a case file
+  useEffect(() => {
+    if (activeView !== 'case_detail') {
+      setCaseOrigin(null);
+    }
+  }, [activeView]);
 
   useEffect(() => {
     setIsSidebarOpen(false);
@@ -731,6 +750,57 @@ function App() {
     }
   };
 
+  // Breadcrumb trail: Home › section › (sub-location published by the view).
+  // Overlays (drawers, modals) are not part of the trail — only page-level navigation.
+  const getBreadcrumbs = (): Crumb[] => {
+    if (!currentUser) return [];
+
+    const home: Crumb = { label: 'Home', onClick: () => navigateToView('dashboard') };
+
+    if (activeView === 'dashboard') {
+      return [{ label: 'Home' }];
+    }
+
+    if (activeView === 'case_detail') {
+      const origin: AppView =
+        caseOrigin && caseOrigin !== 'case_detail' && canAccessView(currentUser.role, caseOrigin)
+          ? caseOrigin
+          : 'my_cases';
+      return [
+        home,
+        {
+          label: getViewLabelForRole(origin, currentUser.role),
+          onClick: () => {
+            setCaseDetailId(null);
+            setActiveView(origin);
+          }
+        },
+        ...(breadcrumbTail.length > 0 ? breadcrumbTail : [{ label: 'Case File' }])
+      ];
+    }
+
+    if (activeView === 'submit_reports') {
+      const tabLabel = REPORT_TABS.find(tab => tab.view === submitReportSubView)?.label;
+      return [
+        home,
+        {
+          label: 'Submit Reports',
+          onClick: () => setSubmitReportSubView(getDefaultReportTabForRole(currentUser.role))
+        },
+        ...(tabLabel ? [{ label: tabLabel }] : [])
+      ];
+    }
+
+    return [
+      home,
+      {
+        label: getViewLabelForRole(activeView, currentUser.role),
+        onClick: () => setActiveView(activeView)
+      },
+      ...breadcrumbTail
+    ];
+  };
+
   const navigateToView = (view: string) => {
     if (!currentUser) return;
 
@@ -757,6 +827,7 @@ function App() {
   }
 
   return (
+    <BreadcrumbTailProvider value={setBreadcrumbTail}>
     <div className="app-container">
       {/* Sidebar Backdrop overlay for mobile */}
       {isSidebarOpen && (
@@ -854,7 +925,9 @@ function App() {
             >
               <Bell size={18} />
               {notifications.some(n => !n.read) && (
-                <span style={{ position: 'absolute', top: '6px', right: '6px', width: '8px', height: '8px', background: 'var(--color-accent)', borderRadius: '50%' }}></span>
+                <span className="notif-count-badge">
+                  {(() => { const c = notifications.filter(n => !n.read).length; return c > 99 ? '99+' : c; })()}
+                </span>
               )}
             </button>
             
@@ -990,7 +1063,7 @@ function App() {
                     key={notif.id}
                     className={`notification-item ${notif.read ? 'read' : 'unread'}`}
                     onClick={() => handleOpenNotification(notif)}
-                    style={{ cursor: notif.link ? 'pointer' : 'default' }}
+                    style={{ cursor: notif.link || !notif.read ? 'pointer' : 'default' }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div className="notification-title">{notif.title}</div>
@@ -1064,6 +1137,8 @@ function App() {
 
         {/* Main Content Area */}
         <main className="main-content" style={{ flexGrow: 1, padding: '2rem' }}>
+          <Breadcrumbs items={getBreadcrumbs()} />
+
           {activeView === 'dashboard' && (
             <DashboardView
               incidents={incidents}
@@ -1331,6 +1406,7 @@ function App() {
         </div>
       )}
     </div>
+    </BreadcrumbTailProvider>
   );
 }
 

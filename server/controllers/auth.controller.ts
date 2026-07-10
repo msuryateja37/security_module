@@ -218,7 +218,7 @@ export const AuthController = {
   },
 
   /**
-   * Chief Director appoints an employee as temporary Security Coordinator
+   * Chief Security Director appoints an employee as temporary Security Coordinator
    * (leave cover). The acting coordinator gets the full rights of a permanent one.
    */
   async assignTempCoordinator(req: AuthenticatedRequest, res: Response) {

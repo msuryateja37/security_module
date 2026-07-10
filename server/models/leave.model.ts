@@ -149,7 +149,7 @@ export const LeaveModel = {
     );
   },
 
-  /** Pending days starting tomorrow — reminder trigger for the Chief Director. */
+  /** Pending days starting tomorrow — reminder trigger for the Chief Security Director. */
   async getPendingOnDate(date: string): Promise<LeaveDayRow[]> {
     return query<LeaveDayRow>(
       `${DAY_SELECT} WHERE ld.status = 'Pending' AND ld.leaveDate = ?`,

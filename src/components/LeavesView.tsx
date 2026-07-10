@@ -140,7 +140,7 @@ export const LeavesView: React.FC<LeavesViewProps> = ({ currentUser }) => {
       const json = await res.json();
       if (json.success) {
         showAlert(
-          `Your request for ${selectedDates.length} leave day(s) has been submitted to the Chief Director for approval.`,
+          `Your request for ${selectedDates.length} leave day(s) has been submitted to the Chief Security Director for approval.`,
           'Leave Request Submitted',
           'success'
         );
@@ -172,7 +172,7 @@ export const LeavesView: React.FC<LeavesViewProps> = ({ currentUser }) => {
   const cancelDay = (day: LeaveDay) => {
     showConfirm({
       title: 'Cancel Leave Day',
-      message: `Cancel your ${day.status.toLowerCase()} leave day on ${day.leaveDate}? The day returns to your balance and the Chief Director is notified.`,
+      message: `Cancel your ${day.status.toLowerCase()} leave day on ${day.leaveDate}? The day returns to your balance and the Chief Security Director is notified.`,
       confirmText: 'Cancel Leave Day',
       onConfirm: async () => {
         try {
@@ -224,7 +224,7 @@ export const LeavesView: React.FC<LeavesViewProps> = ({ currentUser }) => {
           <button
             className="btn btn-primary"
             disabled={requestDisabled || requestMode}
-            title={requestDisabled ? 'No leave days available — ask the Chief Director to update your allocation' : 'Select days on the calendar'}
+            title={requestDisabled ? 'No leave days available — ask the Chief Security Director to update your allocation' : 'Select days on the calendar'}
             onClick={() => { setScreen('calendar'); setRequestMode(true); }}
             style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', opacity: requestDisabled || requestMode ? 0.55 : 1, cursor: requestDisabled || requestMode ? 'not-allowed' : 'pointer' }}
           >
@@ -247,7 +247,7 @@ export const LeavesView: React.FC<LeavesViewProps> = ({ currentUser }) => {
               <input
                 type="text"
                 className="form-input"
-                placeholder="Reason (optional, visible to the Chief Director only)"
+                placeholder="Reason (optional, visible to the Chief Security Director only)"
                 value={reason}
                 maxLength={500}
                 onChange={e => setReason(e.target.value)}

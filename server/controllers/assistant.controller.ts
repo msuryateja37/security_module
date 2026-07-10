@@ -60,10 +60,10 @@ function scopeIncidentsForUser(incidents: any[], user: UserProfile): any[] {
     );
   }
   if (user.role === 'chief_security_investigator') {
-    // Chief Investigator only sees cases assigned to them by the Security Director
+    // Chief Investigator only sees cases assigned to them by the Chief Security Director
     return incidents.filter(i => i.responsiblePerson === user.displayName);
   }
-  return incidents; // Chief Director sees all
+  return incidents; // Chief Security Director sees all
 }
 
 /** Compact projection so we don't send full narratives to the model for a list. */
@@ -126,7 +126,7 @@ const ALL_TOOLS: ChatCompletionFunctionTool[] = [
       description:
         'Analyse one case and return everything needed for a structured management brief: full details, ' +
         'SLA position, escalation state, and who raised the case with their contact information. ' +
-        'Use when a Coordinator, Chief Investigator or Chief Director asks to analyse, brief, or review a case. ' +
+        'Use when a Coordinator, Chief Investigator or Chief Security Director asks to analyse, brief, or review a case. ' +
         'Present the result as a structured brief: Summary, Key Facts, Reporter & Contact, Status & SLA, Recommended Next Step.',
       parameters: {
         type: 'object',
@@ -143,7 +143,7 @@ const ALL_TOOLS: ChatCompletionFunctionTool[] = [
       name: 'get_case_statistics',
       description:
         'Get case-load statistics for the user\'s scope: total cases, new/open cases, cases attended by the user, ' +
-        'unassigned cases, breakdown by status and by SLA position (and by province for the Chief Director). ' +
+        'unassigned cases, breakdown by status and by SLA position (and by province for the Chief Security Director). ' +
         'Use when the user asks how many cases they have, what is new, their workload, or a province overview.',
       parameters: { type: 'object', properties: {} }
     }
@@ -208,7 +208,7 @@ const ALL_TOOLS: ChatCompletionFunctionTool[] = [
  * - Employee: register incident via chat, track own incidents, basic questions, own profile.
  * - Security Coordinator: + case analysis/brief, province case-load statistics, reporter contact info.
  * - Chief Investigator: assigned-case tracking, analysis of assigned cases, statistics; no form pre-fill.
- * - Chief Director: all-province oversight, analysis, statistics; no form pre-fill.
+ * - Chief Security Director: all-province oversight, analysis, statistics; no form pre-fill.
  * - System Administrator: own-incident reporting/tracking and profile questions only; no case analysis.
  */
 function getToolsForUser(user: UserProfile): ChatCompletionFunctionTool[] {
@@ -230,15 +230,15 @@ const ROLE_AI_CAPABILITIES: Record<string, string[]> = {
     'Answer questions about the user\'s own profile (get_my_profile).'
   ],
   security_coordinator: [
-    'Analyse a case and provide a brief (analyze_case): present as a structured brief — Summary, Key Facts, Reporter & Contact, Status & SLA, Recommended Next Step. For the next step apply the workflow: a small/simple case can be closed by the Coordinator once complete with reports and attachments; a significant/big case must be escalated to the Security Director, who assigns the Chief Investigator.',
+    'Analyse a case and provide a brief (analyze_case): present as a structured brief — Summary, Key Facts, Reporter & Contact, Status & SLA, Recommended Next Step. For the next step apply the workflow: a small/simple case can be closed by the Coordinator once complete with reports and attachments; a significant/big case must be escalated to the Chief Security Director, who assigns the Chief Investigator.',
     'Dashboard numbers (get_case_statistics): cases in the coordinator\'s province, cases attended by them, new cases, SLA position.',
     'When asked who raised a case or how to contact the reporter, give the reporter\'s name and contact details from the case record — coordinators are authorised to contact the employee.',
     'Register an incident via chat (prefill_incident_form) and track cases (list_my_incidents / get_incident_details).',
     'Answer questions about the user\'s own profile (get_my_profile).'
   ],
   chief_security_investigator: [
-    'Track and analyse assigned cases only — cases the Security Director has assigned to this investigator (list_my_incidents / get_incident_details / analyze_case).',
-    'Case briefs (analyze_case): Summary, Key Facts, Reporter & Contact, Status & SLA, Recommended Next Step. The investigator\'s workflow: collect field information/data, attach it to the case (Investigation view), then move the case to approval for the Security Director; the cycle repeats until the Director approves closure.',
+    'Track and analyse assigned cases only — cases the Chief Security Director has assigned to this investigator (list_my_incidents / get_incident_details / analyze_case).',
+    'Case briefs (analyze_case): Summary, Key Facts, Reporter & Contact, Status & SLA, Recommended Next Step. The investigator\'s workflow: collect field information/data, attach it to the case (Investigation view), then move the case to approval for the Chief Security Director; the cycle repeats until the Director approves closure.',
     'Workload numbers (get_case_statistics).',
     'Answer questions about the user\'s own profile (get_my_profile). Note: investigators do not register incidents via chat.'
   ],
@@ -266,9 +266,9 @@ function buildSystemPrompt(user: UserProfile): string {
     ...capabilities.map((c, i) => `${i + 1}. ${c}`),
     '',
     'Process facts you may state:',
-    '   - Roles: Employees report and track their own incidents. Security Coordinators approve cases, close small cases with reports/attachments, and escalate significant cases to the Security Director. The Chief Investigator only works cases assigned by the Security Director, collects field data, and submits the case for the Director\'s approval. The Chief Director (Security Director) oversees all provinces, assigns investigators, approves closures, and can appoint an employee as temporary Security Coordinator (e.g. leave cover). The System Administrator (ICT/MTS) manages users, roles, permissions, SLA configurations, notification templates, escalation rules and overall system administration.',
+    '   - Roles: Employees report and track their own incidents. Security Coordinators approve cases, close small cases with reports/attachments, and escalate significant cases to the Chief Security Director. The Chief Investigator only works cases assigned by the Chief Security Director, collects field data, and submits the case for the Director\'s approval. The Chief Security Director oversees all provinces, assigns investigators, approves closures, and can appoint an employee as temporary Security Coordinator (e.g. leave cover). The System Administrator (ICT/MTS) manages users, roles, permissions, SLA configurations, notification templates, escalation rules and overall system administration.',
     '   - SLA/policy deadlines: report incident to NOC immediately/without delay; full report within 14 days; security breach to SSA within 48 hours; internal investigation within 14 working days.',
-    '   - Escalation: coordinators escalate complex cases (Major, High Risk, Critical, National Review) from My Cases; escalations go to the Security Director.',
+    '   - Escalation: coordinators escalate complex cases (Major, High Risk, Critical, National Review) from My Cases; escalations go to the Chief Security Director.',
     '   - Incidents are submitted via Submit Reports → Incident Notification; the system generates the reference number and notifies the Security Coordinator automatically.',
     '',
     'Rules:',

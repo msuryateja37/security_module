@@ -126,7 +126,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
             </span>
             <input 
               type="text" 
-              placeholder="Search by Ref No, description, CAS number, officer..." 
+              placeholder="Search by Incident No, description, CAS number, officer..."
               className="form-input"
               style={{ paddingLeft: '2.5rem' }}
               value={searchTerm}
@@ -183,10 +183,10 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
 
       {/* Register Grid Table */}
       <div className="table-container">
-        <table className="custom-table">
+        <table className="custom-table compact">
           <thead>
             <tr>
-              <th>Ref No.</th>
+              <th>Incident No.</th>
               <th>Incident Summary</th>
               <th>Place</th>
               <th>Province</th>
@@ -212,10 +212,10 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
               return (
                 <tr key={inc.id}>
                   <td style={{ fontWeight: 600, color: 'hsl(var(--color-primary))' }}>{inc.refNo}</td>
-                  <td style={{ maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <td style={{ maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={inc.natureOfLoss}>
                     {inc.natureOfLoss}
                   </td>
-                  <td>{inc.place}</td>
+                  <td style={{ maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={inc.place}>{inc.place}</td>
                   <td>{inc.province}</td>
                   <td>{new Date(inc.dateTime).toLocaleDateString()} {new Date(inc.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
                   <td>R {inc.lossValue.toLocaleString()}</td>
@@ -228,10 +228,12 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
                   <td style={{ textAlign: 'center' }}>
                     <button 
                       onClick={() => handleOpenDrawer(inc)}
-                      className="btn btn-secondary" 
-                      style={{ padding: '0.4rem 0.6rem', fontSize: '0.8rem', gap: '0.25rem' }}
+                      className="btn btn-secondary"
+                      style={{ padding: '0.4rem 0.6rem', fontSize: '0.8rem' }}
+                      title="Review"
+                      aria-label="Review"
                     >
-                      <Eye size={14} /> Review
+                      <Eye size={14} />
                     </button>
                   </td>
                 </tr>

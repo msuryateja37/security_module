@@ -141,7 +141,7 @@ export const LeaveController = {
     }
   },
 
-  /** Chief Director: every coordinator's leave days. */
+  /** Chief Security Director: every coordinator's leave days. */
   async getAll(req: AuthenticatedRequest, res: Response) {
     try {
       const days = await LeaveModel.getAll();
@@ -183,7 +183,7 @@ export const LeaveController = {
   },
 
   /**
-   * Chief Director decides a batch: per-day approve/reject in one call
+   * Chief Security Director decides a batch: per-day approve/reject in one call
    * (e.g. approve 3 of 4 days). Any approval requires nominating a
    * same-province employee as acting coordinator.
    */
@@ -318,7 +318,7 @@ export const LeaveController = {
   },
 
   /**
-   * Chief Director revokes an approved day — only while the batch has not
+   * Chief Security Director revokes an approved day — only while the batch has not
    * started (once the first approved day arrives, the batch is locked).
    */
   async revoke(req: AuthenticatedRequest, res: Response) {
@@ -350,7 +350,7 @@ export const LeaveController = {
       const changed = await LeaveModel.transitionStatus(dayId, ['Approved'], 'Revoked', {
         decidedBy: director.username,
         decidedAt: new Date().toISOString(),
-        decisionNote: note || 'Approval revoked by the Chief Director before the leave started.'
+        decisionNote: note || 'Approval revoked by the Chief Security Director before the leave started.'
       });
       if (!changed) {
         return ResponseView.sendError(res, 'Leave day was modified concurrently — refresh and try again', 'Conflict', 409);
@@ -463,7 +463,7 @@ export const LeaveController = {
     }
   },
 
-  /** Chief Director adjusts a coordinator's running leave allocation. */
+  /** Chief Security Director adjusts a coordinator's running leave allocation. */
   async updateAllocation(req: AuthenticatedRequest, res: Response) {
     try {
       const director = req.user!;

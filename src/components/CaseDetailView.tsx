@@ -7,6 +7,7 @@ import {
   FileText, Loader2, Paperclip, Send, ShieldAlert, UploadCloud, UserCheck, Undo2, X
 } from 'lucide-react';
 import { useModal } from './NotificationModal';
+import { useBreadcrumbTail } from './Breadcrumbs';
 
 // The full case file — opened by clicking a case anywhere in the app (#/case/<id>).
 // Shows the incident record, workflow timeline, attachments and the actions the
@@ -137,6 +138,7 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
   useEffect(() => { loadCase(); }, [loadCase]);
 
   const incident = caseFile?.incident;
+  useBreadcrumbTail(incident?.refNo || 'Case File');
   const stage = (incident?.workflowStage as string) || 'Submitted';
   const isClosed = stage === 'Closed' || incident?.status === 'Closed';
 
@@ -145,6 +147,9 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
     currentUser.role === 'security_coordinator' &&
     incident.province === currentUser.province &&
     (!incident.responsiblePerson || incident.responsiblePerson === 'Unassigned' || incident.responsiblePerson === currentUser.displayName);
+  // Accepting a case (or "Assign to Me") sets the coordinator as responsiblePerson;
+  // until then the coordinator may only accept — no findings, escalation or closure.
+  const coordinatorHasAccepted = isCoordinatorForCase && incident.responsiblePerson === currentUser.displayName;
   const isAssignedInvestigator = !!incident &&
     currentUser.role === 'chief_security_investigator' &&
     (incident.responsiblePerson === currentUser.displayName || incident.assignedInvestigator === currentUser.displayName);
@@ -566,7 +571,7 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
                 )}
 
                 {/* Coordinator: preliminary findings */}
-                {isCoordinatorForCase && ['Submitted', 'Under Review'].includes(stage) && (
+                {coordinatorHasAccepted && ['Submitted', 'Under Review'].includes(stage) && (
                   <div>
                     <label className="form-label" style={{ fontSize: '0.75rem' }}>Preliminary Investigation Findings</label>
                     <textarea
@@ -589,7 +594,7 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
 
                 {/* Coordinator: close small case / close after approval */}
                 {(
-                  (isCoordinatorForCase && ['Submitted', 'Under Review', 'Approved'].includes(stage)) ||
+                  (coordinatorHasAccepted && ['Submitted', 'Under Review', 'Approved'].includes(stage)) ||
                   (isDirector && !isClosed)
                 ) && (
                   <button className="btn btn-success" disabled={busyAction !== null} onClick={() => setShowCloseForm(true)}>
@@ -598,9 +603,9 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
                 )}
 
                 {/* Coordinator: escalate big case */}
-                {isCoordinatorForCase && ['Submitted', 'Under Review'].includes(stage) && !incident.isEscalated && (
+                {coordinatorHasAccepted && ['Submitted', 'Under Review'].includes(stage) && !incident.isEscalated && (
                   <button className="btn btn-primary" disabled={busyAction !== null} onClick={() => setShowEscalateForm(true)}>
-                    <ArrowUpCircle size={15} /> Escalate to Security Director
+                    <ArrowUpCircle size={15} /> Escalate to Chief Security Director
                   </button>
                 )}
 
@@ -662,11 +667,11 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
                         onClick={() =>
                           showConfirm({
                             title: 'Submit for Approval',
-                            message: `Submit your field investigation findings for case ${incident.refNo} to the Security Director for approval?`,
+                            message: `Submit your field investigation findings for case ${incident.refNo} to the Chief Security Director for approval?`,
                             confirmText: 'Submit Findings',
                             onConfirm: () => {
                               runAction('submit-inv', `/api/incidents/${incidentId}/submit-investigation`, 'POST',
-                                { investigationFindings: findingsText }, 'Findings submitted — the Security Director has been notified.');
+                                { investigationFindings: findingsText }, 'Findings submitted — the Chief Security Director has been notified.');
                             }
                           })
                         }
@@ -819,7 +824,7 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
           <div className="drawer" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px' }}>
             <div className="drawer-header">
               <div>
-                <h3 style={{ fontSize: '1.15rem', color: 'hsl(var(--color-primary))' }}>Escalate to Security Director</h3>
+                <h3 style={{ fontSize: '1.15rem', color: 'hsl(var(--color-primary))' }}>Escalate to Chief Security Director</h3>
                 <span style={{ fontSize: '0.78rem', color: 'hsl(var(--text-muted))' }}>{incident.refNo} · {incident.classification}</span>
               </div>
               <button onClick={() => setShowEscalateForm(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'hsl(var(--text-primary))' }} aria-label="Close">
@@ -844,7 +849,7 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
                 </select>
               </div>
               <div className="form-group">
-                <label className="form-label">Notes for the Security Director</label>
+                <label className="form-label">Notes for the Chief Security Director</label>
                 <textarea
                   rows={4}
                   className="form-input"
@@ -862,7 +867,7 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
                 onClick={async () => {
                   const ok = await runAction('escalate', `/api/incidents/${incidentId}/escalate`, 'POST',
                     { escalationLevel, escalationReason, escalationNotes: escalationNotes.trim() },
-                    'Case escalated — the Security Director has been notified.');
+                    'Case escalated — the Chief Security Director has been notified.');
                   if (ok) setShowEscalateForm(false);
                 }}
               >

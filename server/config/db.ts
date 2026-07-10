@@ -166,7 +166,7 @@ async function ensureUsersAndOwnershipSqlite(db: Database) {
     )
   `);
 
-  // Temporary Security Coordinator support (Chief Director leave-cover assignments)
+  // Temporary Security Coordinator support (Chief Security Director leave-cover assignments)
   // + user profile fields (personal details, notification preferences, portal credential)
   for (const col of [
     'baseRole VARCHAR(50)',
@@ -246,7 +246,7 @@ async function ensureUsersAndOwnershipMssql(pool: mssql.ConnectionPool) {
     );
   `);
 
-  // Temporary Security Coordinator support (Chief Director leave-cover assignments)
+  // Temporary Security Coordinator support (Chief Security Director leave-cover assignments)
   // + user profile fields (personal details, notification preferences, portal credential)
   const mssqlUserColumns: [string, string][] = [
     ['baseRole', 'VARCHAR(50)'],
@@ -475,7 +475,7 @@ async function ensureCaseWorkflowMssql(pool: mssql.ConnectionPool) {
 // Role-model migration (July 2026): the 7-role model was reduced to 4 roles, then
 // System Administrator was reinstated as the fifth role (client matrix update).
 //   assistant_coordinator -> security_coordinator (closest equivalent, keeps provincial scope)
-//   executive             -> deactivated (role retired; duties sit with the Chief Director).
+//   executive             -> deactivated (role retired; duties sit with the Chief Security Director).
 //                            Rows are kept (isActive = 0) to preserve audit history.
 //   system_administrator  -> reactivated with current code/label (ICT/MTS admin role)
 async function migrateRetiredRoles(run: (sql: string) => Promise<unknown>) {
@@ -485,7 +485,7 @@ async function migrateRetiredRoles(run: (sql: string) => Promise<unknown>) {
   // Refresh labels/codes for roles whose terminology changed
   await run(`UPDATE users SET roleCode = 'SECCO', roleLabel = 'Security Coordinator' WHERE role = 'security_coordinator' AND baseRole IS NULL`);
   await run(`UPDATE users SET roleCode = 'CHINV', roleLabel = 'Chief Investigator' WHERE role = 'chief_security_investigator'`);
-  await run(`UPDATE users SET roleCode = 'CHDIR', roleLabel = 'Chief Director (Security Director)' WHERE role = 'security_director'`);
+  await run(`UPDATE users SET roleCode = 'CHDIR', roleLabel = 'Chief Security Director' WHERE role = 'security_director'`);
 }
 
 // Link pre-existing seed/demo rows to their creating account where the name

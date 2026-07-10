@@ -94,7 +94,7 @@ export const AdministrationView: React.FC<AdministrationViewProps> = ({ checklis
   const [auditLogs, setAuditLogs] = useState<AuditLogRow[]>([]);
 
   const permissions = getPermissionsForRole(currentUser.role);
-  // Leave allocations are managed by the Chief Director only; the System
+  // Leave allocations are managed by the Chief Security Director only; the System
   // Administrator sees the users list but not the allocation editor.
   const canManageLeaveAllocation = permissions.includes('leave:manage_allocation');
   const canManageSystemConfig = permissions.includes('admin:system_config');
@@ -765,7 +765,7 @@ export const AdministrationView: React.FC<AdministrationViewProps> = ({ checklis
             <h3 style={{ marginBottom: '0.5rem' }}>Escalation Matrix (FR-037)</h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
               Permitted escalation levels, one per line, in ascending order of severity. Escalated cases route to
-              the Security Director, who assigns the Chief Investigator. Escalations using a level not on this
+              the Chief Security Director, who assigns the Chief Investigator. Escalations using a level not on this
               list are rejected.
             </p>
             <textarea

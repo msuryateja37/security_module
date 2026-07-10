@@ -17,7 +17,7 @@ import { LeaveService } from '../services/leave.service.js';
 //   1. Employee raises incident            -> Submitted
 //   2. Security Coordinator reviews        -> Under Review
 //      small case: coordinator closes      -> Closed
-//      big case: coordinator escalates     -> Escalated (Security Director)
+//      big case: coordinator escalates     -> Escalated (Chief Security Director)
 //   3. Director assigns Chief Investigator -> Investigation
 //   4. Investigator captures field findings and submits -> Pending Approval
 //   5. Director reviews: approve -> Approved (coordinator closes -> Closed)
@@ -85,7 +85,7 @@ const recordEvent = (
     notes
   });
 
-/** Notify every active user holding a given role (e.g. all Security Directors, FR-007). */
+/** Notify every active user holding a given role (e.g. all Chief Security Directors, FR-007). */
 const notifyRole = async (role: string, title: string, message: string, link?: string) => {
   const users = await UserModel.getAll();
   const usernames = users.filter(u => u.role === role).map(u => u.username);
@@ -375,13 +375,13 @@ export const CaseWorkflowController = {
         if (!['Submitted', 'Under Review', 'Approved'].includes(stage)) {
           return ResponseView.sendError(
             res,
-            `An escalated case can only be closed after the Security Director approves the investigation (current stage: ${stage})`,
+            `An escalated case can only be closed after the Chief Security Director approves the investigation (current stage: ${stage})`,
             'Validation failed',
             400
           );
         }
       } else if (user.role !== 'security_director') {
-        return ResponseView.sendError(res, 'Only coordinators and the Security Director may close cases', 'Forbidden', 403);
+        return ResponseView.sendError(res, 'Only coordinators and the Chief Security Director may close cases', 'Forbidden', 403);
       }
 
       const closedAt = new Date().toISOString();
@@ -404,7 +404,7 @@ export const CaseWorkflowController = {
       await audit(user, 'UPDATE', id, `Closed ${incident.refNo} with outcome ${closureOutcome}`);
 
       // Notify the final outcome (process step 11): original reporter, the
-      // investigation chain, and the Security Director (national oversight).
+      // investigation chain, and the Chief Security Director (national oversight).
       const vars = {
         refNo: incident.refNo,
         province: incident.province,
@@ -430,7 +430,7 @@ export const CaseWorkflowController = {
       chain.delete(user.username); // no self-notification for whoever closed it
       await notifyFromTemplate('case_closed', vars, [...chain], caseLink(id));
 
-      // Security Director(s) get closure oversight of every case they didn't close themselves
+      // Chief Security Director(s) get closure oversight of every case they didn't close themselves
       const directors = allUsers
         .filter(u => u.role === 'security_director' && u.username !== user.username && !chain.has(u.username))
         .map(u => u.username);
@@ -557,7 +557,7 @@ export const CaseWorkflowController = {
       })();
 
       await notifyReporterOfProgress(incident, user,
-        `The field investigation for your incident ${incident.refNo} has been completed and submitted to the Security Director for approval.`);
+        `The field investigation for your incident ${incident.refNo} has been completed and submitted to the Chief Security Director for approval.`);
 
       ResponseView.sendSuccess(res, { ...incident, ...updates }, 'Investigation submitted for approval');
     } catch (error) {
@@ -611,7 +611,7 @@ export const CaseWorkflowController = {
         }
 
         await notifyReporterOfProgress(incident, user,
-          `The Security Director has requested further field investigation on your incident ${incident.refNo} before approval.`);
+          `The Chief Security Director has requested further field investigation on your incident ${incident.refNo} before approval.`);
 
         return ResponseView.sendSuccess(res, { ...incident, ...updates }, 'Investigation returned to the investigator');
       }
@@ -643,7 +643,7 @@ export const CaseWorkflowController = {
       }
 
       await notifyReporterOfProgress(incident, user,
-        `The investigation for your incident ${incident.refNo} has been approved by the Security Director. The case is being prepared for closure.`);
+        `The investigation for your incident ${incident.refNo} has been approved by the Chief Security Director. The case is being prepared for closure.`);
 
       ResponseView.sendSuccess(res, { ...incident, ...updates }, 'Investigation approved');
     } catch (error) {

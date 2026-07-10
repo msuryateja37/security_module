@@ -28,6 +28,7 @@ import {
   ROLE_LABELS
 } from '../security/roleAccess';
 import { useModal } from './NotificationModal';
+import { useBreadcrumbTail } from './Breadcrumbs';
 
 export type ProfileTab = 'personal' | 'role' | 'security' | 'preferences';
 
@@ -51,7 +52,7 @@ const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   'incident:create': 'Report / register security incidents',
   'incident:track_own': 'Track the status of own reported incidents',
   'incident:view_province': 'View all incidents within own province',
-  'incident:view_assigned': 'View cases assigned by the Chief Director',
+  'incident:view_assigned': 'View cases assigned by the Chief Security Director',
   'incident:view_all': 'View incidents across all nine provinces (national scope)',
   'incident:update': 'Update incident records and investigation status',
   'case:approve': 'Approve case reports and outcomes',
@@ -90,7 +91,12 @@ const formatDateTime = (value?: string | null): string => {
 export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, initialTab = 'personal', onUserUpdated }) => {
   const { showAlert } = useModal();
   const [activeTab, setActiveTab] = useState<ProfileTab>(initialTab);
-
+  useBreadcrumbTail(
+    activeTab === 'personal' ? 'Personal Details'
+      : activeTab === 'role' ? 'Role & Access'
+      : activeTab === 'security' ? 'Security'
+      : 'Preferences'
+  );
   // Personal details (self-editable subset — identity fields are AD/HR-sourced, FR-005)
   const [phoneNumber, setPhoneNumber] = useState(currentUser.phoneNumber || '');
   const [jobTitle, setJobTitle] = useState(currentUser.jobTitle || '');
@@ -142,7 +148,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, initialTa
     : isProvincialRole(currentUser.role)
       ? `Provincial — restricted to ${currentUser.province} (FR-033 data segregation)`
       : currentUser.role === 'chief_security_investigator'
-        ? 'Assigned cases only — cases routed by the Chief Director'
+        ? 'Assigned cases only — cases routed by the Chief Security Director'
         : currentUser.role === 'system_administrator'
           ? 'System administration — users, roles and configuration; no incident case data beyond own reports'
           : 'Own records only — incidents you reported';
@@ -227,7 +233,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, initialTa
         <div className="profile-acting-banner">
           <BadgeCheck size={16} />
           <span>
-            You are currently acting as <strong>Temporary Security Coordinator</strong> (appointed by {currentUser.tempAssignedBy || 'the Chief Director'}).
+            You are currently acting as <strong>Temporary Security Coordinator</strong> (appointed by {currentUser.tempAssignedBy || 'the Chief Security Director'}).
             Your permanent role is <strong>{ROLE_LABELS[currentUser.baseRole]}</strong>.
           </span>
         </div>

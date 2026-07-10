@@ -18,7 +18,7 @@ BEGIN
         isActive BIT DEFAULT 1,
         dateCreated VARCHAR(50),
         baseRole VARCHAR(50),        -- set while acting as temporary Security Coordinator (holds permanent role)
-        tempAssignedBy VARCHAR(100), -- Chief Director who made the temporary assignment
+        tempAssignedBy VARCHAR(100), -- Chief Security Director who made the temporary assignment
         persalNumber VARCHAR(20),    -- government HR (PERSAL) identifier — HR/AD-sourced, read-only in portal
         jobTitle VARCHAR(255),       -- designation as used on official forms
         phoneNumber VARCHAR(50),     -- work contact number
@@ -27,7 +27,7 @@ BEGIN
         passwordHash VARCHAR(255),   -- scrypt salt:hash of the portal credential (AD SSO replaces this in production)
         passwordChangedAt VARCHAR(50),
         lastLoginAt VARCHAR(50),
-        totalLeaves INT DEFAULT 0    -- running leave allocation, managed by the Chief Director
+        totalLeaves INT DEFAULT 0    -- running leave allocation, managed by the Chief Security Director
     );
 END;
 
@@ -205,7 +205,7 @@ END;
 
 -- 8. Coordinator Leave Days Table
 -- One row per requested working day; days submitted together share a batchId so the
--- Chief Director can approve/reject individual days within a single request.
+-- Chief Security Director can approve/reject individual days within a single request.
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'leave_days')
 BEGIN
     CREATE TABLE leave_days (
@@ -214,7 +214,7 @@ BEGIN
         ownerId VARCHAR(100) NOT NULL,        -- users.username of the requesting coordinator
         province VARCHAR(50) NOT NULL,
         leaveDate VARCHAR(50) NOT NULL,       -- 'YYYY-MM-DD'
-        reason NVARCHAR(MAX),                 -- personal data (POPIA): visible to owner + Chief Director only
+        reason NVARCHAR(MAX),                 -- personal data (POPIA): visible to owner + Chief Security Director only
         status VARCHAR(20) NOT NULL,          -- Pending | Approved | Rejected | Revoked | Cancelled | Expired
         substituteUsername VARCHAR(100),      -- employee nominated as acting coordinator at approval
         decidedBy VARCHAR(100),

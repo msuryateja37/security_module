@@ -119,12 +119,12 @@ export const CONFIG_DEFAULTS: SystemConfig = {
       title: 'Case {{refNo}} closed — {{outcome}}',
       message: 'Your security incident {{refNo}} has been closed by {{closedBy}}. Outcome: {{outcome}}. {{summary}}'
     },
-    // Oversight copy to the Security Director whenever someone else closes a case
+    // Oversight copy to the Chief Security Director whenever someone else closes a case
     case_closed_oversight: {
       title: 'Case {{refNo}} closed — {{outcome}}',
       message: '{{closedBy}} closed case {{refNo}} ({{province}}). Outcome: {{outcome}}. {{summary}}'
     },
-    // Oversight copy to the Security Director when a case gets a responsible coordinator
+    // Oversight copy to the Chief Security Director when a case gets a responsible coordinator
     case_assignment_update: {
       title: 'Case {{refNo}} assigned — {{province}}',
       message: '{{actor}} assigned case {{refNo}} ({{province}}) to {{coordinator}} for preliminary review.'
