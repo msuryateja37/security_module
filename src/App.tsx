@@ -883,7 +883,7 @@ function App() {
       </nav>
 
       {/* Persistent global layout container */}
-      <div className="main-layout-container" style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      <div className={`main-layout-container${activeView === 'assistant' ? ' viewport-locked' : ''}`} style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
         
         {/* Topbar Header */}
         <header className="global-topbar" style={{ position: 'relative' }}>

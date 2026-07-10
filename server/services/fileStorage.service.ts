@@ -40,11 +40,10 @@ const sanitizeFileName = (name: string): string => {
 // Case refNos look like SEC/2026/001 — slashes would nest extra folders, so
 // they become dashes: one folder per case, named after the case.
 const sanitizeCaseFolder = (caseRef: string): string => {
-  const safe = caseRef.replace(/[\\/]/g, '-').replace(/[^\w\-]/g, '_');
+  const safe = caseRef.replace(/[\\/]/g, '-').replace(/[^\w-]/g, '_');
   return safe.length > 0 ? safe : 'case';
 };
 
-let containerClient: ContainerClient | null = null;
 let containerReady: Promise<ContainerClient> | null = null;
 
 const azureConfigured = (): boolean => !!process.env.AZURE_STORAGE_CONNECTION_STRING;
@@ -53,13 +52,14 @@ const getContainer = (): Promise<ContainerClient> => {
   if (!containerReady) {
     containerReady = (async () => {
       const service = BlobServiceClient.fromConnectionString(process.env.AZURE_STORAGE_CONNECTION_STRING!);
-      const client = service.getContainerClient(process.env.AZURE_STORAGE_CONTAINER || 'case-documents');
+      const client = service.getContainerClient(
+        process.env.AZURE_STORAGE_CONTAINER_NAME || process.env.AZURE_STORAGE_CONTAINER || 'case-documents'
+      );
       await client.createIfNotExists();
-      containerClient = client;
       return client;
     })();
     // Allow a retry on transient startup failure instead of caching the rejection
-    containerReady.catch(() => { containerReady = null; containerClient = null; });
+    containerReady.catch(() => { containerReady = null; });
   }
   return containerReady;
 };
