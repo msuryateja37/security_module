@@ -25,6 +25,7 @@ export type SecurityRole =
   | 'employee'
   | 'security_coordinator'
   | 'chief_security_investigator'
+  | 'deputy_director'
   | 'security_director'
   | 'system_administrator';
 
@@ -59,6 +60,7 @@ export type Permission =
   | 'case:escalate'
   | 'case:assign_investigator'
   | 'investigation:submit'
+  | 'investigation:verify'
   | 'investigation:approve'
   | 'reports:submit_operational'
   | 'reports:view_archive'
@@ -134,6 +136,7 @@ export const ROLE_CODES: Record<SecurityRole, string> = {
   employee: 'EMP',
   security_coordinator: 'SECCO',
   chief_security_investigator: 'CHINV',
+  deputy_director: 'DEPDIR',
   security_director: 'CHDIR',
   system_administrator: 'SYSADM'
 };
@@ -142,12 +145,13 @@ export const ROLE_LABELS: Record<SecurityRole, string> = {
   employee: 'Employee',
   security_coordinator: 'Security Coordinator',
   chief_security_investigator: 'Chief Investigator',
+  deputy_director: 'Deputy Director',
   security_director: 'Chief Security Director',
   system_administrator: 'System Administrator'
 };
 
 // Roles whose data scope is national (see everything across provinces)
-export const NATIONAL_ROLES: SecurityRole[] = ['security_director'];
+export const NATIONAL_ROLES: SecurityRole[] = ['deputy_director', 'security_director'];
 
 // Roles whose data scope is their own province
 export const PROVINCIAL_ROLES: SecurityRole[] = ['security_coordinator'];
@@ -178,6 +182,18 @@ export const ROLE_PERMISSIONS: Record<SecurityRole, Permission[]> = {
     'reports:view_archive',
     'ai:chat'
   ],
+  // Deputy Director (v2): national verification & recommendations layer between
+  // the Coordinator/Investigator and the Chief Security Director.
+  deputy_director: [
+    'dashboard:view',
+    'incident:create',
+    'incident:view_all',
+    'incident:update',
+    'investigation:verify',
+    'reports:view_archive',
+    'sla:view',
+    'ai:chat'
+  ],
   security_director: [
     'dashboard:view',
     'incident:view_all',
@@ -186,6 +202,7 @@ export const ROLE_PERMISSIONS: Record<SecurityRole, Permission[]> = {
     'case:close',
     'case:escalate',
     'case:assign_investigator',
+    'investigation:verify',
     'investigation:approve',
     'reports:view_archive',
     'sla:view',
@@ -245,31 +262,34 @@ export const ROLE_USERS: UserProfile[] = [
   buildUser('usr-coordinator-002', 'coordinator2', 'Security Coordinator 2 (Gauteng)', 'coordinator2.gp@dlrrd.gov.za', 'security_coordinator', 'Gauteng', 'Johannesburg Regional Office', 'Secret'),
   buildUser('usr-coordinator-wc', 'coordinator_wc', 'Security Coordinator (Western Cape)', 'coordinator.wc@dlrrd.gov.za', 'security_coordinator', 'Western Cape', 'Cape Town Provincial Office', 'Secret'),
   buildUser('usr-investigator-001', 'investigator', 'Chief Investigator', 'investigator@dlrrd.gov.za', 'chief_security_investigator', 'National', 'Field Investigation Unit', 'Top Secret'),
+  buildUser('usr-deputydirector-001', 'deputydirector', 'Deputy Director', 'deputydirector@dlrrd.gov.za', 'deputy_director', 'National', 'National Security Directorate', 'Top Secret'),
   buildUser('usr-director-001', 'director', 'Chief Security Director', 'director@dlrrd.gov.za', 'security_director', 'National', 'National Security Directorate', 'Top Secret'),
   buildUser('usr-sysadmin-001', 'sysadmin', 'System Administrator', 'sysadmin@dlrrd.gov.za', 'system_administrator', 'National', 'ICT / MTS — National Office', 'Secret')
 ];
 
 export const LOGIN_ALIASES: Record<string, string> = {
-  supervisor: 'coordinator'
+  supervisor: 'coordinator',
+  dd: 'deputydirector',
+  deputy: 'deputydirector'
 };
 
 export const NAV_ITEMS: NavItem[] = [
-  { view: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'security_director', 'system_administrator'] },
-  { view: 'submit_reports', label: 'Submit Reports', icon: FileText, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'security_director', 'system_administrator'] },
+  { view: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
+  { view: 'submit_reports', label: 'Submit Reports', icon: FileText, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
   { view: 'my_cases', label: 'My Cases', icon: Briefcase, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'security_director', 'system_administrator'] },
-  { view: 'register', label: 'Investigation', icon: Search, roles: ['security_coordinator', 'chief_security_investigator', 'security_director'] },
-  { view: 'approval', label: 'Approval', icon: ClipboardCheck, roles: ['security_coordinator', 'security_director'] },
-  { view: 'sla_monitor', label: 'SLA Monitor', icon: Clock, roles: ['security_coordinator', 'chief_security_investigator', 'security_director'] },
-  { view: 'reports_archive', label: 'Reports', icon: Archive, roles: ['security_coordinator', 'chief_security_investigator', 'security_director'] },
+  { view: 'register', label: 'Investigation', icon: Search, roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director'] },
+  { view: 'approval', label: 'Approval', icon: ClipboardCheck, roles: ['security_coordinator', 'deputy_director', 'security_director'] },
+  { view: 'sla_monitor', label: 'SLA Monitor', icon: Clock, roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director'] },
+  { view: 'reports_archive', label: 'Reports', icon: Archive, roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director'] },
   { view: 'leaves', label: 'Leaves Management', icon: CalendarDays, roles: ['security_coordinator'] },
   { view: 'leave_management', label: 'Leave Management', icon: CalendarCheck, roles: ['security_director'] },
-  { view: 'assistant', label: 'AI Assistant', icon: Sparkles, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'security_director', 'system_administrator'] },
-  { view: 'policy', label: 'Policy Hub', icon: BookOpen, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'security_director', 'system_administrator'] },
+  { view: 'assistant', label: 'AI Assistant', icon: Sparkles, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
+  { view: 'policy', label: 'Policy Hub', icon: BookOpen, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
   { view: 'administration', label: 'Administration', icon: Settings, roles: ['security_director', 'system_administrator'] }
 ];
 
 export const REPORT_TABS: ReportTab[] = [
-  { view: 'incident', label: 'Incident Notification', roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'security_director', 'system_administrator'] },
+  { view: 'incident', label: 'Incident Notification', roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
   { view: 'bto', label: 'Back to Office Report', roles: ['security_coordinator', 'chief_security_investigator', 'security_director'] },
   { view: 'investigation', label: 'Investigation Report', roles: ['security_coordinator', 'chief_security_investigator', 'security_director'] },
   { view: 'stats', label: 'Monthly Performance Statistics', roles: ['security_coordinator', 'security_director'] },

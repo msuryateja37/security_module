@@ -107,6 +107,15 @@ export const CONFIG_DEFAULTS: SystemConfig = {
       title: 'Investigation for {{refNo}} awaiting approval',
       message: '{{investigator}} submitted field investigation findings for case {{refNo}}. Please review and approve or return the investigation.'
     },
+    // Deputy Director review chain (v2 user journeys)
+    dd_review_required: {
+      title: 'Case {{refNo}} awaits your review',
+      message: '{{submittedBy}} submitted case {{refNo}} ({{province}}) for Deputy Director verification — requested {{requestedOutcome}}. Please review the case file, add your formal recommendations and forward it to the Chief Security Director.'
+    },
+    dd_recommendation_submitted: {
+      title: 'DD recommendation on {{refNo}} — {{recommendedAction}}',
+      message: 'Deputy Director {{deputyDirector}} verified case {{refNo}} ({{province}}) and recommends {{recommendedAction}}. The case awaits your approval decision.'
+    },
     case_returned: {
       title: 'Investigation for {{refNo}} returned',
       message: '{{director}} returned the investigation for case {{refNo}}. Reason: {{reason}}. Please continue the field investigation and resubmit.'

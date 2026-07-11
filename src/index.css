@@ -2666,7 +2666,11 @@ select.form-input {
    ========================================================================== */
 
 .screen-fade-up {
-  animation: fadeUp 0.4s ease both;
+  /* 'backwards', never 'both': a retained transform after the animation would
+     make this wrapper the containing block for position:fixed children, so
+     drawers/backdrops inside the screen would be clipped to the content area
+     instead of covering the viewport. */
+  animation: fadeUp 0.4s ease backwards;
 }
 
 /* ---- Dashboard greeting row ---- */

@@ -41,7 +41,7 @@ export const IncidentController = {
           i.responsiblePerson === user.displayName || i.assignedInvestigator === user.displayName
         );
       }
-      // Chief Security Director (security_director) sees all incidents across provinces
+      // Chief Security Director and Deputy Director (national roles) see all incidents across provinces
 
       // Attach dynamic SLA status to each incident (targets from system configuration, FR-037)
       const slaRules = await ConfigService.getSlaRules();

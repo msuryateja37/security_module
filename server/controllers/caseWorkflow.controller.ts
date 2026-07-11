@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { IncidentModel, SecurityIncident } from '../models/incident.model.js';
 import { AttachmentModel } from '../models/attachment.model.js';
 import { CaseEventModel } from '../models/caseEvent.model.js';
+import { CaseCommentModel } from '../models/caseComment.model.js';
 import { UserModel } from '../models/user.model.js';
 import { ResponseView } from '../views/response.view.js';
 import { AuthenticatedRequest } from '../security/auth.middleware.js';
@@ -13,23 +14,28 @@ import { NotificationService } from '../services/notification.service.js';
 import { ConfigService } from '../services/config.service.js';
 import { LeaveService } from '../services/leave.service.js';
 
-// End-to-end case workflow (client process-flow document, June 2026):
+// End-to-end case workflow (v2 user journeys, July 2026 — Deputy Director layer):
 //   1. Employee raises incident            -> Submitted
 //   2. Security Coordinator reviews        -> Under Review
-//      small case: coordinator closes      -> Closed
+//      normal case: coordinator submits to the Deputy Director -> Pending DD Review
 //      big case: coordinator escalates     -> Escalated (Chief Security Director)
 //   3. Director assigns Chief Investigator -> Investigation
-//   4. Investigator captures field findings and submits -> Pending Approval
-//   5. Director reviews: approve -> Approved (coordinator closes -> Closed)
-//                        return  -> Investigation (cycle repeats)
-//   6. Reporter is notified of the outcome at closure.
+//   4. Investigator submits field findings -> Pending DD Review
+//   5. Deputy Director verifies + records formal recommendations -> Pending Approval
+//   6. Director decides: approve -> Approved (coordinator closes -> Closed)
+//                        return  -> Investigation (investigator path)
+//                                   or Under Review (coordinator path) — cycle repeats
+//   7. Coordinators never close directly; closure always follows Director approval.
+//   8. Reporter is notified of the outcome at closure.
 
 export const CLOSURE_OUTCOMES = ['Closed', 'Recovered', 'Referred', 'Unfounded'];
+export const DD_ACTIONS = ['close', 'investigate'];
 
 /** Read access to a case file mirrors the list scoping in IncidentController.getAll. */
 export const canReadIncident = (user: UserProfile, incident: SecurityIncident): boolean => {
   switch (user.role) {
     case 'security_director':
+    case 'deputy_director': // national verification layer — sees all provinces
       return true;
     case 'security_coordinator':
       return incident.province === user.province || incident.province === 'National';
@@ -85,13 +91,6 @@ const recordEvent = (
     notes
   });
 
-/** Notify every active user holding a given role (e.g. all Chief Security Directors, FR-007). */
-const notifyRole = async (role: string, title: string, message: string, link?: string) => {
-  const users = await UserModel.getAll();
-  const usernames = users.filter(u => u.role === role).map(u => u.username);
-  await NotificationService.notifyMany(usernames, title, message, link);
-};
-
 const notifyFromTemplate = async (
   templateKey: string,
   vars: Record<string, string | number>,
@@ -103,6 +102,17 @@ const notifyFromTemplate = async (
   if (!template || recipients.length === 0) return;
   const rendered = ConfigService.renderTemplate(template, vars);
   await NotificationService.notifyMany(recipients, rendered.title, rendered.message, link);
+};
+
+const notifyFromTemplateToRole = async (
+  templateKey: string,
+  vars: Record<string, string | number>,
+  role: string,
+  link?: string
+) => {
+  const users = await UserModel.getAll();
+  const recipients = users.filter(u => u.role === role).map(u => u.username);
+  await notifyFromTemplate(templateKey, vars, recipients, link);
 };
 
 const caseLink = (incidentId: string) => `#/case/${incidentId}`;
@@ -152,9 +162,10 @@ export const CaseWorkflowController = {
         return ResponseView.sendError(res, 'Access denied for this incident', 'Forbidden', 403);
       }
 
-      const [attachments, events, slaRules] = await Promise.all([
+      const [attachments, events, comments, slaRules] = await Promise.all([
         AttachmentModel.getByIncident(id),
         CaseEventModel.getByIncident(id),
+        CaseCommentModel.getByIncident(id),
         ConfigService.getSlaRules()
       ]);
 
@@ -163,7 +174,8 @@ export const CaseWorkflowController = {
       ResponseView.sendSuccess(res, {
         incident: { ...incident, slaInfo: SlaService.calculateSla(incident, slaRules) },
         attachments,
-        events
+        events,
+        comments
       }, 'Fetched case file successfully');
     } catch (error) {
       ResponseView.sendError(res, error as any, 'Failed to fetch case file');
@@ -264,6 +276,90 @@ export const CaseWorkflowController = {
     }
   },
 
+  /**
+   * Post a message on the case discussion thread (v2 "Comments / Chat Thread").
+   * Every party who can read the case may comment; replies reference a
+   * top-level comment. The other case parties get a case_activity notification.
+   */
+  async addComment(req: AuthenticatedRequest, res: Response) {
+    try {
+      const user = req.user!;
+      const id = req.params.id as string;
+      const { message, parentId } = req.body || {};
+
+      const text = typeof message === 'string' ? message.trim() : '';
+      if (!text) {
+        return ResponseView.sendError(res, 'A comment message is required', 'Validation failed', 400);
+      }
+      if (text.length > 4000) {
+        return ResponseView.sendError(res, 'Comments are limited to 4000 characters', 'Validation failed', 400);
+      }
+
+      const incident = await IncidentModel.getById(id);
+      if (!incident) {
+        return ResponseView.sendError(res, 'Incident not found', 'Operation failed', 404);
+      }
+      if (!canReadIncident(user, incident)) {
+        return ResponseView.sendError(res, 'Access denied for this incident', 'Forbidden', 403);
+      }
+      if (incident.status === 'Closed' || incident.workflowStage === 'Closed') {
+        return ResponseView.sendError(res, 'Closed cases are immutable — the discussion thread is read-only', 'Validation failed', 400);
+      }
+
+      // Replies always attach to a top-level comment (one level of threading)
+      let resolvedParentId: string | null = null;
+      if (parentId) {
+        const parent = await CaseCommentModel.getById(String(parentId));
+        if (!parent || parent.incidentId !== id) {
+          return ResponseView.sendError(res, 'The comment being replied to no longer exists on this case', 'Validation failed', 400);
+        }
+        resolvedParentId = parent.parentId || parent.id;
+      }
+
+      const comment = await CaseCommentModel.create({
+        incidentId: id,
+        parentId: resolvedParentId,
+        author: user.username,
+        authorName: user.displayName,
+        authorRole: user.role,
+        message: text
+      });
+
+      await audit(user, 'CREATE', id, `Commented on case ${incident.refNo}`);
+
+      // Notify the other case parties: reporter, responsible officer, assigned
+      // investigator, and the author of the comment being replied to.
+      const users = await UserModel.getAll();
+      const byDisplayName = (name?: string | null) =>
+        name && name !== 'Unassigned' ? users.find(u => u.displayName === name)?.username : undefined;
+      const recipients = new Set<string>();
+      const reporter = incident.ownerId ||
+        users.find(u =>
+          (!!incident.reportedBy && u.displayName === incident.reportedBy) ||
+          (!!incident.contactDetails && u.email === incident.contactDetails)
+        )?.username;
+      if (reporter) recipients.add(reporter);
+      const responsible = byDisplayName(incident.responsiblePerson);
+      if (responsible) recipients.add(responsible);
+      const investigator = byDisplayName(incident.assignedInvestigator);
+      if (investigator) recipients.add(investigator);
+      if (resolvedParentId) {
+        const parent = await CaseCommentModel.getById(resolvedParentId);
+        if (parent) recipients.add(parent.author);
+      }
+      recipients.delete(user.username);
+      const excerpt = text.length > 120 ? `${text.slice(0, 117)}...` : text;
+      await notifyFromTemplate('case_activity', {
+        refNo: incident.refNo,
+        update: `${user.displayName} commented: "${excerpt}"`
+      }, Array.from(recipients), caseLink(id));
+
+      ResponseView.sendSuccess(res, comment, 'Comment posted successfully', 201);
+    } catch (error) {
+      ResponseView.sendError(res, error as any, 'Failed to post comment');
+    }
+  },
+
   /** Coordinator accepts a submitted case and starts the preliminary review. */
   async startReview(req: AuthenticatedRequest, res: Response) {
     try {
@@ -347,8 +443,139 @@ export const CaseWorkflowController = {
   },
 
   /**
+   * Coordinator submits their preliminary investigation to the Deputy Director
+   * (v2): requests closure or further investigation. The coordinator never
+   * closes on their own authority any more.
+   */
+  async submitToDeputyDirector(req: AuthenticatedRequest, res: Response) {
+    try {
+      const user = req.user!;
+      const id = req.params.id as string;
+      const { requestedOutcome, notes } = req.body || {};
+
+      if (!DD_ACTIONS.includes(requestedOutcome)) {
+        return ResponseView.sendError(res, `requestedOutcome must be one of: ${DD_ACTIONS.join(', ')}`, 'Validation failed', 400);
+      }
+
+      const incident = await IncidentModel.getById(id);
+      if (!incident) {
+        return ResponseView.sendError(res, 'Incident not found', 'Operation failed', 404);
+      }
+      if (user.role === 'security_coordinator' && !isCoordinatorForCase(user, incident)) {
+        return ResponseView.sendError(res, 'Access denied for this incident', 'Forbidden', 403);
+      }
+      if (incident.responsiblePerson !== user.displayName) {
+        return ResponseView.sendError(res, 'Accept the case first — only the responsible coordinator may submit it for review', 'Validation failed', 400);
+      }
+      if (!['Under Review'].includes(incident.workflowStage || '')) {
+        return ResponseView.sendError(res, `Only a case under preliminary review can be submitted to the Deputy Director (current stage: ${incident.workflowStage})`, 'Validation failed', 400);
+      }
+      if (!(incident.preliminaryFindings || '').trim()) {
+        return ResponseView.sendError(res, 'Save the preliminary investigation findings before submitting the case for review', 'Validation failed', 400);
+      }
+
+      const submittedAt = new Date().toISOString();
+      const updates: Partial<SecurityIncident> = {
+        workflowStage: 'Pending DD Review',
+        requestedOutcome,
+        submittedToDdBy: user.displayName,
+        submittedToDdAt: submittedAt,
+        ddRecommendation: '',
+        ddRecommendedAction: '',
+        ddReviewedBy: '',
+        ddReviewedAt: ''
+      };
+      await IncidentModel.update(id, updates);
+      const requestLabel = requestedOutcome === 'close' ? 'case closure' : 'further investigation';
+      await recordEvent(id, 'SUBMITTED_TO_DD', 'Pending DD Review', user,
+        `Preliminary investigation submitted to the Deputy Director — requested ${requestLabel}${notes ? `. Notes: ${String(notes).trim()}` : ''}`);
+      await audit(user, 'UPDATE', id, `Submitted ${incident.refNo} to the Deputy Director (requested ${requestLabel})`);
+
+      await notifyFromTemplateToRole('dd_review_required', {
+        refNo: incident.refNo,
+        province: incident.province,
+        submittedBy: user.displayName,
+        requestedOutcome: requestLabel
+      }, 'deputy_director', caseLink(id));
+
+      await notifyReporterOfProgress(incident, user,
+        `The preliminary investigation for your incident ${incident.refNo} is complete and has been submitted to the Deputy Director for review.`);
+
+      ResponseView.sendSuccess(res, { ...incident, ...updates }, 'Case submitted to the Deputy Director for review');
+    } catch (error) {
+      ResponseView.sendError(res, error as any, 'Failed to submit the case for review');
+    }
+  },
+
+  /**
+   * Deputy Director verifies a submission, records formal recommendations and
+   * forwards the case to the Chief Security Director for the final decision.
+   * The DD recommends — only the Director approves, assigns or closes.
+   */
+  async ddReview(req: AuthenticatedRequest, res: Response) {
+    try {
+      const user = req.user!;
+      const id = req.params.id as string;
+      const { recommendation, recommendedAction } = req.body || {};
+
+      if (!recommendation || !String(recommendation).trim()) {
+        return ResponseView.sendError(res, 'Formal recommendations are required before forwarding the case', 'Validation failed', 400);
+      }
+      if (!DD_ACTIONS.includes(recommendedAction)) {
+        return ResponseView.sendError(res, `recommendedAction must be one of: ${DD_ACTIONS.join(', ')}`, 'Validation failed', 400);
+      }
+
+      const incident = await IncidentModel.getById(id);
+      if (!incident) {
+        return ResponseView.sendError(res, 'Incident not found', 'Operation failed', 404);
+      }
+      if ((incident.workflowStage || '') !== 'Pending DD Review') {
+        return ResponseView.sendError(res, `Only cases awaiting Deputy Director review can be verified (current stage: ${incident.workflowStage})`, 'Validation failed', 400);
+      }
+
+      const reviewedAt = new Date().toISOString();
+      const updates: Partial<SecurityIncident> = {
+        workflowStage: 'Pending Approval',
+        ddRecommendation: String(recommendation).trim(),
+        ddRecommendedAction: recommendedAction,
+        ddReviewedBy: user.displayName,
+        ddReviewedAt: reviewedAt
+      };
+      await IncidentModel.update(id, updates);
+      const actionLabel = recommendedAction === 'close' ? 'closure' : 'further investigation';
+      await recordEvent(id, 'DD_REVIEWED', 'Pending Approval', user,
+        `Deputy Director verified the case and recommends ${actionLabel}. Recommendations: ${String(recommendation).trim()}`);
+      await audit(user, 'UPDATE', id, `Reviewed ${incident.refNo} — recommends ${actionLabel}`);
+
+      await notifyFromTemplateToRole('dd_recommendation_submitted', {
+        refNo: incident.refNo,
+        province: incident.province,
+        deputyDirector: user.displayName,
+        recommendedAction: actionLabel
+      }, 'security_director', caseLink(id));
+
+      // Keep the submitter in the loop
+      const users = await UserModel.getAll();
+      const submitter = users.find(u => u.displayName === incident.submittedToDdBy);
+      if (submitter && submitter.username !== user.username) {
+        await NotificationService.notify(submitter.username,
+          `Case ${incident.refNo} forwarded to the Director`,
+          `${user.displayName} verified your submission for ${incident.refNo} and recommended ${actionLabel}. The case now awaits the Chief Security Director's decision.`,
+          caseLink(id));
+      }
+
+      await notifyReporterOfProgress(incident, user,
+        `The Deputy Director has reviewed your incident ${incident.refNo} and forwarded it to the Chief Security Director for a decision.`);
+
+      ResponseView.sendSuccess(res, { ...incident, ...updates }, 'Review recorded — case forwarded to the Chief Security Director');
+    } catch (error) {
+      ResponseView.sendError(res, error as any, 'Failed to record the Deputy Director review');
+    }
+  },
+
+  /**
    * Close a case with an outcome classification.
-   * Coordinator: small cases (before escalation) and director-approved cases in their province.
+   * Coordinator: director-approved cases in their province (v2: never before approval).
    * Director: any open case (final authority).
    */
   async closeCase(req: AuthenticatedRequest, res: Response) {
@@ -377,10 +604,12 @@ export const CaseWorkflowController = {
         if (!isCoordinatorForCase(user, incident)) {
           return ResponseView.sendError(res, 'Access denied for this incident', 'Forbidden', 403);
         }
-        if (!['Submitted', 'Under Review', 'Approved'].includes(stage)) {
+        // v2 rule: a coordinator never closes on their own authority — every case
+        // goes through the Deputy Director and the Director's approval first.
+        if (stage !== 'Approved') {
           return ResponseView.sendError(
             res,
-            `An escalated case can only be closed after the Chief Security Director approves the investigation (current stage: ${stage})`,
+            `A case can only be closed after the Chief Security Director approves it. Submit the case to the Deputy Director instead (current stage: ${stage})`,
             'Validation failed',
             400
           );
@@ -476,8 +705,10 @@ export const CaseWorkflowController = {
         return ResponseView.sendError(res, 'Incident not found', 'Operation failed', 404);
       }
       const stage = incident.workflowStage || 'Submitted';
-      if (!['Escalated', 'Investigation'].includes(stage)) {
-        return ResponseView.sendError(res, `An investigator can only be assigned to an escalated case (current stage: ${stage})`, 'Validation failed', 400);
+      // 'Pending Approval' included: the Director orders a further investigation
+      // straight off the Deputy Director's recommendation.
+      if (!['Escalated', 'Investigation', 'Pending Approval'].includes(stage)) {
+        return ResponseView.sendError(res, `An investigator can only be assigned to an escalated case or one awaiting a decision (current stage: ${stage})`, 'Validation failed', 400);
       }
 
       const investigator = await UserModel.getByUsername(investigatorUsername);
@@ -543,28 +774,37 @@ export const CaseWorkflowController = {
       const updates: Partial<SecurityIncident> = {
         investigationFindings: String(investigationFindings).trim(),
         investigationSubmittedAt: submittedAt,
-        workflowStage: 'Pending Approval'
+        workflowStage: 'Pending DD Review',
+        requestedOutcome: 'close',
+        submittedToDdBy: user.displayName,
+        submittedToDdAt: submittedAt,
+        // A resubmission restarts the review chain — clear the previous DD verdict
+        ddRecommendation: '',
+        ddRecommendedAction: '',
+        ddReviewedBy: '',
+        ddReviewedAt: ''
       };
       await IncidentModel.update(id, updates);
-      await recordEvent(id, 'FINDINGS_SUBMITTED', 'Pending Approval', user,
-        incident.returnCount ? `Field investigation findings resubmitted for approval (revision ${Number(incident.returnCount) + 1})` : 'Field investigation findings submitted for approval');
+      await recordEvent(id, 'FINDINGS_SUBMITTED', 'Pending DD Review', user,
+        incident.returnCount ? `Field investigation findings resubmitted for review (revision ${Number(incident.returnCount) + 1})` : 'Field investigation findings submitted for Deputy Director review');
       await audit(user, 'UPDATE', id, `Submitted investigation findings for ${incident.refNo}`);
 
-      await (async () => {
-        const templates = await ConfigService.getNotificationTemplates();
-        const template = templates.investigation_submitted;
-        if (!template) return;
-        const rendered = ConfigService.renderTemplate(template, {
-          refNo: incident.refNo,
-          investigator: user.displayName
-        });
-        await notifyRole('security_director', rendered.title, rendered.message, caseLink(id));
-      })();
+      // v2 chain: the Deputy Director verifies first; directors get an FYI copy
+      await notifyFromTemplateToRole('dd_review_required', {
+        refNo: incident.refNo,
+        province: incident.province,
+        submittedBy: user.displayName,
+        requestedOutcome: 'field investigation sign-off'
+      }, 'deputy_director', caseLink(id));
+      await notifyFromTemplateToRole('investigation_submitted', {
+        refNo: incident.refNo,
+        investigator: user.displayName
+      }, 'security_director', caseLink(id));
 
       await notifyReporterOfProgress(incident, user,
-        `The field investigation for your incident ${incident.refNo} has been completed and submitted to the Chief Security Director for approval.`);
+        `The field investigation for your incident ${incident.refNo} has been completed and submitted to the Deputy Director for verification.`);
 
-      ResponseView.sendSuccess(res, { ...incident, ...updates }, 'Investigation submitted for approval');
+      ResponseView.sendSuccess(res, { ...incident, ...updates }, 'Investigation submitted for Deputy Director review');
     } catch (error) {
       ResponseView.sendError(res, error as any, 'Failed to submit investigation');
     }
@@ -595,35 +835,43 @@ export const CaseWorkflowController = {
       const decidedAt = new Date().toISOString();
 
       if (decision === 'return') {
+        // Investigator-path cases go back to the field; coordinator-path cases
+        // (no investigator ever assigned) go back to the provincial coordinator.
+        const backToInvestigator = !!incident.assignedInvestigator;
+        const returnStage = backToInvestigator ? 'Investigation' : 'Under Review';
         const updates: Partial<SecurityIncident> = {
-          workflowStage: 'Investigation',
+          workflowStage: returnStage,
           returnReason: String(notes).trim(),
           returnCount: (Number(incident.returnCount) || 0) + 1,
-          responsiblePerson: incident.assignedInvestigator || incident.responsiblePerson
+          responsiblePerson: backToInvestigator
+            ? incident.assignedInvestigator
+            : (incident.submittedToDdBy || incident.responsiblePerson)
         };
         await IncidentModel.update(id, updates);
-        await recordEvent(id, 'RETURNED', 'Investigation', user, `Investigation returned to ${incident.assignedInvestigator || 'the investigator'}. Reason: ${String(notes).trim()}`);
-        await audit(user, 'UPDATE', id, `Returned investigation for ${incident.refNo}`);
+        await recordEvent(id, 'RETURNED', returnStage, user,
+          `Case returned to ${updates.responsiblePerson || 'the submitter'}. Reason: ${String(notes).trim()}`);
+        await audit(user, 'UPDATE', id, `Returned ${incident.refNo} for further work`);
 
         const users = await UserModel.getAll();
-        const investigator = users.find(u => u.displayName === incident.assignedInvestigator);
-        if (investigator) {
+        const recipient = users.find(u => u.displayName === updates.responsiblePerson);
+        if (recipient) {
           await notifyFromTemplate('case_returned', {
             refNo: incident.refNo,
             director: user.displayName,
             reason: String(notes).trim()
-          }, [investigator.username], caseLink(id));
+          }, [recipient.username], caseLink(id));
         }
 
         await notifyReporterOfProgress(incident, user,
-          `The Chief Security Director has requested further field investigation on your incident ${incident.refNo} before approval.`);
+          `The Chief Security Director has requested further investigation on your incident ${incident.refNo} before approval.`);
 
-        return ResponseView.sendSuccess(res, { ...incident, ...updates }, 'Investigation returned to the investigator');
+        return ResponseView.sendSuccess(res, { ...incident, ...updates }, `Case returned to ${backToInvestigator ? 'the investigator' : 'the coordinator'}`);
       }
 
       // approve — hand the case back to the provincial coordinator for closure
       const effectiveCoordinators = await LeaveService.getEffectiveCoordinatorsForProvince(incident.province);
       const backToCoordinator =
+        (incident.submittedToDdBy && effectiveCoordinators.find(c => c.displayName === incident.submittedToDdBy)) ||
         (incident.escalatedBy && effectiveCoordinators.find(c => c.displayName === incident.escalatedBy)) ||
         (effectiveCoordinators.length === 1 ? effectiveCoordinators[0] : null);
 

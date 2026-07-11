@@ -1,15 +1,17 @@
 import { query, execute } from '../config/db.js';
 
 // Fine-grained end-to-end workflow stage (the coarse `status` stays in sync for
-// dashboards/SLA):
-//   Submitted -> Under Review -> Closed (small case)
-//                             -> Escalated -> Investigation -> Pending Approval
-//                                -> (Returned => Investigation) | Approved -> Closed
+// dashboards/SLA). Every upward submission passes through the Deputy Director
+// (v2 user journeys) before the Chief Security Director decides:
+//   Submitted -> Under Review -> Pending DD Review -> Pending Approval -> Approved -> Closed
+//   big case:  Under Review -> Escalated -> Investigation -> Pending DD Review -> ...
+//   (Director return => Investigation or Under Review; the cycle repeats)
 export type WorkflowStage =
   | 'Submitted'
   | 'Under Review'
   | 'Escalated'
   | 'Investigation'
+  | 'Pending DD Review'
   | 'Pending Approval'
   | 'Approved'
   | 'Closed';
@@ -33,6 +35,15 @@ export interface CaseWorkflowFields {
   closedAt?: string;
   closureOutcome?: string;
   closureReport?: string;
+  /** Outcome the submitter asked for when sending the case to the Deputy Director. */
+  requestedOutcome?: 'close' | 'investigate' | string;
+  submittedToDdBy?: string;
+  submittedToDdAt?: string;
+  /** Deputy Director's formal recommendations (v2 verification layer). */
+  ddRecommendation?: string;
+  ddRecommendedAction?: 'close' | 'investigate' | string;
+  ddReviewedBy?: string;
+  ddReviewedAt?: string;
 }
 
 export interface SecurityIncidentDb extends CaseWorkflowFields {
@@ -49,6 +60,8 @@ export interface SecurityIncidentDb extends CaseWorkflowFields {
   natureOfLoss: string;
   injuriesFatalities: string;
   reportedBy: string;
+  reportFor?: string;
+  reportForEmployee?: string;
   registerNumber: string;
   sapsCaseNumber?: string;
   policeStation?: string;
@@ -97,6 +110,10 @@ export interface SecurityIncident extends CaseWorkflowFields {
   natureOfLoss: string;
   injuriesFatalities: string;
   reportedBy: string;
+  /** Whether the reporter filed for themselves or on behalf of another employee. */
+  reportFor?: 'Self' | 'Others' | string;
+  /** Display name of the tagged employee when reportFor = 'Others'. */
+  reportForEmployee?: string;
   registerNumber: string;
   sapsCaseNumber?: string;
   policeStation?: string;
@@ -156,13 +173,14 @@ export const IncidentModel = {
       `INSERT INTO incidents (
         id, refNo, incidentType, otherIncidentTypeDetails, department, contactDetails,
         dateTime, place, province, lossValue, natureOfLoss, injuriesFatalities, reportedBy,
+        reportFor, reportForEmployee,
         registerNumber, sapsCaseNumber, policeStation, arrests, classification, reportedToSapsSsa,
         outcomeOfInvestigation, responsiblePerson, status, natureOfCase, workflowStage,
         dateCreated, dateReported, ownerId, whatHappened,
         whereHappened, howHappened, whoResponsible, proceduresUsed, weaponsUsed, damageDone,
         actionTaken, securityMeasuresEffectiveness, securityPersonnelReaction, otherAspects,
         lessonsLearned, recommendations
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         incident.id,
         incident.refNo,
@@ -177,6 +195,8 @@ export const IncidentModel = {
         incident.natureOfLoss,
         incident.injuriesFatalities,
         incident.reportedBy,
+        incident.reportFor || 'Self',
+        incident.reportForEmployee || '',
         incident.registerNumber,
         incident.sapsCaseNumber || '',
         incident.policeStation || '',
@@ -216,7 +236,7 @@ export const IncidentModel = {
     const validColumns = [
       'refNo', 'incidentType', 'otherIncidentTypeDetails', 'department', 'contactDetails',
       'dateTime', 'place', 'province', 'lossValue', 'natureOfLoss', 'injuriesFatalities',
-      'reportedBy', 'registerNumber', 'sapsCaseNumber', 'policeStation', 'arrests',
+      'reportedBy', 'reportFor', 'reportForEmployee', 'registerNumber', 'sapsCaseNumber', 'policeStation', 'arrests',
       'classification', 'reportedToSapsSsa', 'outcomeOfInvestigation', 'responsiblePerson',
       'status', 'isEscalated', 'escalationLevel', 'escalationReason', 'escalationNotes',
       'escalatedBy', 'escalatedTo', 'escalatedAt',
@@ -225,6 +245,8 @@ export const IncidentModel = {
       'investigationSubmittedAt', 'returnReason', 'returnCount',
       'approvedBy', 'approvedAt', 'approvalNotes',
       'closedBy', 'closedAt', 'closureOutcome', 'closureReport',
+      'requestedOutcome', 'submittedToDdBy', 'submittedToDdAt',
+      'ddRecommendation', 'ddRecommendedAction', 'ddReviewedBy', 'ddReviewedAt',
       'dateCreated', 'dateReported', 'whatHappened', 'whereHappened', 'howHappened',
       'whoResponsible', 'proceduresUsed', 'weaponsUsed', 'damageDone', 'actionTaken',
       'securityMeasuresEffectiveness', 'securityPersonnelReaction', 'otherAspects',

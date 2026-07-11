@@ -94,6 +94,44 @@ export const UserModel = {
     return ROLE_USERS.find(u => u.username === canonical) || null;
   },
 
+  /**
+   * Minimal directory lookup for tagging a colleague on the incident form
+   * ("Report For: Others"). Returns only need-to-know identification fields
+   * (POPIA) — never the full profile.
+   */
+  async searchDirectory(q: string, limit = 8): Promise<Array<Pick<UserProfile, 'username' | 'displayName' | 'persalNumber' | 'jobTitle' | 'province'>>> {
+    const needle = q.trim().toLowerCase();
+    const toResult = (u: Pick<UserProfile, 'username' | 'displayName' | 'persalNumber' | 'jobTitle' | 'province'>) => ({
+      username: u.username,
+      displayName: u.displayName,
+      persalNumber: u.persalNumber || '',
+      jobTitle: u.jobTitle || '',
+      province: u.province
+    });
+    try {
+      const term = `%${needle}%`;
+      const rows = await query<UserRow>(
+        `SELECT * FROM users
+         WHERE isActive = 1
+           AND (LOWER(username) LIKE ? OR LOWER(displayName) LIKE ? OR LOWER(COALESCE(persalNumber, '')) LIKE ? OR LOWER(COALESCE(email, '')) LIKE ?)
+         ORDER BY displayName`,
+        [term, term, term, term]
+      );
+      return rows.slice(0, limit).map(row => toResult(rowToProfile(row)));
+    } catch (err) {
+      console.error('[UserModel] Falling back to seed users for directory search:', err);
+      return ROLE_USERS
+        .filter(u =>
+          u.username.toLowerCase().includes(needle) ||
+          u.displayName.toLowerCase().includes(needle) ||
+          (u.persalNumber || '').toLowerCase().includes(needle) ||
+          u.email.toLowerCase().includes(needle)
+        )
+        .slice(0, limit)
+        .map(toResult);
+    }
+  },
+
   /** All accounts including deactivated ones — System Administrator user management (FR-036). */
   async getAllForAdmin(): Promise<(UserProfile & { isActive: boolean })[]> {
     try {

@@ -1,4 +1,4 @@
-import { execute, query } from '../config/db.js';
+import { execute, query, isMssql } from '../config/db.js';
 
 export interface AuditLogEntry {
   id?: string;
@@ -21,24 +21,7 @@ export const AuditService = {
     const id = `audit-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
 
     try {
-      // Create audit logs table if not exists
-      await execute(`
-        CREATE TABLE IF NOT EXISTS audit_logs (
-          id TEXT PRIMARY KEY,
-          timestamp TEXT NOT NULL,
-          userId TEXT NOT NULL,
-          username TEXT NOT NULL,
-          userRole TEXT NOT NULL,
-          province TEXT,
-          action TEXT NOT NULL,
-          resource TEXT NOT NULL,
-          resourceId TEXT,
-          details TEXT,
-          ipAddress TEXT,
-          clearanceLevel TEXT
-        )
-      `);
-
+      // Table is created at boot by db.ts (ensureAuditLogs* for each dialect)
       const result = await execute(
         `INSERT INTO audit_logs (
           id, timestamp, userId, username, userRole, province, action, resource, resourceId, details, ipAddress, clearanceLevel
@@ -69,7 +52,9 @@ export const AuditService = {
   async getRecentLogs(limit: number = 100): Promise<AuditLogEntry[]> {
     try {
       return await query<AuditLogEntry>(
-        'SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT ?',
+        isMssql
+          ? 'SELECT TOP (?) * FROM audit_logs ORDER BY timestamp DESC'
+          : 'SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT ?',
         [limit]
       );
     } catch (err) {

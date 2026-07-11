@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "vite",
-    "dev:server": "tsx watch server/index.ts",
+    "dev:server": "node --watch --import tsx server/index.ts",
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:server\"",
     "build:ui": "tsc -b && vite build",
     "build:server": "tsc -p tsconfig.server.json",

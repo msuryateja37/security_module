@@ -60,6 +60,7 @@ const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   'case:escalate': 'Escalate significant cases for national review',
   'case:assign_investigator': 'Assign cases to the Chief Investigator',
   'investigation:submit': 'Submit preliminary / final investigation reports',
+  'investigation:verify': 'Verify submissions and record formal recommendations (Deputy Director review)',
   'investigation:approve': 'Approve investigation findings and closure',
   'reports:submit_operational': 'Submit operational reports (BTO, stats, TRA, quarterly)',
   'reports:view_archive': 'View the reports archive and registers',

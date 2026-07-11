@@ -1,12 +1,14 @@
-// Fine-grained end-to-end workflow stage (mirrors server/models/incident.model.ts):
-//   Submitted -> Under Review -> Closed (small case)
-//                             -> Escalated -> Investigation -> Pending Approval
-//                                -> (Returned => Investigation) | Approved -> Closed
+// Fine-grained end-to-end workflow stage (mirrors server/models/incident.model.ts).
+// Every upward submission passes through the Deputy Director (v2) before the
+// Chief Security Director decides:
+//   Submitted -> Under Review -> Pending DD Review -> Pending Approval -> Approved -> Closed
+//   big case:  Under Review -> Escalated -> Investigation -> Pending DD Review -> ...
 export type WorkflowStage =
   | 'Submitted'
   | 'Under Review'
   | 'Escalated'
   | 'Investigation'
+  | 'Pending DD Review'
   | 'Pending Approval'
   | 'Approved'
   | 'Closed';
@@ -49,6 +51,18 @@ export interface CaseEvent {
   dateCreated: string;
 }
 
+export interface CaseComment {
+  id: string;
+  incidentId: string;
+  /** Top-level comment this replies to; null for a top-level comment. */
+  parentId: string | null;
+  author: string;
+  authorName: string;
+  authorRole: string;
+  message: string;
+  dateCreated: string;
+}
+
 export interface SlaInfo {
   status: 'On Track' | 'At Risk' | 'Overdue';
   hoursRemaining: number;
@@ -78,6 +92,10 @@ export interface SecurityIncident {
   natureOfLoss: string;
   injuriesFatalities: string;
   reportedBy: string;
+  /** Whether the report is filed for the reporter themselves or on behalf of another employee. */
+  reportFor?: 'Self' | 'Others';
+  /** Display name of the tagged employee when reportFor = 'Others'. */
+  reportForEmployee?: string;
   registerNumber: string;
   sapsCaseNumber?: string;
   policeStation?: string;
@@ -116,6 +134,15 @@ export interface SecurityIncident {
   closedAt?: string;
   closureOutcome?: string;
   closureReport?: string;
+  /** Outcome the submitter asked for when sending the case to the Deputy Director. */
+  requestedOutcome?: 'close' | 'investigate' | string;
+  submittedToDdBy?: string;
+  submittedToDdAt?: string;
+  /** Deputy Director's formal recommendations (v2 verification layer). */
+  ddRecommendation?: string;
+  ddRecommendedAction?: 'close' | 'investigate' | string;
+  ddReviewedBy?: string;
+  ddReviewedAt?: string;
   /** Attached by the server on reads (FR-019). */
   slaInfo?: SlaInfo;
 

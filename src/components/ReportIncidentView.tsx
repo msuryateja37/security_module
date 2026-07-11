@@ -3,7 +3,7 @@ import type { SecurityIncident, ProvinceType } from '../types/security';
 import { NATURE_OF_CASE_OPTIONS } from '../types/security';
 import type { UserProfile } from '../security/roleAccess';
 import { PROVINCES } from '../data/mockData';
-import { Shield, FileText, CheckCircle2, ArrowRight, ArrowLeft, AlertTriangle, Paperclip, X, UploadCloud, Check, Send } from 'lucide-react';
+import { Shield, FileText, CheckCircle2, ArrowRight, ArrowLeft, AlertTriangle, Paperclip, X, UploadCloud, Check, Send, Search, UserCheck } from 'lucide-react';
 import { useModal } from './NotificationModal';
 
 interface ReportIncidentViewProps {
@@ -41,6 +41,15 @@ const INCIDENT_TYPES_LIST = [
 
 const STEP_LABELS = ['General & Contact Info', 'Categorization & Loss', 'Narrative Report'];
 
+/** Minimal employee identification returned by /api/users/lookup ("Report For: Others"). */
+interface DirectoryUser {
+  username: string;
+  displayName: string;
+  persalNumber?: string;
+  jobTitle?: string;
+  province?: string;
+}
+
 const RequiredStar = () => <span className="required-star"> *</span>;
 
 export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddIncident, onNavigate, currentUser, initialData }) => {
@@ -64,6 +73,13 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
   const [natureOfLoss, setNatureOfLoss] = useState(initialData?.natureOfLoss || '');
   const [injuriesFatalities, setInjuriesFatalities] = useState(initialData?.injuriesFatalities || 'None');
   const [reportedBy, setReportedBy] = useState(currentUser?.displayName || '');
+  // "Report For" — reporting for yourself or on behalf of another employee.
+  // Only the tagged employee's name is stored for now; richer linking comes later.
+  const [reportFor, setReportFor] = useState<'Self' | 'Others'>(initialData?.reportFor === 'Others' ? 'Others' : 'Self');
+  const [reportForEmployee, setReportForEmployee] = useState<DirectoryUser | null>(null);
+  const [employeeQuery, setEmployeeQuery] = useState('');
+  const [employeeResults, setEmployeeResults] = useState<DirectoryUser[]>([]);
+  const [isSearchingEmployees, setIsSearchingEmployees] = useState(false);
   const [sapsCaseNumber, setSapsCaseNumber] = useState(initialData?.sapsCaseNumber || '');
   const [policeStation, setPoliceStation] = useState(initialData?.policeStation || '');
   const [arrests] = useState<string | number>('');
@@ -97,6 +113,27 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
       })
       .catch(() => { /* keep the fallback list */ });
   }, [currentUser]);
+
+  // Debounced employee directory search for the "Report For: Others" picker
+  React.useEffect(() => {
+    if (reportFor !== 'Others' || !currentUser) return;
+    const q = employeeQuery.trim();
+    if (q.length < 2) {
+      setEmployeeResults([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setIsSearchingEmployees(true);
+      fetch(`/api/users/lookup?q=${encodeURIComponent(q)}`, {
+        headers: { 'x-username': currentUser.username, 'x-user-role': currentUser.role }
+      })
+        .then(res => res.json())
+        .then(json => setEmployeeResults(json.success && Array.isArray(json.data) ? json.data : []))
+        .catch(() => setEmployeeResults([]))
+        .finally(() => setIsSearchingEmployees(false));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [employeeQuery, reportFor, currentUser]);
 
   // Narrative steps
   const [whatHappened, setWhatHappened] = useState(initialData?.whatHappened || '');
@@ -133,6 +170,10 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
     if (currentStep === 1) {
       if (!reportedBy || !dateTime || !place || !contactDetails) {
         showAlert('Please fill in all general details (Reported By, Date/Time, Place, and Contact Details).', 'Validation Error', 'warning');
+        return;
+      }
+      if (reportFor === 'Others' && !reportForEmployee) {
+        showAlert('Please search and select the employee you are reporting on behalf of.', 'Validation Error', 'warning');
         return;
       }
     }
@@ -218,6 +259,10 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
         showAlert('Please select the Nature of Case (expected resolution window).', 'Validation Error', 'warning');
         return;
       }
+      if (reportFor === 'Others' && !reportForEmployee) {
+        showAlert('Please search and select the employee you are reporting on behalf of.', 'Validation Error', 'warning');
+        return;
+      }
     }
 
     const year = new Date().getFullYear();
@@ -240,6 +285,8 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
       natureOfLoss: natureOfLoss || (formType === 'noc' ? 'Urgent NOC Flash Alert' : 'Standard Incident'),
       injuriesFatalities,
       reportedBy,
+      reportFor,
+      reportForEmployee: reportFor === 'Others' ? (reportForEmployee?.displayName || '') : '',
       sapsCaseNumber,
       policeStation,
       arrests: Number(arrests) || 0,
@@ -342,6 +389,111 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+
+  // "Report For" selector — shared by the standard and NOC forms
+  const reportForSection = (
+    <div className="form-group">
+      <label className="form-label">Report For<RequiredStar /></label>
+      <div style={{ display: 'flex', gap: '22px', padding: '9px 2px' }}>
+        {(['Self', 'Others'] as const).map(option => (
+          <label
+            key={option}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13.5px', fontWeight: 600, color: 'var(--text-secondary)' }}
+          >
+            <input
+              type="radio"
+              name="reportFor"
+              value={option}
+              checked={reportFor === option}
+              onChange={() => {
+                setReportFor(option);
+                if (option === 'Self') {
+                  setReportForEmployee(null);
+                  setEmployeeQuery('');
+                  setEmployeeResults([]);
+                }
+              }}
+              style={{ accentColor: 'var(--color-accent)', width: '15px', height: '15px', cursor: 'pointer' }}
+            />
+            {option === 'Self' ? 'Self' : 'Others (on behalf of an employee)'}
+          </label>
+        ))}
+      </div>
+
+      {reportFor === 'Others' && (
+        reportForEmployee ? (
+          <div
+            style={{
+              display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px', padding: '10px 14px',
+              background: 'var(--bg-subtle)', border: '1px solid var(--border-input)', borderRadius: 'var(--radius-sm)'
+            }}
+          >
+            <UserCheck size={16} color="var(--color-success)" style={{ flexShrink: 0 }} />
+            <div style={{ flexGrow: 1, overflow: 'hidden' }}>
+              <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>{reportForEmployee.displayName}</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                {[reportForEmployee.persalNumber || reportForEmployee.username, reportForEmployee.jobTitle].filter(Boolean).join(' · ')}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setReportForEmployee(null); setEmployeeQuery(''); }}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', flexShrink: 0 }}
+              aria-label="Clear selected employee"
+            >
+              <X size={15} />
+            </button>
+          </div>
+        ) : (
+          <div style={{ position: 'relative', marginTop: '6px' }}>
+            <Search size={15} style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+            <input
+              type="text"
+              className="form-input"
+              style={{ paddingLeft: '38px' }}
+              placeholder="Search employee by name or ID (e.g. PERSAL number)..."
+              value={employeeQuery}
+              onChange={(e) => setEmployeeQuery(e.target.value)}
+            />
+            {employeeQuery.trim().length >= 2 && (
+              <div
+                style={{
+                  position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 30,
+                  background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-lg)', overflow: 'hidden'
+                }}
+              >
+                {isSearchingEmployees ? (
+                  <div style={{ padding: '11px 14px', fontSize: '13px', color: 'var(--text-muted)' }}>Searching directory...</div>
+                ) : employeeResults.length === 0 ? (
+                  <div style={{ padding: '11px 14px', fontSize: '13px', color: 'var(--text-muted)' }}>No matching employees found.</div>
+                ) : (
+                  employeeResults.map(emp => (
+                    <button
+                      type="button"
+                      key={emp.username}
+                      onClick={() => { setReportForEmployee(emp); setEmployeeResults([]); }}
+                      style={{
+                        display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px',
+                        background: 'transparent', border: 'none', borderBottom: '1px solid var(--border-color)', cursor: 'pointer'
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-subtle)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-primary)' }}>{emp.displayName}</div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                        {[emp.persalNumber || emp.username, emp.jobTitle, emp.province].filter(Boolean).join(' · ')}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        )
       )}
     </div>
   );
@@ -465,6 +617,8 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
             </div>
           </div>
 
+          {reportForSection}
+
           <div className="form-grid">
             <div className="form-group">
               <label className="form-label">Contact Details (Phone / Email)<RequiredStar /></label>
@@ -568,6 +722,8 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
                   <input type="text" className="form-input" placeholder="e.g. Snr Security Officer John Doe" value={reportedBy} onChange={(e) => setReportedBy(e.target.value)} required />
                 </div>
               </div>
+
+              {reportForSection}
 
               <div className="form-grid">
                 <div className="form-group">
@@ -817,7 +973,7 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
               type="button"
               className="btn btn-secondary"
               style={{ padding: '12px 22px' }}
-              onClick={() => { setFormType('standard'); setCurrentStep(1); setSelectedTypes([]); setNatureOfLoss(''); setLossValue(''); setNocBriefDetails(''); setNatureOfCase(''); setAttachedFiles([]); setUploadedCount(0); }}
+              onClick={() => { setFormType('standard'); setCurrentStep(1); setSelectedTypes([]); setNatureOfLoss(''); setLossValue(''); setNocBriefDetails(''); setNatureOfCase(''); setAttachedFiles([]); setUploadedCount(0); setReportFor('Self'); setReportForEmployee(null); setEmployeeQuery(''); setEmployeeResults([]); }}
             >
               Report Another Incident
             </button>

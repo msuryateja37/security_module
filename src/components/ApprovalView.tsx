@@ -20,37 +20,47 @@ interface ApprovalViewProps {
   onOpenCase: (incident: SecurityIncident) => void;
 }
 
-type QueueKey = 'assign' | 'approvals' | 'closure' | 'open' | 'reports';
+type QueueKey = 'assign' | 'ddreview' | 'forwarded' | 'approvals' | 'closure' | 'open' | 'reports';
 
 const stageOf = (i: SecurityIncident) => (i.workflowStage as string) || (i.status === 'Closed' ? 'Closed' : 'Submitted');
 
 export const ApprovalView: React.FC<ApprovalViewProps> = ({ incidents, btoReports, invReports, currentUser, onOpenCase }) => {
   const isDirector = currentUser.role === 'security_director';
+  const isDeputyDirector = currentUser.role === 'deputy_director';
   const { showAlert } = useModal();
 
   const scoped = useMemo(
-    () => (isDirector ? incidents : incidents.filter(i => i.province === currentUser.province)),
-    [incidents, isDirector, currentUser.province]
+    () => (isDirector || isDeputyDirector ? incidents : incidents.filter(i => i.province === currentUser.province)),
+    [incidents, isDirector, isDeputyDirector, currentUser.province]
   );
 
   const queues = useMemo(() => ({
     assign: scoped.filter(i => stageOf(i) === 'Escalated'),
+    ddreview: scoped.filter(i => stageOf(i) === 'Pending DD Review'),
+    forwarded: scoped.filter(i => stageOf(i) === 'Pending Approval'),
     approvals: scoped.filter(i => stageOf(i) === 'Pending Approval'),
     closure: scoped.filter(i => stageOf(i) === 'Approved'),
     open: scoped.filter(i => ['Submitted', 'Under Review'].includes(stageOf(i)))
   }), [scoped]);
 
+  const reportsCount = Math.min(btoReports.length, 3) + Math.min(invReports.length, 3);
   const tabs: { key: QueueKey; label: string; count: number }[] = isDirector
     ? [
         { key: 'assign', label: 'Escalated — Assign Investigator', count: queues.assign.length },
-        { key: 'approvals', label: 'Investigations Awaiting Approval', count: queues.approvals.length },
+        { key: 'approvals', label: 'Awaiting My Approval', count: queues.approvals.length },
         { key: 'closure', label: 'Approved — Awaiting Closure', count: queues.closure.length },
-        { key: 'reports', label: 'Reports Sign-off', count: Math.min(btoReports.length, 3) + Math.min(invReports.length, 3) }
+        { key: 'reports', label: 'Reports Sign-off', count: reportsCount }
+      ]
+    : isDeputyDirector
+    ? [
+        { key: 'ddreview', label: 'Awaiting My Review', count: queues.ddreview.length },
+        { key: 'forwarded', label: 'Forwarded to Director', count: queues.forwarded.length },
+        { key: 'reports', label: 'Reports Sign-off', count: reportsCount }
       ]
     : [
         { key: 'open', label: 'Open Provincial Cases', count: queues.open.length },
         { key: 'closure', label: 'Approved — Ready to Close', count: queues.closure.length },
-        { key: 'reports', label: 'Reports Sign-off', count: Math.min(btoReports.length, 3) + Math.min(invReports.length, 3) }
+        { key: 'reports', label: 'Reports Sign-off', count: reportsCount }
       ];
 
   const [activeTab, setActiveTab] = useState<QueueKey>(tabs[0].key);
@@ -63,7 +73,9 @@ export const ApprovalView: React.FC<ApprovalViewProps> = ({ incidents, btoReport
 
   const emptyMessages: Record<QueueKey, string> = {
     assign: 'No escalated cases are waiting for an investigator.',
-    approvals: 'No field investigations are awaiting your approval.',
+    ddreview: 'No cases are awaiting your verification right now.',
+    forwarded: 'No cases you reviewed are awaiting the Director.',
+    approvals: 'No cases are awaiting your approval.',
     closure: 'No approved cases are waiting to be closed.',
     open: 'No open cases in your province right now.',
     reports: ''
@@ -71,9 +83,11 @@ export const ApprovalView: React.FC<ApprovalViewProps> = ({ incidents, btoReport
 
   const queueHint: Record<QueueKey, string> = {
     assign: 'Open a case file to assign a Chief Investigator for the field investigation.',
-    approvals: 'Review the submitted field findings, then approve the investigation or return it to the investigator.',
+    ddreview: 'Verify each submission, add your formal recommendations, and forward the case to the Chief Security Director.',
+    forwarded: 'Cases you verified — awaiting the Chief Security Director’s final decision.',
+    approvals: 'Review the submission and the Deputy Director’s recommendation, then approve, return, or order a further investigation.',
     closure: 'The Chief Security Director approved these investigations — close each case with an outcome classification to notify the reporter.',
-    open: 'Review each new case: close small cases with a report, or escalate significant cases to the Chief Security Director.',
+    open: 'Review each new case: submit it to the Deputy Director with a closure or investigation request, or escalate significant cases directly.',
     reports: ''
   };
 
@@ -84,8 +98,10 @@ export const ApprovalView: React.FC<ApprovalViewProps> = ({ incidents, btoReport
           <h1 className="page-title">Approval Control Panel</h1>
           <p className="page-subtitle">
             {isDirector
-              ? 'Assign investigators, approve or return field investigations, and oversee closures'
-              : 'Review open provincial cases and close cases approved by the Chief Security Director'}
+              ? 'Assign investigators, decide on Deputy Director recommendations, and oversee closures'
+              : isDeputyDirector
+              ? 'Verify coordinator and investigator submissions, record formal recommendations, and forward cases to the Chief Security Director'
+              : 'Review open provincial cases, submit them to the Deputy Director, and close cases approved by the Chief Security Director'}
           </p>
         </div>
       </div>
@@ -148,11 +164,27 @@ export const ApprovalView: React.FC<ApprovalViewProps> = ({ incidents, btoReport
                     <strong>Escalated by {incident.escalatedBy}:</strong> {incident.escalationReason}
                   </div>
                 )}
+                {(activeTab === 'ddreview' || activeTab === 'forwarded') && (
+                  <div style={{ fontSize: '0.8rem', color: 'hsl(var(--text-secondary))', marginBottom: '0.5rem' }}>
+                    <strong>Submitted by:</strong> {incident.submittedToDdBy || incident.assignedInvestigator || '—'}
+                    {incident.requestedOutcome && (
+                      <span> — requested {incident.requestedOutcome === 'investigate' ? 'further investigation' : 'case closure'}</span>
+                    )}
+                    {activeTab === 'forwarded' && incident.ddRecommendedAction && (
+                      <span> · your recommendation: {incident.ddRecommendedAction === 'investigate' ? 'further investigation' : 'closure'}</span>
+                    )}
+                  </div>
+                )}
                 {activeTab === 'approvals' && (
                   <div style={{ fontSize: '0.8rem', color: 'hsl(var(--text-secondary))', marginBottom: '0.5rem' }}>
-                    <strong>Investigator:</strong> {incident.assignedInvestigator || '—'}
-                    {incident.investigationFindings && (
-                      <span> — {incident.investigationFindings.slice(0, 180)}{incident.investigationFindings.length > 180 ? '…' : ''}</span>
+                    {incident.ddRecommendation ? (
+                      <><strong>DD recommends {incident.ddRecommendedAction === 'investigate' ? 'further investigation' : 'closure'}:</strong>{' '}
+                      {incident.ddRecommendation.slice(0, 180)}{incident.ddRecommendation.length > 180 ? '…' : ''}</>
+                    ) : (
+                      <><strong>Investigator:</strong> {incident.assignedInvestigator || '—'}
+                      {incident.investigationFindings && (
+                        <span> — {incident.investigationFindings.slice(0, 180)}{incident.investigationFindings.length > 180 ? '…' : ''}</span>
+                      )}</>
                     )}
                   </div>
                 )}
@@ -170,7 +202,8 @@ export const ApprovalView: React.FC<ApprovalViewProps> = ({ incidents, btoReport
                   >
                     <FolderOpen size={14} />
                     {activeTab === 'assign' ? 'Open Case & Assign Investigator'
-                      : activeTab === 'approvals' ? 'Review Findings & Decide'
+                      : activeTab === 'ddreview' ? 'Verify & Recommend'
+                      : activeTab === 'approvals' ? 'Review Recommendation & Decide'
                       : activeTab === 'closure' ? 'Open Case & Close'
                       : 'Open Case File'}
                   </button>

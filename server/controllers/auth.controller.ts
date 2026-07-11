@@ -194,6 +194,20 @@ export const AuthController = {
     ResponseView.sendSuccess(res, logs, 'Fetched own activity successfully');
   },
 
+  /**
+   * Employee directory lookup for the incident form's "Report For: Others"
+   * picker — any authenticated reporter may search by name or ID, but only
+   * minimal identification fields are returned (POPIA need-to-know).
+   */
+  async lookupUsers(req: AuthenticatedRequest, res: Response) {
+    const q = String(req.query?.q ?? '').trim();
+    if (q.length < 2) {
+      return ResponseView.sendSuccess(res, [], 'Enter at least 2 characters to search');
+    }
+    const matches = await UserModel.searchDirectory(q);
+    ResponseView.sendSuccess(res, matches, 'Fetched employee directory matches');
+  },
+
   async users(req: Request, res: Response) {
     // ?includeInactive=1 — admin user management also lists deactivated accounts
     const users = req.query?.includeInactive === '1'

@@ -11,6 +11,8 @@ export type CaseEventType =
   | 'ESCALATED'
   | 'INVESTIGATOR_ASSIGNED'
   | 'FINDINGS_SUBMITTED'
+  | 'SUBMITTED_TO_DD'
+  | 'DD_REVIEWED'
   | 'RETURNED'
   | 'APPROVED'
   | 'CLOSED'

@@ -15,6 +15,7 @@ export type SecurityRole =
   | 'employee'
   | 'security_coordinator'
   | 'chief_security_investigator'
+  | 'deputy_director'
   | 'security_director'
   | 'system_administrator';
 
@@ -31,6 +32,7 @@ export type Permission =
   | 'case:escalate'
   | 'case:assign_investigator'
   | 'investigation:submit'
+  | 'investigation:verify'
   | 'investigation:approve'
   | 'reports:submit_operational'
   | 'reports:view_archive'
@@ -96,6 +98,7 @@ export const ROLE_CODES: Record<SecurityRole, string> = {
   employee: 'EMP',
   security_coordinator: 'SECCO',
   chief_security_investigator: 'CHINV',
+  deputy_director: 'DEPDIR',
   security_director: 'CHDIR',
   system_administrator: 'SYSADM'
 };
@@ -104,12 +107,13 @@ export const ROLE_LABELS: Record<SecurityRole, string> = {
   employee: 'Employee',
   security_coordinator: 'Security Coordinator',
   chief_security_investigator: 'Chief Investigator',
+  deputy_director: 'Deputy Director',
   security_director: 'Chief Security Director',
   system_administrator: 'System Administrator'
 };
 
 // Roles whose data scope is national (see everything across provinces)
-export const NATIONAL_ROLES: SecurityRole[] = ['security_director'];
+export const NATIONAL_ROLES: SecurityRole[] = ['deputy_director', 'security_director'];
 
 // Roles whose data scope is their own province
 export const PROVINCIAL_ROLES: SecurityRole[] = ['security_coordinator'];
@@ -150,6 +154,20 @@ export const ROLE_PERMISSIONS: Record<SecurityRole, Permission[]> = {
     'reports:view_archive',
     'ai:chat'
   ],
+  // Deputy Director (v2 user journeys): national verification & recommendations
+  // layer — reviews every coordinator/investigator submission, adds formal
+  // recommendations and forwards to the Chief Security Director. Never closes,
+  // assigns or approves; the Director stays the final authority.
+  deputy_director: [
+    'dashboard:view',
+    'incident:create',
+    'incident:view_all',
+    'incident:update',
+    'investigation:verify',
+    'reports:view_archive',
+    'sla:view',
+    'ai:chat'
+  ],
   security_director: [
     'dashboard:view',
     'incident:view_all',
@@ -158,6 +176,7 @@ export const ROLE_PERMISSIONS: Record<SecurityRole, Permission[]> = {
     'case:close',
     'case:escalate',
     'case:assign_investigator',
+    'investigation:verify',
     'investigation:approve',
     'reports:view_archive',
     'sla:view',
@@ -221,12 +240,15 @@ export const ROLE_USERS: UserProfile[] = [
   buildUser('usr-coordinator-002', 'coordinator2', 'Security Coordinator 2 (Gauteng)', 'coordinator2.gp@dlrrd.gov.za', 'security_coordinator', 'Gauteng', 'Johannesburg Regional Office', 'Secret', '10118844', 'Security Coordinator', '011 240 2500'),
   buildUser('usr-coordinator-wc', 'coordinator_wc', 'Security Coordinator (Western Cape)', 'coordinator.wc@dlrrd.gov.za', 'security_coordinator', 'Western Cape', 'Cape Town Provincial Office', 'Secret', '10125521', 'Security Coordinator', '021 409 0345'),
   buildUser('usr-investigator-001', 'investigator', 'Chief Investigator', 'investigator@dlrrd.gov.za', 'chief_security_investigator', 'National', 'Field Investigation Unit', 'Top Secret', '10099001', 'Chief Security Investigator', '012 312 8688'),
+  buildUser('usr-deputydirector-001', 'deputydirector', 'Deputy Director', 'deputydirector@dlrrd.gov.za', 'deputy_director', 'National', 'National Security Directorate', 'Top Secret', '10022002', 'Deputy Director: Security Services', '012 312 8610'),
   buildUser('usr-director-001', 'director', 'Chief Security Director', 'director@dlrrd.gov.za', 'security_director', 'National', 'National Security Directorate', 'Top Secret', '10011001', 'Chief Security Director: Security Services', '012 312 8600'),
   buildUser('usr-sysadmin-001', 'sysadmin', 'System Administrator', 'sysadmin@dlrrd.gov.za', 'system_administrator', 'National', 'ICT / MTS — National Office', 'Secret', '10066002', 'System Administrator (ICT/MTS)', '012 312 8700')
 ];
 
 export const LOGIN_ALIASES: Record<string, string> = {
-  supervisor: 'coordinator'
+  supervisor: 'coordinator',
+  dd: 'deputydirector',
+  deputy: 'deputydirector'
 };
 
 export const getUserByUsername = (username: string) => {

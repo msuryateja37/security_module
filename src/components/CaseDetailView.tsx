@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import type { CaseAttachment, CaseEvent, SecurityIncident } from '../types/security';
+import type { CaseAttachment, CaseComment, CaseEvent, SecurityIncident } from '../types/security';
 import { CLOSURE_OUTCOMES } from '../types/security';
 import type { UserProfile } from '../security/roleAccess';
+import { ROLE_LABELS } from '../security/roleAccess';
 import {
-  ArrowLeft, ArrowUpCircle, CheckCircle2, ClipboardCheck, Clock, Download,
-  FileText, Loader2, Paperclip, Send, ShieldAlert, UploadCloud, UserCheck, Undo2, X
+  ArrowLeft, ArrowUpCircle, CheckCircle2, ClipboardCheck, Clock, CornerDownRight, Download,
+  FileText, Loader2, MessageSquare, Paperclip, Search, Send, ShieldAlert, UploadCloud, UserCheck, Undo2, X
 } from 'lucide-react';
 import { useModal } from './NotificationModal';
 import { useBreadcrumbTail } from './Breadcrumbs';
@@ -25,6 +26,7 @@ interface CaseFile {
   incident: SecurityIncident;
   attachments: CaseAttachment[];
   events: CaseEvent[];
+  comments: CaseComment[];
 }
 
 interface Investigator {
@@ -38,6 +40,7 @@ const STAGE_BADGE: Record<string, string> = {
   'Under Review': 'warning',
   'Escalated': 'danger',
   'Investigation': 'warning',
+  'Pending DD Review': 'warning',
   'Pending Approval': 'primary',
   'Approved': 'primary',
   'Closed': 'success'
@@ -49,8 +52,10 @@ const EVENT_LABEL: Record<string, string> = {
   PRELIMINARY_FINDINGS: 'Preliminary findings captured',
   ESCALATED: 'Escalated to national office',
   INVESTIGATOR_ASSIGNED: 'Investigator assigned',
-  FINDINGS_SUBMITTED: 'Findings submitted for approval',
-  RETURNED: 'Investigation returned',
+  FINDINGS_SUBMITTED: 'Findings submitted for review',
+  SUBMITTED_TO_DD: 'Submitted to the Deputy Director',
+  DD_REVIEWED: 'Deputy Director recommendation recorded',
+  RETURNED: 'Case returned for further work',
   APPROVED: 'Investigation approved',
   CLOSED: 'Case closed',
   ATTACHMENT_ADDED: 'Document uploaded'
@@ -112,6 +117,16 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
   const [decisionNotes, setDecisionNotes] = useState('');
   const [isUploading, setIsUploading] = useState(false);
 
+  // Deputy Director review chain (v2)
+  const [requestedOutcome, setRequestedOutcome] = useState<'close' | 'investigate'>('close');
+  const [ddRecommendationText, setDdRecommendationText] = useState('');
+
+  // Case discussion thread
+  const [commentText, setCommentText] = useState('');
+  const [replyToId, setReplyToId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
+  const [isPostingComment, setIsPostingComment] = useState(false);
+
   const authHeaders: Record<string, string> = useMemo(() => ({
     'x-username': currentUser.username,
     'x-user-role': currentUser.role
@@ -143,6 +158,7 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
   const isClosed = stage === 'Closed' || incident?.status === 'Closed';
 
   const isDirector = currentUser.role === 'security_director';
+  const isDeputyDirector = currentUser.role === 'deputy_director';
   const isCoordinatorForCase = !!incident &&
     currentUser.role === 'security_coordinator' &&
     incident.province === currentUser.province &&
@@ -160,7 +176,7 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
 
   // Load the assignment dropdown only when the director can actually assign
   useEffect(() => {
-    if (!isDirector || !incident || !['Escalated', 'Investigation'].includes(stage)) return;
+    if (!isDirector || !incident || !['Escalated', 'Investigation', 'Pending Approval'].includes(stage)) return;
     fetch('/api/investigators', { headers: authHeaders })
       .then(res => res.json())
       .then(json => { if (json.success) setInvestigators(json.data); })
@@ -228,6 +244,30 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
     }
   };
 
+  const handlePostComment = async (message: string, parentId: string | null) => {
+    const text = message.trim();
+    if (!text) return;
+    setIsPostingComment(true);
+    try {
+      const res = await fetch(`/api/incidents/${encodeURIComponent(incidentId)}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ message: text, parentId })
+      });
+      const json = await res.json();
+      if (!json.success) {
+        showAlert(json.error || json.message || 'The comment could not be posted.', 'Comment Failed', 'danger');
+        return;
+      }
+      if (parentId) { setReplyText(''); setReplyToId(null); } else { setCommentText(''); }
+      await loadCase();
+    } catch {
+      showAlert('The comment could not be posted.', 'Comment Failed', 'danger');
+    } finally {
+      setIsPostingComment(false);
+    }
+  };
+
   const handleOpenAttachment = async (att: CaseAttachment, forceDownload: boolean) => {
     try {
       const res = await fetch(`/api/incidents/${encodeURIComponent(incidentId)}/attachments/${encodeURIComponent(att.id)}/download`, {
@@ -274,9 +314,10 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
     );
   }
 
+  // Every path passes through the Deputy Director before the Director decides (v2)
   const stageFlow = incident.isEscalated
-    ? ['Submitted', 'Under Review', 'Escalated', 'Investigation', 'Pending Approval', 'Approved', 'Closed']
-    : ['Submitted', 'Under Review', 'Closed'];
+    ? ['Submitted', 'Under Review', 'Escalated', 'Investigation', 'Pending DD Review', 'Pending Approval', 'Approved', 'Closed']
+    : ['Submitted', 'Under Review', 'Pending DD Review', 'Pending Approval', 'Approved', 'Closed'];
   const currentStageIdx = Math.max(0, stageFlow.indexOf(stage));
 
   const detailRow = (label: string, value?: React.ReactNode) => (
@@ -549,12 +590,144 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
               </div>
             )}
           </div>
+
+          {/* Case discussion / comment thread */}
+          <div className="glass-card" style={{ padding: '1.5rem' }}>
+            <h3 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <MessageSquare size={18} /> Case Discussion ({caseFile!.comments.length})
+            </h3>
+            <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', margin: '0 0 1rem 0' }}>
+              Messages between the case parties — the reporter, coordinator, investigator and director. Every entry is recorded with the author, role and time.
+            </p>
+
+            {caseFile!.comments.length === 0 && (
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: '0 0 1rem 0' }}>
+                No comments yet.{!isClosed && ' Start the discussion below.'}
+              </p>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              {caseFile!.comments.filter(c => !c.parentId).map(comment => {
+                const replies = caseFile!.comments.filter(c => c.parentId === comment.id);
+                const renderBubble = (c: CaseComment) => {
+                  const isMine = c.author === currentUser.username;
+                  return (
+                    <div
+                      style={{
+                        padding: '0.6rem 0.85rem', borderRadius: 'var(--radius-sm)',
+                        background: isMine ? 'rgba(59, 130, 246, 0.10)' : 'rgba(0,0,0,0.02)',
+                        border: isMine ? '1px solid rgba(59, 130, 246, 0.30)' : '1px solid var(--border-color)',
+                        borderLeft: isMine ? '3px solid var(--color-primary)' : '1px solid var(--border-color)'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>
+                          {isMine ? 'You' : c.authorName}
+                        </span>
+                        <span style={{
+                          fontSize: '0.64rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.03em',
+                          padding: '0.1rem 0.4rem', borderRadius: '999px',
+                          background: 'rgba(0,0,0,0.06)', color: 'var(--text-secondary)'
+                        }}>
+                          {ROLE_LABELS[c.authorRole as keyof typeof ROLE_LABELS] || c.authorRole}
+                        </span>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>
+                          {formatDateTime(c.dateCreated)}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.83rem', marginTop: '0.3rem', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                        {c.message}
+                      </div>
+                    </div>
+                  );
+                };
+                return (
+                  <div key={comment.id}>
+                    {renderBubble(comment)}
+                    {(replies.length > 0 || replyToId === comment.id) && (
+                      <div style={{ marginLeft: '1.4rem', marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', borderLeft: '2px solid var(--border-color)', paddingLeft: '0.75rem' }}>
+                        {replies.map(reply => <div key={reply.id}>{renderBubble(reply)}</div>)}
+                        {replyToId === comment.id && (
+                          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+                            <textarea
+                              rows={2}
+                              className="form-input"
+                              style={{ flexGrow: 1 }}
+                              placeholder={`Reply to ${comment.author === currentUser.username ? 'your comment' : comment.authorName}...`}
+                              value={replyText}
+                              onChange={(e) => setReplyText(e.target.value)}
+                              autoFocus
+                            />
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                              <button
+                                className="btn btn-primary"
+                                style={{ padding: '0.4rem 0.7rem' }}
+                                disabled={isPostingComment || !replyText.trim()}
+                                onClick={() => handlePostComment(replyText, comment.id)}
+                              >
+                                {isPostingComment ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                              </button>
+                              <button
+                                className="btn btn-secondary"
+                                style={{ padding: '0.4rem 0.7rem' }}
+                                onClick={() => { setReplyToId(null); setReplyText(''); }}
+                                title="Cancel reply"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {!isClosed && replyToId !== comment.id && (
+                      <button
+                        onClick={() => { setReplyToId(comment.id); setReplyText(''); }}
+                        style={{
+                          background: 'transparent', border: 'none', cursor: 'pointer', padding: '0.25rem 0',
+                          marginLeft: '1.4rem', display: 'flex', alignItems: 'center', gap: '0.3rem',
+                          fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-primary)'
+                        }}
+                      >
+                        <CornerDownRight size={13} /> Reply
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {isClosed ? (
+              <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', margin: caseFile!.comments.length > 0 ? '0.85rem 0 0 0' : 0 }}>
+                This case is closed — the discussion thread is read-only.
+              </p>
+            ) : (
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', marginTop: caseFile!.comments.length > 0 ? '1rem' : 0 }}>
+                <textarea
+                  rows={2}
+                  className="form-input"
+                  style={{ flexGrow: 1 }}
+                  placeholder="Write a comment for the case parties..."
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                />
+                <button
+                  className="btn btn-primary"
+                  style={{ padding: '0.55rem 0.9rem' }}
+                  disabled={isPostingComment || !commentText.trim()}
+                  onClick={() => handlePostComment(commentText, null)}
+                >
+                  {isPostingComment ? <Loader2 size={15} className="animate-spin" /> : <><Send size={15} /> Post</>}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* RIGHT column: actions + timeline */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', minWidth: 0 }}>
           {/* ROLE ACTION PANEL */}
-          {!isClosed && (isCoordinatorForCase || isDirector || isAssignedInvestigator) && (
+          {!isClosed && (isCoordinatorForCase || isDirector || isAssignedInvestigator || (isDeputyDirector && stage === 'Pending DD Review')) && (
             <div className="glass-card" style={{ padding: '1.25rem' }}>
               <h3 style={{ marginBottom: '1rem', fontSize: '0.95rem' }}>Case Actions</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -592,9 +765,49 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
                   </div>
                 )}
 
-                {/* Coordinator: close small case / close after approval */}
+                {/* Coordinator: submit the preliminary investigation to the Deputy Director (v2 —
+                    coordinators never close directly; every case goes DD -> Director first) */}
+                {coordinatorHasAccepted && stage === 'Under Review' && (
+                  <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
+                    <label className="form-label" style={{ fontSize: '0.75rem' }}>Submit to Deputy Director</label>
+                    <select
+                      className="form-input"
+                      value={requestedOutcome}
+                      onChange={(e) => setRequestedOutcome(e.target.value as 'close' | 'investigate')}
+                    >
+                      <option value="close">Request Case Closure</option>
+                      <option value="investigate">Request Further Investigation</option>
+                    </select>
+                    <button
+                      className="btn btn-primary"
+                      style={{ marginTop: '0.5rem', width: '100%' }}
+                      disabled={busyAction !== null || !(incident.preliminaryFindings || '').trim()}
+                      title={(incident.preliminaryFindings || '').trim() ? undefined : 'Save the preliminary findings first'}
+                      onClick={() =>
+                        showConfirm({
+                          title: 'Submit for Review',
+                          message: `Submit case ${incident.refNo} to the Deputy Director requesting ${requestedOutcome === 'close' ? 'case closure' : 'further investigation'}? The Chief Security Director makes the final decision.`,
+                          confirmText: 'Submit to Deputy Director',
+                          onConfirm: () => {
+                            runAction('submit-dd', `/api/incidents/${incidentId}/submit-to-dd`, 'POST',
+                              { requestedOutcome }, 'Case submitted — the Deputy Director has been notified.');
+                          }
+                        })
+                      }
+                    >
+                      {busyContent('submit-dd', <Send size={15} />, 'Submit to Deputy Director', 'Submitting...')}
+                    </button>
+                    {!(incident.preliminaryFindings || '').trim() && (
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>
+                        Save the preliminary investigation findings before submitting.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Close: coordinator only after the Director approved; director anytime (final authority) */}
                 {(
-                  (coordinatorHasAccepted && ['Submitted', 'Under Review', 'Approved'].includes(stage)) ||
+                  (coordinatorHasAccepted && stage === 'Approved') ||
                   (isDirector && !isClosed)
                 ) && (
                   <button className="btn btn-success" disabled={busyAction !== null} onClick={() => setShowCloseForm(true)}>
@@ -609,11 +822,73 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
                   </button>
                 )}
 
-                {/* Director: assign investigator */}
-                {isDirector && ['Escalated', 'Investigation'].includes(stage) && (
+                {/* Deputy Director: verify the submission + record formal recommendations */}
+                {isDeputyDirector && stage === 'Pending DD Review' && (
+                  <div>
+                    <div style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: 'var(--radius-sm)', padding: '0.6rem 0.75rem', marginBottom: '0.6rem', fontSize: '0.78rem' }}>
+                      <strong>{incident.submittedToDdBy || 'The submitter'}</strong> requested{' '}
+                      <strong>{incident.requestedOutcome === 'investigate' ? 'further investigation' : 'case closure'}</strong>
+                      {incident.submittedToDdAt ? ` on ${formatDateTime(incident.submittedToDdAt)}` : ''}.
+                      Review the {incident.assignedInvestigator ? 'field investigation findings' : 'preliminary investigation'}, then record your formal recommendations for the Chief Security Director.
+                    </div>
+                    <label className="form-label" style={{ fontSize: '0.75rem' }}>Formal Recommendations *</label>
+                    <textarea
+                      rows={5}
+                      className="form-input"
+                      placeholder="Verify the report and record your formal recommendations: adequacy of the investigation, risk assessment, recommended outcome and any conditions..."
+                      value={ddRecommendationText}
+                      onChange={(e) => setDdRecommendationText(e.target.value)}
+                    />
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                      <button
+                        className="btn btn-success"
+                        style={{ flexGrow: 1 }}
+                        disabled={busyAction !== null || !ddRecommendationText.trim()}
+                        onClick={() =>
+                          showConfirm({
+                            title: 'Recommend Closure',
+                            message: `Forward case ${incident.refNo} to the Chief Security Director recommending closure?`,
+                            confirmText: 'Recommend Closure',
+                            onConfirm: () => {
+                              runAction('dd-review', `/api/incidents/${incidentId}/dd-review`, 'POST',
+                                { recommendation: ddRecommendationText, recommendedAction: 'close' },
+                                'Recommendation recorded — the Chief Security Director has been notified.');
+                            }
+                          })
+                        }
+                      >
+                        {busyContent('dd-review', <CheckCircle2 size={15} />, 'Recommend Closure', 'Forwarding...')}
+                      </button>
+                      <button
+                        className="btn btn-primary"
+                        style={{ flexGrow: 1 }}
+                        disabled={busyAction !== null || !ddRecommendationText.trim()}
+                        onClick={() =>
+                          showConfirm({
+                            title: 'Recommend Further Investigation',
+                            message: `Forward case ${incident.refNo} to the Chief Security Director recommending further investigation?`,
+                            confirmText: 'Recommend Investigation',
+                            onConfirm: () => {
+                              runAction('dd-review', `/api/incidents/${incidentId}/dd-review`, 'POST',
+                                { recommendation: ddRecommendationText, recommendedAction: 'investigate' },
+                                'Recommendation recorded — the Chief Security Director has been notified.');
+                            }
+                          })
+                        }
+                      >
+                        {busyContent('dd-review', <Search size={15} />, 'Recommend Further Investigation', 'Forwarding...')}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Director: assign investigator (also straight off a DD "investigate" recommendation) */}
+                {isDirector && ['Escalated', 'Investigation', 'Pending Approval'].includes(stage) && (
                   <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
                     <label className="form-label" style={{ fontSize: '0.75rem' }}>
-                      {stage === 'Escalated' ? 'Assign Chief Investigator' : 'Reassign Investigator'}
+                      {stage === 'Escalated' ? 'Assign Chief Investigator'
+                        : stage === 'Pending Approval' ? 'Order Further Investigation — Assign Investigator'
+                        : 'Reassign Investigator'}
                     </label>
                     <select className="form-input" value={selectedInvestigator} onChange={(e) => setSelectedInvestigator(e.target.value)}>
                       <option value="">Select investigator</option>
@@ -666,12 +941,12 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
                         disabled={busyAction !== null || !findingsText.trim()}
                         onClick={() =>
                           showConfirm({
-                            title: 'Submit for Approval',
-                            message: `Submit your field investigation findings for case ${incident.refNo} to the Chief Security Director for approval?`,
+                            title: 'Submit for Review',
+                            message: `Submit your field investigation findings for case ${incident.refNo} to the Deputy Director for verification? The Chief Security Director makes the final decision.`,
                             confirmText: 'Submit Findings',
                             onConfirm: () => {
                               runAction('submit-inv', `/api/incidents/${incidentId}/submit-investigation`, 'POST',
-                                { investigationFindings: findingsText }, 'Findings submitted — the Chief Security Director has been notified.');
+                                { investigationFindings: findingsText }, 'Findings submitted — the Deputy Director has been notified.');
                             }
                           })
                         }
@@ -685,6 +960,15 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
                 {/* Director: approve / return */}
                 {isDirector && stage === 'Pending Approval' && (
                   <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
+                    {incident.ddRecommendation && (
+                      <div style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: 'var(--radius-sm)', padding: '0.6rem 0.75rem', marginBottom: '0.6rem', fontSize: '0.78rem' }}>
+                        <strong>Deputy Director recommendation — {incident.ddRecommendedAction === 'investigate' ? 'further investigation' : 'closure'}</strong>
+                        <div style={{ marginTop: '0.25rem', whiteSpace: 'pre-wrap' }}>{incident.ddRecommendation}</div>
+                        <div style={{ marginTop: '0.25rem', color: 'var(--text-muted)', fontSize: '0.72rem' }}>
+                          {incident.ddReviewedBy}{incident.ddReviewedAt ? ` · ${formatDateTime(incident.ddReviewedAt)}` : ''}
+                        </div>
+                      </div>
+                    )}
                     <label className="form-label" style={{ fontSize: '0.75rem' }}>Approval Decision</label>
                     <textarea
                       rows={3}

@@ -9,17 +9,39 @@ import { ROLE_USERS } from '../security/roleAccess.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-let sqliteDb: Database | null = null;
-let mssqlPool: mssql.ConnectionPool | null = null;
+// Memoized as promises so concurrent callers during boot share one connection
+// and none can grab the pool before schema ensures have finished.
+let sqliteDbPromise: Promise<Database> | null = null;
+let mssqlPoolPromise: Promise<mssql.ConnectionPool> | null = null;
 
 // Switch based on process.env configuration
 const useMssql = process.env.USE_SQLITE === 'true' ? false : !!(process.env.DB_SERVER || process.env.AZURE_SQL_CONNECTIONSTRING);
 
+// Exposed for the rare query that cannot be written portably (e.g. TOP vs LIMIT)
+export const isMssql = useMssql;
+
 export async function getDbConnection(): Promise<Database | mssql.ConnectionPool> {
   if (useMssql) {
-    if (mssqlPool) return mssqlPool;
+    if (!mssqlPoolPromise) {
+      mssqlPoolPromise = connectMssql().catch(err => {
+        mssqlPoolPromise = null;
+        throw err;
+      });
+    }
+    return mssqlPoolPromise;
+  }
 
-    console.log('Connecting to Azure SQL Database...');
+  if (!sqliteDbPromise) {
+    sqliteDbPromise = connectSqlite().catch(err => {
+      sqliteDbPromise = null;
+      throw err;
+    });
+  }
+  return sqliteDbPromise;
+}
+
+async function connectMssql(): Promise<mssql.ConnectionPool> {
+  console.log('Connecting to Azure SQL Database...');
     const config: mssql.config | string = process.env.AZURE_SQL_CONNECTIONSTRING
       ? process.env.AZURE_SQL_CONNECTIONSTRING
       : {
@@ -34,93 +56,104 @@ export async function getDbConnection(): Promise<Database | mssql.ConnectionPool
           }
         };
 
-    mssqlPool = await mssql.connect(config);
+    const pool = await mssql.connect(config);
     console.log('Connected to Azure SQL Database successfully.');
 
     // Azure SQL drops idle connections; without a listener the pool's 'error'
     // event crashes the process (killing any in-flight request). Log it and
     // discard the pool so the next call reconnects.
-    mssqlPool.on('error', (err) => {
+    pool.on('error', (err) => {
       console.error('Azure SQL connection pool error (will reconnect on next query):', err);
-      mssqlPool = null;
+      mssqlPoolPromise = null;
     });
 
     // Initialize Schema and Seed if needed
-    await initializeMssql(mssqlPool);
+    await initializeMssql(pool);
 
     // Clean up DLRRD prefix from any existing incidents
     try {
-      await ensureIncidentEscalationColumnsMssql(mssqlPool);
-      await mssqlPool.request().query("UPDATE incidents SET refNo = REPLACE(refNo, 'DLRRD/', '') WHERE refNo LIKE 'DLRRD/%'");
+      await ensureIncidentEscalationColumnsMssql(pool);
+      await pool.request().query("UPDATE incidents SET refNo = REPLACE(refNo, 'DLRRD/', '') WHERE refNo LIKE 'DLRRD/%'");
       console.log('Successfully cleaned up old DLRRD prefixes from Azure SQL incidents.');
     } catch (e) {
       console.error('Failed to run Azure SQL refNo cleanup:', e);
     }
 
     try {
-      await ensureUsersAndOwnershipMssql(mssqlPool);
+      await ensureUsersAndOwnershipMssql(pool);
     } catch (e) {
       console.error('Failed to ensure users table / ownerId columns (Azure SQL):', e);
     }
 
     try {
-      await ensureCaseWorkflowMssql(mssqlPool);
+      await ensureCaseWorkflowMssql(pool);
     } catch (e) {
       console.error('Failed to ensure case workflow columns/tables (Azure SQL):', e);
     }
 
-    return mssqlPool;
-  } else {
-    if (sqliteDb) return sqliteDb;
-
-    const dbPath = path.join(process.cwd(), 'security.db');
-    const schemaPath = path.join(process.cwd(), 'database.sql');
-    const isNew = !fs.existsSync(dbPath);
-
-    sqliteDb = await open({
-      filename: dbPath,
-      driver: sqlite3.Database
-    });
-
-    if (isNew) {
-      console.log('SQLite database file not found. Creating a new database and initializing tables...');
-      if (fs.existsSync(schemaPath)) {
-        const ddl = fs.readFileSync(schemaPath, 'utf8');
-        await sqliteDb.exec(ddl);
-        console.log('Database tables created successfully.');
-        await seedDatabaseSqlite(sqliteDb);
-      }
-    }
-
-    // Clean up DLRRD prefix from any existing incidents
     try {
-      await ensureIncidentEscalationColumnsSqlite(sqliteDb);
-      await sqliteDb.exec("UPDATE incidents SET refNo = REPLACE(refNo, 'DLRRD/', '') WHERE refNo LIKE 'DLRRD/%'");
-      console.log('Successfully cleaned up old DLRRD prefixes from SQLite incidents.');
+      await ensureAuditLogsMssql(pool);
     } catch (e) {
-      console.error('Failed to run SQLite refNo cleanup:', e);
+      console.error('Failed to ensure audit_logs table (Azure SQL):', e);
     }
 
-    try {
-      await ensureUsersAndOwnershipSqlite(sqliteDb);
-    } catch (e) {
-      console.error('Failed to ensure users table / ownerId columns (SQLite):', e);
-    }
+    return pool;
+}
 
-    try {
-      await ensureLeaveTablesSqlite(sqliteDb);
-    } catch (e) {
-      console.error('Failed to ensure leave/notification tables (SQLite):', e);
-    }
+async function connectSqlite(): Promise<Database> {
+  const dbPath = path.join(process.cwd(), 'security.db');
+  const schemaPath = path.join(process.cwd(), 'database.sql');
+  const isNew = !fs.existsSync(dbPath);
 
-    try {
-      await ensureCaseWorkflowSqlite(sqliteDb);
-    } catch (e) {
-      console.error('Failed to ensure case workflow columns/tables (SQLite):', e);
-    }
+  const db = await open({
+    filename: dbPath,
+    driver: sqlite3.Database
+  });
 
-    return sqliteDb;
+  if (isNew) {
+    console.log('SQLite database file not found. Creating a new database and initializing tables...');
+    if (fs.existsSync(schemaPath)) {
+      const ddl = fs.readFileSync(schemaPath, 'utf8');
+      await db.exec(ddl);
+      console.log('Database tables created successfully.');
+      await seedDatabaseSqlite(db);
+    }
   }
+
+  // Clean up DLRRD prefix from any existing incidents
+  try {
+    await ensureIncidentEscalationColumnsSqlite(db);
+    await db.exec("UPDATE incidents SET refNo = REPLACE(refNo, 'DLRRD/', '') WHERE refNo LIKE 'DLRRD/%'");
+    console.log('Successfully cleaned up old DLRRD prefixes from SQLite incidents.');
+  } catch (e) {
+    console.error('Failed to run SQLite refNo cleanup:', e);
+  }
+
+  try {
+    await ensureUsersAndOwnershipSqlite(db);
+  } catch (e) {
+    console.error('Failed to ensure users table / ownerId columns (SQLite):', e);
+  }
+
+  try {
+    await ensureLeaveTablesSqlite(db);
+  } catch (e) {
+    console.error('Failed to ensure leave/notification tables (SQLite):', e);
+  }
+
+  try {
+    await ensureCaseWorkflowSqlite(db);
+  } catch (e) {
+    console.error('Failed to ensure case workflow columns/tables (SQLite):', e);
+  }
+
+  try {
+    await ensureAuditLogsSqlite(db);
+  } catch (e) {
+    console.error('Failed to ensure audit_logs table (SQLite):', e);
+  }
+
+  return db;
 }
 
 async function ensureIncidentEscalationColumnsSqlite(db: Database) {
@@ -377,7 +410,22 @@ const CASE_WORKFLOW_COLUMNS: [name: string, sqliteType: string, mssqlType: strin
   ['closedBy', 'VARCHAR(255)', 'VARCHAR(255)'],
   ['closedAt', 'VARCHAR(50)', 'VARCHAR(50)'],
   ['closureOutcome', 'VARCHAR(50)', 'VARCHAR(50)'],
-  ['closureReport', 'TEXT', 'NVARCHAR(MAX)']
+  ['closureReport', 'TEXT', 'NVARCHAR(MAX)'],
+  // "Report For" (July 2026): reporting an incident on behalf of another employee.
+  // reportForEmployee holds the tagged employee's display name; richer linking
+  // (username/notifications) is a later phase.
+  ['reportFor', "VARCHAR(10) DEFAULT 'Self'", "VARCHAR(10) DEFAULT 'Self'"],
+  ['reportForEmployee', 'VARCHAR(255)', 'VARCHAR(255)'],
+  // Deputy Director review layer (v2 user journeys): coordinator/investigator
+  // submissions pass through the DD, who records formal recommendations before
+  // the case reaches the Chief Security Director for the final decision.
+  ['requestedOutcome', 'VARCHAR(20)', 'VARCHAR(20)'],
+  ['submittedToDdBy', 'VARCHAR(255)', 'VARCHAR(255)'],
+  ['submittedToDdAt', 'VARCHAR(50)', 'VARCHAR(50)'],
+  ['ddRecommendation', 'TEXT', 'NVARCHAR(MAX)'],
+  ['ddRecommendedAction', 'VARCHAR(20)', 'VARCHAR(20)'],
+  ['ddReviewedBy', 'VARCHAR(255)', 'VARCHAR(255)'],
+  ['ddReviewedAt', 'VARCHAR(50)', 'VARCHAR(50)']
 ];
 
 // Existing rows created before workflowStage existed read back the column default
@@ -423,6 +471,16 @@ async function ensureCaseWorkflowSqlite(db: Database) {
       notes TEXT,
       dateCreated VARCHAR(50) NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS case_comments (
+      id VARCHAR(50) PRIMARY KEY,
+      incidentId VARCHAR(50) NOT NULL,
+      parentId VARCHAR(50),
+      author VARCHAR(100),
+      authorName VARCHAR(255),
+      authorRole VARCHAR(50),
+      message TEXT NOT NULL,
+      dateCreated VARCHAR(50) NOT NULL
+    );
   `);
 
   for (const sql of CASE_WORKFLOW_BACKFILL) {
@@ -466,6 +524,19 @@ async function ensureCaseWorkflowMssql(pool: mssql.ConnectionPool) {
       dateCreated VARCHAR(50) NOT NULL
     );
   `);
+  await pool.request().query(`
+    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'case_comments')
+    CREATE TABLE case_comments (
+      id VARCHAR(50) PRIMARY KEY,
+      incidentId VARCHAR(50) NOT NULL,
+      parentId VARCHAR(50),
+      author VARCHAR(100),
+      authorName VARCHAR(255),
+      authorRole VARCHAR(50),
+      message NVARCHAR(MAX) NOT NULL,
+      dateCreated VARCHAR(50) NOT NULL
+    );
+  `);
 
   for (const sql of CASE_WORKFLOW_BACKFILL) {
     await pool.request().query(sql);
@@ -496,6 +567,47 @@ async function backfillOwnership(run: (sql: string) => Promise<unknown>) {
   await run(`UPDATE investigation_reports SET ownerId = 'coordinator' WHERE ownerId IS NULL AND officerName = 'Supervisor'`);
   await run(`UPDATE tra_audits SET ownerId = 'coordinator' WHERE ownerId IS NULL AND assessorName = 'Supervisor'`);
   await run(`UPDATE quarterly_reports SET ownerId = 'coordinator' WHERE ownerId IS NULL AND id = 'qtr-seed-1'`);
+}
+
+// Immutable audit trail (POPIA/MISS). Created at boot so AuditService never has
+// to run DDL on the hot request path; writes are append-only.
+async function ensureAuditLogsSqlite(db: Database) {
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id VARCHAR(50) PRIMARY KEY,
+      timestamp VARCHAR(50) NOT NULL,
+      userId VARCHAR(100) NOT NULL,
+      username VARCHAR(100) NOT NULL,
+      userRole VARCHAR(50) NOT NULL,
+      province VARCHAR(50),
+      action VARCHAR(50) NOT NULL,
+      resource VARCHAR(100) NOT NULL,
+      resourceId VARCHAR(100),
+      details TEXT,
+      ipAddress VARCHAR(50),
+      clearanceLevel VARCHAR(50)
+    )
+  `);
+}
+
+async function ensureAuditLogsMssql(pool: mssql.ConnectionPool) {
+  await pool.request().query(`
+    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'audit_logs')
+    CREATE TABLE audit_logs (
+      id VARCHAR(50) PRIMARY KEY,
+      timestamp VARCHAR(50) NOT NULL,
+      userId VARCHAR(100) NOT NULL,
+      username VARCHAR(100) NOT NULL,
+      userRole VARCHAR(50) NOT NULL,
+      province VARCHAR(50),
+      action VARCHAR(50) NOT NULL,
+      resource VARCHAR(100) NOT NULL,
+      resourceId VARCHAR(100),
+      details NVARCHAR(MAX),
+      ipAddress VARCHAR(50),
+      clearanceLevel VARCHAR(50)
+    );
+  `);
 }
 
 async function ensureIncidentEscalationColumnsMssql(pool: mssql.ConnectionPool) {

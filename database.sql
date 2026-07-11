@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS incidents (
     natureOfLoss TEXT NOT NULL,
     injuriesFatalities TEXT NOT NULL,
     reportedBy VARCHAR(255) NOT NULL,
+    reportFor VARCHAR(10) DEFAULT 'Self',  -- Self | Others (reporting on behalf of a colleague)
+    reportForEmployee VARCHAR(255),        -- displayName of the tagged employee when reportFor = 'Others'
     registerNumber VARCHAR(50) NOT NULL,
     sapsCaseNumber VARCHAR(100),
     policeStation VARCHAR(255),

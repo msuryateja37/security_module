@@ -30,6 +30,8 @@ router.put('/auth/preferences', requirePermission('dashboard:view'), AuthControl
 router.post('/auth/change-password', requirePermission('dashboard:view'), AuthController.changePassword);
 router.get('/auth/my-activity', requirePermission('dashboard:view'), AuthController.myActivity);
 router.get('/auth/permissions', requirePermission('dashboard:view'), AuthController.permissions);
+// Employee directory lookup for the incident form ("Report For: Others" tagging) — minimal fields only
+router.get('/users/lookup', requirePermission('incident:create'), AuthController.lookupUsers);
 router.get('/users', requirePermission('admin:manage_roles'), AuthController.users);
 // User account management (FR-036 — System Administrator / Chief Security Director)
 router.post('/users', requirePermission('admin:manage_roles'), AdminController.createUser);
@@ -69,9 +71,13 @@ router.put('/incidents/:id', requirePermission('incident:update'), IncidentContr
 router.get('/incidents/:id', requirePermission('dashboard:view'), CaseWorkflowController.getDetail);
 router.post('/incidents/:id/attachments', requirePermission('dashboard:view'), CaseWorkflowController.uploadAttachment);
 router.get('/incidents/:id/attachments/:attachmentId/download', requirePermission('dashboard:view'), CaseWorkflowController.downloadAttachment);
+router.post('/incidents/:id/comments', requirePermission('dashboard:view'), CaseWorkflowController.addComment);
 router.post('/incidents/:id/review', requirePermission('case:approve'), CaseWorkflowController.startReview);
 router.put('/incidents/:id/preliminary', requirePermission('case:approve'), CaseWorkflowController.savePreliminaryFindings);
 router.post('/incidents/:id/close', requirePermission('case:close'), CaseWorkflowController.closeCase);
+// Deputy Director review chain (v2): coordinator submits -> DD verifies & recommends -> director decides
+router.post('/incidents/:id/submit-to-dd', requirePermission('case:approve'), CaseWorkflowController.submitToDeputyDirector);
+router.post('/incidents/:id/dd-review', requirePermission('investigation:verify'), CaseWorkflowController.ddReview);
 router.get('/investigators', requirePermission('case:assign_investigator'), CaseWorkflowController.listInvestigators);
 router.post('/incidents/:id/assign-investigator', requirePermission('case:assign_investigator'), CaseWorkflowController.assignInvestigator);
 router.post('/incidents/:id/submit-investigation', requirePermission('investigation:submit'), CaseWorkflowController.submitInvestigation);

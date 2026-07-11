@@ -48,6 +48,8 @@ BEGIN
         natureOfLoss NVARCHAR(MAX) NOT NULL,
         injuriesFatalities NVARCHAR(MAX) NOT NULL,
         reportedBy VARCHAR(255) NOT NULL,
+        reportFor VARCHAR(10) DEFAULT 'Self',  -- Self | Others (reporting on behalf of a colleague)
+        reportForEmployee VARCHAR(255),        -- displayName of the tagged employee when reportFor = 'Others'
         registerNumber VARCHAR(50) NOT NULL,
         sapsCaseNumber VARCHAR(100),
         policeStation VARCHAR(255),
@@ -75,6 +77,14 @@ BEGIN
         closedAt VARCHAR(50),
         closureOutcome VARCHAR(50),
         closureReport NVARCHAR(MAX),
+        -- Deputy Director review layer (v2 user journeys)
+        requestedOutcome VARCHAR(20),         -- close | investigate (asked by the submitter)
+        submittedToDdBy VARCHAR(255),
+        submittedToDdAt VARCHAR(50),
+        ddRecommendation NVARCHAR(MAX),       -- DD's formal recommendations
+        ddRecommendedAction VARCHAR(20),      -- close | investigate
+        ddReviewedBy VARCHAR(255),
+        ddReviewedAt VARCHAR(50),
         isEscalated BIT DEFAULT 0,
         escalationLevel VARCHAR(50),
         escalationReason VARCHAR(255),
@@ -301,6 +311,22 @@ BEGIN
         actorName VARCHAR(255),
         actorRole VARCHAR(50),
         notes NVARCHAR(MAX),
+        dateCreated VARCHAR(50) NOT NULL
+    );
+END;
+
+-- 14. Case Comments / Chat Thread (v2 user journeys)
+-- Free-form discussion between the case parties. Immutable after insert.
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'case_comments')
+BEGIN
+    CREATE TABLE case_comments (
+        id VARCHAR(50) PRIMARY KEY,
+        incidentId VARCHAR(50) NOT NULL,      -- incidents.id
+        parentId VARCHAR(50),                 -- case_comments.id of the top-level comment when this is a reply
+        author VARCHAR(100),                  -- users.username
+        authorName VARCHAR(255),
+        authorRole VARCHAR(50),
+        message NVARCHAR(MAX) NOT NULL,
         dateCreated VARCHAR(50) NOT NULL
     );
 END;

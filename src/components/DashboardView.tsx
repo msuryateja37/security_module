@@ -65,6 +65,17 @@ const getKpisForRole = (user: UserProfile, incidents: SecurityIncident[]): KpiCa
         { title: 'Completed Investigations', icon: CheckCircle, iconClass: 'success', value: String(closedCases), footer: 'Cases closed with findings approved' }
       ];
 
+    case 'deputy_director': {
+      const awaitingMyReview = incidents.filter(i => !isCaseClosed(i) && i.workflowStage === 'Pending DD Review').length;
+      const forwarded = incidents.filter(i => !isCaseClosed(i) && i.workflowStage === 'Pending Approval').length;
+      return [
+        { title: 'Awaiting My Review', icon: ClipboardCheck, iconClass: 'warning', value: String(awaitingMyReview), footer: 'Submissions awaiting your verification and recommendations' },
+        { title: 'Forwarded to Director', icon: FileSearch, iconClass: 'primary', value: String(forwarded), footer: 'Reviewed cases awaiting the Chief Security Director' },
+        { title: 'National Active Cases', icon: AlertTriangle, iconClass: 'primary', value: String(activeCases), footer: 'Open cases across all provinces' },
+        { title: 'National Value of Loss', icon: DollarSign, iconClass: 'danger', value: `R ${totalLoss.toLocaleString()}`, footer: 'Estimated losses across all provinces' }
+      ];
+    }
+
     case 'security_director': {
       const pendingApproval = incidents.filter(i => !isCaseClosed(i) && i.workflowStage === 'Pending Approval').length;
       const escalated = incidents.filter(i => !isCaseClosed(i) && Boolean(i.isEscalated)).length;
