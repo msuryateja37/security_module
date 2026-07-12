@@ -31,17 +31,17 @@ import { LeaveService } from '../services/leave.service.js';
 export const CLOSURE_OUTCOMES = ['Closed', 'Recovered', 'Referred', 'Unfounded'];
 export const DD_ACTIONS = ['close', 'investigate'];
 
-/** Read access to a case file mirrors the list scoping in IncidentController.getAll. */
 export const canReadIncident = (user: UserProfile, incident: SecurityIncident): boolean => {
   switch (user.role) {
     case 'security_director':
     case 'deputy_director': // national verification layer — sees all provinces
+    case 'system_administrator':
       return true;
     case 'security_coordinator':
       return incident.province === user.province || incident.province === 'National';
     case 'chief_security_investigator':
       return incident.responsiblePerson === user.displayName || incident.assignedInvestigator === user.displayName;
-    default: // employee, system_administrator — own reports only
+    default: // employee — own reports only
       return (
         incident.ownerId === user.username ||
         incident.reportedBy === user.displayName ||

@@ -6,10 +6,10 @@
   /* DLRRD Security Portal design tokens (design_handoff_security_portal) */
   --bg-main: #F2F5F3;           /* Page background */
   --bg-subtle: #F6F9F7;         /* Table headers, readonly inputs, insets */
-  --bg-sidebar: #052E22;        /* Sidebar gradient top (green-900) */
-  --bg-sidebar-bottom: #063A2C; /* Sidebar gradient bottom (green-850) */
+  --bg-sidebar: #602D08;        /* Sidebar gradient top (mockup brown) */
+  --bg-sidebar-bottom: #401C05; /* Sidebar gradient bottom (darker brown) */
   --bg-sidebar-hover: rgba(255, 255, 255, 0.09);
-  --bg-sidebar-active: linear-gradient(90deg, #2FB98A, #1E9E71);
+  --bg-sidebar-active: linear-gradient(90deg, #744727, #602D08);
 
   --bg-card: #ffffff;           /* White card sheets */
   --bg-input: #ffffff;          /* Inputs: white with #D4DED9 border */
@@ -24,21 +24,21 @@
   --text-placeholder: #9AA8A1;  /* Ink-300 */
 
   /* Accents */
-  --color-primary: #0B4635;     /* green-800: primary buttons, headings accent */
-  --color-primary-hover: #063A2C;
-  --color-green-600: #157A5B;   /* links, chart line, icons */
-  --color-accent: #2FB98A;      /* mint-500: active nav, focus rings, CTA */
-  --color-mint-300: #7EDDB9;    /* sidebar icons, logout text */
-  --color-mint-200: #8FD4BA;    /* subtitles on dark green */
+  --color-primary: #6C3D1B;     /* Primary buttons, headings accent (mockup brown) */
+  --color-primary-hover: #5F2D05;
+  --color-green-600: #744727;   /* links, chart line, icons (mockup brown) */
+  --color-accent: #744727;      /* active nav, focus rings, CTA (mockup brown) */
+  --color-mint-300: #AEA490;    /* sidebar icons, logout text */
+  --color-mint-200: #C3B0A2;    /* subtitles on dark background */
   --color-gold: #C89B3C;
-  --color-success: #157A5B;
+  --color-success: #744727;     /* Success/Approved */
   --color-warning: #D6A331;     /* Amber */
   --color-danger: #C2543B;      /* Rust */
 
-  --grad-primary: linear-gradient(160deg, #0B4635, #063A2C);
-  --grad-band: linear-gradient(135deg, #063A2C, #0B4635);
-  --grad-bar: linear-gradient(180deg, #2FB98A, #0B4635);
-  --focus-ring: 0 0 0 3px rgba(47, 185, 138, 0.15);
+  --grad-primary: linear-gradient(160deg, #6C3D1B, #401C05);
+  --grad-band: linear-gradient(135deg, #401C05, #6C3D1B);
+  --grad-bar: linear-gradient(180deg, #744727, #401C05);
+  --focus-ring: 0 0 0 3px rgba(116, 71, 39, 0.15);
 
   --sidebar-width: 264px;
   --radius-sm: 9px;
@@ -134,7 +134,7 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   flex-direction: column;
   background: linear-gradient(180deg, var(--bg-sidebar) 0%, var(--bg-sidebar-bottom) 100%);
-  padding: 1.25rem 0.75rem;
+  padding: 10px 12px;
   z-index: 50;
   overflow-y: auto;
   border-right: none;
@@ -247,14 +247,14 @@ h1, h2, h3, h4, h5, h6 {
 
 .nav-link.active {
   background: var(--bg-sidebar-active);
-  color: #052E22;
+  color: #ffffff;
   font-weight: 700;
-  box-shadow: 0 6px 16px rgba(47, 185, 138, 0.35);
+  box-shadow: 0 6px 16px rgba(116, 71, 39, 0.35);
   transform: none;
 }
 
 .nav-link.active svg {
-  color: #052E22;
+  color: #ffffff;
 }
 
 /* Pulsing white dot on the active item's right edge */
@@ -515,13 +515,13 @@ h1, h2, h3, h4, h5, h6 {
 
 .btn-success {
   background: var(--color-accent);
-  color: #052E22;
+  color: #ffffff;
   font-weight: 800;
 }
 
 .btn-success:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 10px 24px rgba(47, 185, 138, 0.4);
+  box-shadow: 0 10px 24px rgba(116, 71, 39, 0.4);
 }
 
 /* Forms & Inputs */
@@ -982,18 +982,22 @@ select.form-input {
 /* Custom DOCX layout elements */
 .logo-white-card {
   background: #ffffff;
-  padding: 12px 14px;
-  margin: 0.35rem 0.35rem 0 0.35rem;
-  border-radius: 12px;
+  padding: 8px 12px;
+  margin: 0 0 1rem 0;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  height: 46px;
 }
 
 .logo-white-card-img {
-  width: 48px;
-  height: auto;
+  width: 100%;
+  max-width: 135px;
+  height: 30px;
+  object-fit: contain;
+  transform: scale(1.50);
 }
 
 .logo-white-card-text {
@@ -1151,7 +1155,7 @@ select.form-input {
   width: 340px;
   border-color: var(--color-accent);
   background: #ffffff;
-  box-shadow: 0 0 0 3px rgba(47, 185, 138, 0.12);
+  box-shadow: 0 0 0 3px rgba(116, 71, 39, 0.12);
 }
 
 .topbar-search-icon {
@@ -1239,8 +1243,8 @@ select.form-input {
 }
 
 .logout-btn-capsule {
-  background: rgba(47, 185, 138, 0.12) !important;
-  border: 1px solid rgba(47, 185, 138, 0.5) !important;
+  background: rgba(116, 71, 39, 0.12) !important;
+  border: 1px solid rgba(116, 71, 39, 0.5) !important;
   color: var(--color-mint-300) !important;
   border-radius: 9px !important;
   text-align: center !important;
@@ -1255,7 +1259,7 @@ select.form-input {
 
 .logout-btn-capsule:hover {
   background: var(--color-accent) !important;
-  color: #052E22 !important;
+  color: #ffffff !important;
 }
 
 .logout-btn-capsule:active {
@@ -1809,10 +1813,6 @@ select.form-input {
 
 /* Sidebar Logo Image Customization */
 .logo-white-card-img {
-  width: 100%;
-  max-width: 180px;
-  height: auto;
-  object-fit: contain;
   margin-right: 0;
 }
 
@@ -3134,7 +3134,7 @@ select.form-input {
 .filter-search-input:focus {
   border-color: var(--color-accent);
   background: #ffffff;
-  box-shadow: 0 0 0 3px rgba(47, 185, 138, 0.12);
+  box-shadow: 0 0 0 3px rgba(116, 71, 39, 0.12);
 }
 
 .filter-search-input::placeholder {

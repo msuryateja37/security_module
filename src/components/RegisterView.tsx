@@ -3,6 +3,7 @@ import type { SecurityIncident } from '../types/security';
 import { PROVINCES } from '../data/mockData';
 import { Search, Eye, X, Save } from 'lucide-react';
 import { useModal } from './NotificationModal';
+import { getStatusChipColors, getCaseStageLabel } from '../utils/statusChips';
 
 interface RegisterViewProps {
   incidents: SecurityIncident[];
@@ -199,10 +200,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
           </thead>
           <tbody>
             {filteredIncidents.map(inc => {
-              let badgeClass = 'badge primary';
-              if (inc.status === 'Closed') badgeClass = 'badge success';
-              if (inc.status === 'SAPS Case') badgeClass = 'badge danger';
-              if (inc.status === 'Under Investigation') badgeClass = 'badge warning';
+              const stageLabel = getCaseStageLabel(inc);
 
               let classificationBadge = 'badge muted';
               if (inc.classification === 'Secret') classificationBadge = 'badge warning';
@@ -223,7 +221,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
                     <span className={classificationBadge}>{inc.classification}</span>
                   </td>
                   <td>
-                    <span className={badgeClass}>{inc.status}</span>
+                    <span className="chip-status" style={getStatusChipColors(stageLabel)}>{stageLabel}</span>
                   </td>
                   <td style={{ textAlign: 'center' }}>
                     <button 

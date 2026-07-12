@@ -165,6 +165,7 @@ export const ROLE_PERMISSIONS: Record<SecurityRole, Permission[]> = {
     'incident:update',
     'investigation:verify',
     'reports:view_archive',
+    'reports:submit_operational',
     'sla:view',
     'ai:chat'
   ],
@@ -189,6 +190,11 @@ export const ROLE_PERMISSIONS: Record<SecurityRole, Permission[]> = {
     'dashboard:view',
     'incident:create',
     'incident:track_own',
+    'incident:view_all',
+    'case:assign_investigator',
+    'investigation:verify',
+    'investigation:approve',
+    'reports:view_archive',
     'admin:manage_roles',
     'admin:system_config',
     'ai:chat'

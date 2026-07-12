@@ -12,9 +12,9 @@ const CHIP_MAP: Record<string, [string, string]> = {
   'OPEN': ['#FDE3DC', '#9C3B24'],
   'SAPS CASE': ['#FDE3DC', '#9C3B24'],
   'ESCALATED': ['#FBDAD3', '#A83A22'],
-  'APPROVED': ['#DDF5E8', '#136B4A'],
-  'RESOLVED': ['#DDF5E8', '#136B4A'],
-  'CLOSED': ['#DDF5E8', '#136B4A']
+  'APPROVED': ['#EBE5E0', '#744727'],
+  'RESOLVED': ['#EBE5E0', '#744727'],
+  'CLOSED': ['#EBE5E0', '#744727']
 };
 
 export const getStatusChipColors = (label: string): { background: string; color: string } => {

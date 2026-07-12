@@ -60,6 +60,7 @@ router.get('/audit-logs', requirePermission('admin:manage_roles'), async (req: A
 });
 
 // Incidents CRUD (Protected by RBAC)
+router.get('/dashboard/summary', requirePermission('dashboard:view'), IncidentController.getDashboardSummary);
 router.get('/incidents', requirePermission('dashboard:view'), IncidentController.getAll);
 router.post('/incidents', requirePermission('incident:create'), IncidentController.create);
 router.post('/incidents/:id/escalate', requirePermission('case:escalate'), IncidentController.escalate);

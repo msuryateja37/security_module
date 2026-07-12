@@ -841,7 +841,7 @@ function App() {
       <nav className={`sidebar ${isSidebarOpen ? 'open' : ''}`} style={{ display: 'flex', flexDirection: 'column', height: '100vh', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           {/* Logo Card Section */}
-          <div className="logo-white-card" style={{ justifyContent: 'center' }}>
+          <div className="logo-white-card">
             <img className="logo-white-card-img" src="/logo_with_name.png" alt="DLRRD Logo" />
           </div>
 
@@ -886,7 +886,7 @@ function App() {
       <div className={`main-layout-container${activeView === 'assistant' ? ' viewport-locked' : ''}`} style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
         
         {/* Topbar Header */}
-        <header className="global-topbar" style={{ position: 'relative' }}>
+        <header className="global-topbar">
           <div className="topbar-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <button 
               className="menu-toggle-btn" 
@@ -1143,6 +1143,7 @@ function App() {
             <DashboardView
               incidents={incidents}
               currentUser={currentUser}
+              traAudits={traAudits}
               onNavigate={(view) => {
                 if (view === 'report') {
                   navigateToView('submit_reports');
@@ -1154,8 +1155,11 @@ function App() {
                   if (canAccessReportTab(currentUser.role, 'stats')) {
                     setSubmitReportSubView('stats');
                   }
+                } else if (view.startsWith('case:')) {
+                  const caseId = view.split(':')[1];
+                  openCaseFile(caseId);
                 } else {
-                  navigateToView(view);
+                  navigateToView(view as any);
                 }
               }} 
             />
@@ -1280,6 +1284,10 @@ function App() {
               invReports={invReports}
               qtrReports={qtrReports}
               traAudits={traAudits}
+              stats={stats}
+              onUpdateStats={handleUpdateStats}
+              onSaveQuarterlyReport={handleAddQtrReport}
+              incidents={incidents}
             />
           )}
 

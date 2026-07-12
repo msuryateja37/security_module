@@ -14,7 +14,6 @@
     "start": "node index.js",
     "lint": "oxlint",
     "preview": "vite preview",
-    "migrate": "tsx server/migrate.ts",
     "view-data": "tsc -p tsconfig.server.json && node dist-server/viewData.js"
   },
   "dependencies": {
@@ -27,9 +26,7 @@
     "nodemailer": "^9.0.3",
     "openai": "^6.45.0",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "sqlite": "^5.1.1",
-    "sqlite3": "^6.0.1"
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

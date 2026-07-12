@@ -4,6 +4,7 @@ import type { UserProfile } from '../security/roleAccess';
 import { ClipboardCheck, ShieldAlert, Award, CheckCircle2, FileText, FolderOpen, Search, UserPlus } from 'lucide-react';
 import { useModal } from './NotificationModal';
 import { useBreadcrumbTail } from './Breadcrumbs';
+import { getStatusChipColors } from '../utils/statusChips';
 
 // Approval Control Panel — role-aware workflow queues.
 // Chief Security Director: escalated cases awaiting an investigator, investigations
@@ -153,7 +154,7 @@ export const ApprovalView: React.FC<ApprovalViewProps> = ({ incidents, btoReport
                       {incident.province} | {incident.classification} | Loss: R {Number(incident.lossValue || 0).toLocaleString()}
                     </span>
                   </div>
-                  <span className="badge warning">{stageOf(incident)}</span>
+                  <span className="chip-status" style={getStatusChipColors(stageOf(incident))}>{stageOf(incident)}</span>
                 </div>
 
                 <div style={{ fontSize: '0.85rem', color: 'hsl(var(--text-secondary))', marginBottom: '0.5rem' }}>

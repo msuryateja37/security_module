@@ -143,14 +143,11 @@ export const AdminController = {
       }
       const dbLatencyMs = Date.now() - dbStart;
 
-      const useMssql = process.env.USE_SQLITE === 'true'
-        ? false
-        : !!(process.env.DB_SERVER || process.env.AZURE_SQL_CONNECTIONSTRING);
       const memory = process.memoryUsage();
 
       ResponseView.sendSuccess(res, {
         database: {
-          engine: useMssql ? 'Azure SQL (South Africa)' : 'SQLite (local development)',
+          engine: 'Azure SQL (South Africa)',
           status: dbStatus,
           latencyMs: dbLatencyMs,
           counts

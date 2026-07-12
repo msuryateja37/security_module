@@ -13,7 +13,7 @@ import { isNationalRole, isProvincialRole, UserProfile } from '../security/roleA
 // provincial officials may see the record. Legacy rows without an ownerId stay
 // visible to provincial roles to avoid hiding pre-migration data.
 async function scopeByOwner<T extends { ownerId?: string }>(records: T[], user: UserProfile): Promise<T[]> {
-  if (isNationalRole(user.role)) return records;
+  if (isNationalRole(user.role) || user.role === 'system_administrator') return records;
 
   if (isProvincialRole(user.role)) {
     const users = await UserModel.getAll();
@@ -94,7 +94,7 @@ export const ReportController = {
       // Quarterly reports carry their own province column — segregate on it directly
       if (isProvincialRole(user.role)) {
         reports = reports.filter(r => r.province === user.province || r.province === 'National');
-      } else if (!isNationalRole(user.role)) {
+      } else if (!isNationalRole(user.role) && user.role !== 'system_administrator') {
         reports = reports.filter(r => r.ownerId === user.username);
       }
       ResponseView.sendSuccess(res, reports, 'Fetched quarterly reports successfully');

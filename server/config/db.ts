@@ -1,5 +1,3 @@
-import { open, Database } from 'sqlite';
-import sqlite3 from 'sqlite3';
 import mssql from 'mssql';
 import fs from 'fs';
 import path from 'path';
@@ -9,35 +7,19 @@ import { ROLE_USERS } from '../security/roleAccess.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Memoized as promises so concurrent callers during boot share one connection
-// and none can grab the pool before schema ensures have finished.
-let sqliteDbPromise: Promise<Database> | null = null;
 let mssqlPoolPromise: Promise<mssql.ConnectionPool> | null = null;
 
-// Switch based on process.env configuration
-const useMssql = process.env.USE_SQLITE === 'true' ? false : !!(process.env.DB_SERVER || process.env.AZURE_SQL_CONNECTIONSTRING);
+// Always use Azure SQL (MS SQL) Database
+export const isMssql = true;
 
-// Exposed for the rare query that cannot be written portably (e.g. TOP vs LIMIT)
-export const isMssql = useMssql;
-
-export async function getDbConnection(): Promise<Database | mssql.ConnectionPool> {
-  if (useMssql) {
-    if (!mssqlPoolPromise) {
-      mssqlPoolPromise = connectMssql().catch(err => {
-        mssqlPoolPromise = null;
-        throw err;
-      });
-    }
-    return mssqlPoolPromise;
-  }
-
-  if (!sqliteDbPromise) {
-    sqliteDbPromise = connectSqlite().catch(err => {
-      sqliteDbPromise = null;
+export async function getDbConnection(): Promise<mssql.ConnectionPool> {
+  if (!mssqlPoolPromise) {
+    mssqlPoolPromise = connectMssql().catch(err => {
+      mssqlPoolPromise = null;
       throw err;
     });
   }
-  return sqliteDbPromise;
+  return mssqlPoolPromise;
 }
 
 async function connectMssql(): Promise<mssql.ConnectionPool> {
@@ -97,167 +79,16 @@ async function connectMssql(): Promise<mssql.ConnectionPool> {
       console.error('Failed to ensure audit_logs table (Azure SQL):', e);
     }
 
+    try {
+      await ensureEmployeeIncidentsMssql(pool);
+    } catch (e) {
+      console.error('Failed to seed employee incidents (Azure SQL):', e);
+    }
+
     return pool;
 }
 
-async function connectSqlite(): Promise<Database> {
-  const dbPath = path.join(process.cwd(), 'security.db');
-  const schemaPath = path.join(process.cwd(), 'database.sql');
-  const isNew = !fs.existsSync(dbPath);
-
-  const db = await open({
-    filename: dbPath,
-    driver: sqlite3.Database
-  });
-
-  if (isNew) {
-    console.log('SQLite database file not found. Creating a new database and initializing tables...');
-    if (fs.existsSync(schemaPath)) {
-      const ddl = fs.readFileSync(schemaPath, 'utf8');
-      await db.exec(ddl);
-      console.log('Database tables created successfully.');
-      await seedDatabaseSqlite(db);
-    }
-  }
-
-  // Clean up DLRRD prefix from any existing incidents
-  try {
-    await ensureIncidentEscalationColumnsSqlite(db);
-    await db.exec("UPDATE incidents SET refNo = REPLACE(refNo, 'DLRRD/', '') WHERE refNo LIKE 'DLRRD/%'");
-    console.log('Successfully cleaned up old DLRRD prefixes from SQLite incidents.');
-  } catch (e) {
-    console.error('Failed to run SQLite refNo cleanup:', e);
-  }
-
-  try {
-    await ensureUsersAndOwnershipSqlite(db);
-  } catch (e) {
-    console.error('Failed to ensure users table / ownerId columns (SQLite):', e);
-  }
-
-  try {
-    await ensureLeaveTablesSqlite(db);
-  } catch (e) {
-    console.error('Failed to ensure leave/notification tables (SQLite):', e);
-  }
-
-  try {
-    await ensureCaseWorkflowSqlite(db);
-  } catch (e) {
-    console.error('Failed to ensure case workflow columns/tables (SQLite):', e);
-  }
-
-  try {
-    await ensureAuditLogsSqlite(db);
-  } catch (e) {
-    console.error('Failed to ensure audit_logs table (SQLite):', e);
-  }
-
-  return db;
-}
-
-async function ensureIncidentEscalationColumnsSqlite(db: Database) {
-  const columns = [
-    ['isEscalated', 'INTEGER DEFAULT 0'],
-    ['escalationLevel', 'VARCHAR(50)'],
-    ['escalationReason', 'VARCHAR(255)'],
-    ['escalationNotes', 'TEXT'],
-    ['escalatedBy', 'VARCHAR(255)'],
-    ['escalatedTo', 'VARCHAR(255)'],
-    ['escalatedAt', 'VARCHAR(50)']
-  ];
-
-  for (const [name, definition] of columns) {
-    try {
-      await db.exec(`ALTER TABLE incidents ADD COLUMN ${name} ${definition}`);
-    } catch (err: any) {
-      if (!String(err?.message || '').includes('duplicate column name')) {
-        throw err;
-      }
-    }
-  }
-}
-
-// Tables that carry an ownerId (users.username of the creator) for record-level access control
 const OWNED_TABLES = ['incidents', 'bto_reports', 'investigation_reports', 'quarterly_reports', 'tra_audits'];
-
-async function ensureUsersAndOwnershipSqlite(db: Database) {
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id VARCHAR(50) PRIMARY KEY,
-      username VARCHAR(100) NOT NULL UNIQUE,
-      displayName VARCHAR(255) NOT NULL,
-      email VARCHAR(255) NOT NULL,
-      role VARCHAR(50) NOT NULL,
-      roleCode VARCHAR(10) NOT NULL,
-      roleLabel VARCHAR(100) NOT NULL,
-      province VARCHAR(50) NOT NULL,
-      office VARCHAR(255),
-      clearanceLevel VARCHAR(50),
-      isActive INTEGER DEFAULT 1,
-      dateCreated VARCHAR(50)
-    )
-  `);
-
-  // Temporary Security Coordinator support (Chief Security Director leave-cover assignments)
-  // + user profile fields (personal details, notification preferences, portal credential)
-  for (const col of [
-    'baseRole VARCHAR(50)',
-    'tempAssignedBy VARCHAR(100)',
-    'persalNumber VARCHAR(20)',
-    'jobTitle VARCHAR(255)',
-    'phoneNumber VARCHAR(50)',
-    'directorate VARCHAR(255)',
-    'preferences TEXT',
-    'passwordHash VARCHAR(255)',
-    'passwordChangedAt VARCHAR(50)',
-    'lastLoginAt VARCHAR(50)',
-    'totalLeaves INTEGER DEFAULT 0'
-  ]) {
-    try {
-      await db.exec(`ALTER TABLE users ADD COLUMN ${col}`);
-    } catch (err: any) {
-      if (!String(err?.message || '').includes('duplicate column name')) throw err;
-    }
-  }
-
-  await migrateRetiredRoles(sql => db.exec(sql));
-
-  for (const user of ROLE_USERS) {
-    // Never overwrite the role of a user currently acting as temporary coordinator (baseRole set)
-    await db.run(
-      `INSERT INTO users (id, username, displayName, email, role, roleCode, roleLabel, province, office, clearanceLevel, isActive, dateCreated, persalNumber, jobTitle, phoneNumber, directorate)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
-       ON CONFLICT(username) DO UPDATE SET
-         role = excluded.role, roleCode = excluded.roleCode, roleLabel = excluded.roleLabel
-       WHERE users.baseRole IS NULL`,
-      [user.id, user.username, user.displayName, user.email, user.role, user.roleCode, user.roleLabel, user.province, user.office, user.clearanceLevel, new Date().toISOString(), user.persalNumber, user.jobTitle, user.phoneNumber, user.directorate]
-    );
-  }
-
-  // Backfill profile identity fields for rows seeded before the profile feature existed
-  for (const user of ROLE_USERS) {
-    await db.run(
-      `UPDATE users SET
-         persalNumber = COALESCE(persalNumber, ?),
-         jobTitle = COALESCE(jobTitle, ?),
-         phoneNumber = COALESCE(phoneNumber, ?),
-         directorate = COALESCE(directorate, ?)
-       WHERE username = ?`,
-      [user.persalNumber, user.jobTitle, user.phoneNumber, user.directorate, user.username]
-    );
-  }
-
-  for (const table of OWNED_TABLES) {
-    try {
-      await db.exec(`ALTER TABLE ${table} ADD COLUMN ownerId VARCHAR(100)`);
-    } catch (err: any) {
-      if (!String(err?.message || '').includes('duplicate column name')) throw err;
-    }
-  }
-
-  await backfillOwnership(sql => db.exec(sql));
-}
 
 async function ensureUsersAndOwnershipMssql(pool: mssql.ConnectionPool) {
   // Users table exists via database_mssql.sql DDL; ensure it for older deployments
@@ -339,53 +170,6 @@ async function ensureUsersAndOwnershipMssql(pool: mssql.ConnectionPool) {
   await backfillOwnership(sql => pool.request().query(sql).then(() => undefined));
 }
 
-// Leave management, persisted in-app notifications and system configuration —
-// created here (not only in database.sql) so databases that predate the feature
-// pick the tables up on boot. The MSSQL path is covered by initializeMssql
-// re-running database_mssql.sql.
-async function ensureLeaveTablesSqlite(db: Database) {
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS leave_days (
-      id VARCHAR(50) PRIMARY KEY,
-      batchId VARCHAR(50) NOT NULL,
-      ownerId VARCHAR(100) NOT NULL,
-      province VARCHAR(50) NOT NULL,
-      leaveDate VARCHAR(50) NOT NULL,
-      reason TEXT,
-      status VARCHAR(20) NOT NULL,
-      substituteUsername VARCHAR(100),
-      decidedBy VARCHAR(100),
-      decidedAt VARCHAR(50),
-      decisionNote TEXT,
-      dateCreated VARCHAR(50) NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS leave_transfers (
-      id VARCHAR(50) PRIMARY KEY,
-      batchId VARCHAR(50) NOT NULL,
-      incidentId VARCHAR(50) NOT NULL,
-      fromUser VARCHAR(100) NOT NULL,
-      toUser VARCHAR(100) NOT NULL,
-      transferredAt VARCHAR(50) NOT NULL,
-      restoredAt VARCHAR(50)
-    );
-    CREATE TABLE IF NOT EXISTS notifications (
-      id VARCHAR(50) PRIMARY KEY,
-      username VARCHAR(100) NOT NULL,
-      title VARCHAR(200) NOT NULL,
-      message TEXT,
-      link VARCHAR(100),
-      isRead INTEGER DEFAULT 0,
-      dateCreated VARCHAR(50) NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS system_config (
-      configKey VARCHAR(50) PRIMARY KEY,
-      configValue TEXT NOT NULL,
-      updatedBy VARCHAR(100),
-      updatedAt VARCHAR(50)
-    );
-  `);
-}
-
 // End-to-end case workflow (July 2026): expected resolution window on the report
 // form (natureOfCase), fine-grained workflow stage, investigation assignment and
 // approval cycle fields, plus supporting-document attachments and the per-case
@@ -435,58 +219,6 @@ const CASE_WORKFLOW_BACKFILL = [
   `UPDATE incidents SET workflowStage = 'Escalated' WHERE isEscalated = 1 AND status <> 'Closed' AND (workflowStage IS NULL OR workflowStage = 'Submitted')`,
   `UPDATE incidents SET workflowStage = 'Under Review' WHERE status IN ('Under Investigation', 'SAPS Case') AND (workflowStage IS NULL OR workflowStage = 'Submitted')`
 ];
-
-async function ensureCaseWorkflowSqlite(db: Database) {
-  for (const [name, definition] of CASE_WORKFLOW_COLUMNS) {
-    try {
-      await db.exec(`ALTER TABLE incidents ADD COLUMN ${name} ${definition}`);
-    } catch (err: any) {
-      if (!String(err?.message || '').includes('duplicate column name')) throw err;
-    }
-  }
-
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS attachments (
-      id VARCHAR(50) PRIMARY KEY,
-      incidentId VARCHAR(50) NOT NULL,
-      fileName VARCHAR(255) NOT NULL,
-      mimeType VARCHAR(100),
-      fileSize INTEGER DEFAULT 0,
-      category VARCHAR(50),
-      stage VARCHAR(50),
-      uploadedBy VARCHAR(100),
-      uploadedByName VARCHAR(255),
-      uploadedByRole VARCHAR(50),
-      storagePath VARCHAR(500) NOT NULL,
-      dateCreated VARCHAR(50) NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS case_events (
-      id VARCHAR(50) PRIMARY KEY,
-      incidentId VARCHAR(50) NOT NULL,
-      eventType VARCHAR(50) NOT NULL,
-      stage VARCHAR(50),
-      actor VARCHAR(100),
-      actorName VARCHAR(255),
-      actorRole VARCHAR(50),
-      notes TEXT,
-      dateCreated VARCHAR(50) NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS case_comments (
-      id VARCHAR(50) PRIMARY KEY,
-      incidentId VARCHAR(50) NOT NULL,
-      parentId VARCHAR(50),
-      author VARCHAR(100),
-      authorName VARCHAR(255),
-      authorRole VARCHAR(50),
-      message TEXT NOT NULL,
-      dateCreated VARCHAR(50) NOT NULL
-    );
-  `);
-
-  for (const sql of CASE_WORKFLOW_BACKFILL) {
-    await db.exec(sql);
-  }
-}
 
 async function ensureCaseWorkflowMssql(pool: mssql.ConnectionPool) {
   for (const [name, , type] of CASE_WORKFLOW_COLUMNS) {
@@ -571,24 +303,6 @@ async function backfillOwnership(run: (sql: string) => Promise<unknown>) {
 
 // Immutable audit trail (POPIA/MISS). Created at boot so AuditService never has
 // to run DDL on the hot request path; writes are append-only.
-async function ensureAuditLogsSqlite(db: Database) {
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS audit_logs (
-      id VARCHAR(50) PRIMARY KEY,
-      timestamp VARCHAR(50) NOT NULL,
-      userId VARCHAR(100) NOT NULL,
-      username VARCHAR(100) NOT NULL,
-      userRole VARCHAR(50) NOT NULL,
-      province VARCHAR(50),
-      action VARCHAR(50) NOT NULL,
-      resource VARCHAR(100) NOT NULL,
-      resourceId VARCHAR(100),
-      details TEXT,
-      ipAddress VARCHAR(50),
-      clearanceLevel VARCHAR(50)
-    )
-  `);
-}
 
 async function ensureAuditLogsMssql(pool: mssql.ConnectionPool) {
   await pool.request().query(`
@@ -636,18 +350,13 @@ function translateQuery(sql: string, params: any[] = []): { mssqlSql: string; bo
 // Unified query runner (returns array of records for SELECT)
 export async function query<T>(sql: string, params: any[] = []): Promise<T[]> {
   const connection = await getDbConnection();
-  if (useMssql) {
-    const { mssqlSql, boundParams } = translateQuery(sql, params);
-    const request = (connection as mssql.ConnectionPool).request();
-    boundParams.forEach(p => {
-      request.input(p.name, p.value);
-    });
-    const result = await request.query(mssqlSql);
-    return result.recordset as T[];
-  } else {
-    const db = connection as Database;
-    return db.all<T[]>(sql, params);
-  }
+  const { mssqlSql, boundParams } = translateQuery(sql, params);
+  const request = connection.request();
+  boundParams.forEach(p => {
+    request.input(p.name, p.value);
+  });
+  const result = await request.query(mssqlSql);
+  return result.recordset as T[];
 }
 
 // Unified query runner (for single record SELECT)
@@ -659,19 +368,13 @@ export async function queryOne<T>(sql: string, params: any[] = []): Promise<T | 
 // Unified execute runner (returns changes count for INSERT/UPDATE/DELETE)
 export async function execute(sql: string, params: any[] = []): Promise<{ changes: number }> {
   const connection = await getDbConnection();
-  if (useMssql) {
-    const { mssqlSql, boundParams } = translateQuery(sql, params);
-    const request = (connection as mssql.ConnectionPool).request();
-    boundParams.forEach(p => {
-      request.input(p.name, p.value);
-    });
-    const result = await request.query(mssqlSql);
-    return { changes: result.rowsAffected[0] || 0 };
-  } else {
-    const db = connection as Database;
-    const result = await db.run(sql, params);
-    return { changes: result.changes || 0 };
-  }
+  const { mssqlSql, boundParams } = translateQuery(sql, params);
+  const request = connection.request();
+  boundParams.forEach(p => {
+    request.input(p.name, p.value);
+  });
+  const result = await request.query(mssqlSql);
+  return { changes: result.rowsAffected[0] || 0 };
 }
 
 // Initialize MS SQL Database tables
@@ -699,110 +402,6 @@ async function initializeMssql(pool: mssql.ConnectionPool) {
     console.log('Azure SQL checklist or report table is empty. Seeding cloud database...');
     await seedDatabaseMssql(pool);
   }
-}
-
-// SQLite Seeder Helper
-async function seedDatabaseSqlite(connection: Database) {
-  console.log('Seeding SQLite mock records...');
-  const checklists = getChecklistSeed();
-  for (const item of checklists) {
-    await connection.run(
-      `INSERT INTO checklist_items (id, category, task, completed, notes) VALUES (?, ?, ?, ?, ?)`,
-      [item.id, item.category, item.task, item.completed, item.notes]
-    );
-  }
-
-  const incidents = getIncidentSeed();
-  for (const incident of incidents) {
-    await connection.run(
-      `INSERT INTO incidents (
-        id, refNo, incidentType, otherIncidentTypeDetails, department, contactDetails,
-        dateTime, place, province, lossValue, natureOfLoss, injuriesFatalities, reportedBy,
-        registerNumber, sapsCaseNumber, policeStation, arrests, classification, reportedToSapsSsa,
-        outcomeOfInvestigation, responsiblePerson, status, dateCreated, dateReported, whatHappened,
-        whereHappened, howHappened, whoResponsible, proceduresUsed, weaponsUsed, damageDone,
-        actionTaken, securityMeasuresEffectiveness, securityPersonnelReaction, otherAspects,
-        lessonsLearned, recommendations
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        incident.id, incident.refNo, incident.incidentType, incident.otherIncidentTypeDetails, incident.department, incident.contactDetails,
-        incident.dateTime, incident.place, incident.province, incident.lossValue, incident.natureOfLoss, incident.injuriesFatalities, incident.reportedBy,
-        incident.registerNumber, incident.sapsCaseNumber, incident.policeStation, incident.arrests, incident.classification, incident.reportedToSapsSsa,
-        incident.outcomeOfInvestigation, incident.responsiblePerson, incident.status, incident.dateCreated, incident.dateReported, incident.whatHappened,
-        incident.whereHappened, incident.howHappened, incident.whoResponsible, incident.proceduresUsed, incident.weaponsUsed, incident.damageDone,
-        incident.actionTaken, incident.securityMeasuresEffectiveness, incident.securityPersonnelReaction, incident.otherAspects,
-        incident.lessonsLearned, incident.recommendations
-      ]
-    );
-  }
-
-  const stats = getStatsSeed();
-  for (const stat of stats) {
-    await connection.run(
-      `INSERT INTO performance_stats (province, indicator, monthlyValues) VALUES (?, ?, ?)`,
-      [stat.province, stat.indicator, stat.monthlyValues]
-    );
-  }
-
-  // Seed BTO reports
-  const btos = getBtoSeed();
-  for (const bto of btos) {
-    await connection.run(
-      `INSERT INTO bto_reports (
-        id, officialName, date, venue, times, staffStakeholders, eventName,
-        purpose, expectedOutput, discussionPoints, mattersNoting, designation, signature, dateCreated
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        bto.id, bto.officialName, bto.date, bto.venue, bto.times, bto.staffStakeholders, bto.eventName,
-        bto.purpose, bto.expectedOutput, bto.discussionPoints, bto.mattersNoting, bto.designation, bto.signature, bto.dateCreated
-      ]
-    );
-  }
-
-  // Seed Investigation reports
-  const invs = getInvSeed();
-  for (const inv of invs) {
-    await connection.run(
-      `INSERT INTO investigation_reports (
-        id, subject, purpose, scope, background, factualInfo, findings,
-        recommendations, officerName, rank, office, date, signature, dateCreated
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        inv.id, inv.subject, inv.purpose, inv.scope, inv.background, inv.factualInfo, inv.findings,
-        inv.recommendations, inv.officerName, inv.rank, inv.office, inv.date, inv.signature, inv.dateCreated
-      ]
-    );
-  }
-
-  // Seed Quarterly reports
-  const qtrs = getQtrSeed();
-  for (const qtr of qtrs) {
-    await connection.run(
-      `INSERT INTO quarterly_reports (
-        id, province, quarterNumber, year, program, branch, indicatorValues, dateCreated
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        qtr.id, qtr.province, qtr.quarterNumber, qtr.year, qtr.program, qtr.branch, qtr.indicatorValues, qtr.dateCreated
-      ]
-    );
-  }
-
-  // Seed TRA Audits
-  const tras = getTraSeed();
-  for (const tra of tras) {
-    await connection.run(
-      `INSERT INTO tra_audits (
-        id, officeName, date, assessorName, officeLocation, time, managerName,
-        assessorSignature, managerSignature, checklistValues, dateCreated
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        tra.id, tra.officeName, tra.date, tra.assessorName, tra.officeLocation, tra.time, tra.managerName,
-        tra.assessorSignature, tra.managerSignature, tra.checklistValues, tra.dateCreated
-      ]
-    );
-  }
-
-  console.log('SQLite database seeded successfully.');
 }
 
 // MS SQL Seeder Helper
@@ -993,6 +592,215 @@ async function seedDatabaseMssql(pool: mssql.ConnectionPool) {
   }
 
   console.log('Azure SQL database seeded successfully.');
+}
+
+export async function ensureEmployeeIncidentsMssql(pool: mssql.ConnectionPool) {
+  // Clear any previous corrupt employee seed rows to force re-seeding
+  await pool.request().query("DELETE FROM incidents WHERE id LIKE 'emp-inc-%'");
+
+  const seedIncidents = [
+    {
+      id: 'emp-inc-1',
+      refNo: 'DALRRD-OHS-K4F2',
+      incidentType: '["Theft"]',
+      department: 'ICT Services',
+      contactDetails: 'employee2@dlrrd.gov.za',
+      dateTime: '2026-07-01T10:00',
+      place: 'East London Office, Room 204',
+      province: 'Eastern Cape',
+      lossValue: 15000,
+      natureOfLoss: 'HP laptop stolen from desk',
+      injuriesFatalities: 'None',
+      reportedBy: 'Employee User 2',
+      registerNumber: 'DALRRD-OHS-K4F2',
+      classification: 'Restricted',
+      reportedToSapsSsa: 'No',
+      outcomeOfInvestigation: 'Pending review',
+      responsiblePerson: 'Unassigned',
+      status: 'Open',
+      workflowStage: 'Submitted',
+      dateCreated: '2026-07-01',
+      dateReported: '2026-07-01',
+      ownerId: 'employee2'
+    },
+    {
+      id: 'emp-inc-2',
+      refNo: 'DALRRD-OHS-R5T8',
+      incidentType: '["Trespassing"]',
+      department: 'Corporate Services',
+      contactDetails: 'employee2@dlrrd.gov.za',
+      dateTime: '2026-07-01T11:00',
+      place: 'East London Office, Reception lobby',
+      province: 'Eastern Cape',
+      lossValue: 2000,
+      natureOfLoss: 'Unauthorised visitor breached barrier gate',
+      injuriesFatalities: 'None',
+      reportedBy: 'Employee User 2',
+      registerNumber: 'DALRRD-OHS-R5T8',
+      classification: 'Restricted',
+      reportedToSapsSsa: 'No',
+      outcomeOfInvestigation: 'Pending review',
+      responsiblePerson: 'Unassigned',
+      status: 'Open',
+      workflowStage: 'Submitted',
+      dateCreated: '2026-07-01',
+      dateReported: '2026-07-01',
+      ownerId: 'employee2'
+    },
+    {
+      id: 'emp-inc-3',
+      refNo: 'DALRRD-OHS-C7E9',
+      incidentType: '["Theft"]',
+      department: 'Finance Directorate',
+      contactDetails: 'employee2@dlrrd.gov.za',
+      dateTime: '2026-07-01T12:00',
+      place: 'East London Office, 3rd Floor Safe Room',
+      province: 'Eastern Cape',
+      lossValue: 8000,
+      natureOfLoss: 'Finance document box missing',
+      injuriesFatalities: 'None',
+      reportedBy: 'Employee User 2',
+      registerNumber: 'DALRRD-OHS-C7E9',
+      classification: 'Confidential',
+      reportedToSapsSsa: 'No',
+      outcomeOfInvestigation: 'Pending review',
+      responsiblePerson: 'Unassigned',
+      status: 'Open',
+      workflowStage: 'Submitted',
+      dateCreated: '2026-07-01',
+      dateReported: '2026-07-01',
+      ownerId: 'employee2'
+    },
+    {
+      id: 'emp-inc-4',
+      refNo: 'DALRRD-OHS-X2Z4',
+      incidentType: '["Loss of information"]',
+      department: 'Information Security',
+      contactDetails: 'employee2@dlrrd.gov.za',
+      dateTime: '2026-07-01T13:00',
+      place: 'East London Office, Registry room',
+      province: 'Eastern Cape',
+      lossValue: 500,
+      natureOfLoss: 'Registry logs document photographed',
+      injuriesFatalities: 'None',
+      reportedBy: 'Employee User 2',
+      registerNumber: 'DALRRD-OHS-X2Z4',
+      classification: 'Confidential',
+      reportedToSapsSsa: 'No',
+      outcomeOfInvestigation: 'Pending review',
+      responsiblePerson: 'Unassigned',
+      status: 'Open',
+      workflowStage: 'Submitted',
+      dateCreated: '2026-07-01',
+      dateReported: '2026-07-01',
+      ownerId: 'employee2'
+    },
+    {
+      id: 'emp-inc-5',
+      refNo: 'DALRRD-OHS-X2Z5',
+      incidentType: '["Robbery"]',
+      department: 'Supply Chain Management',
+      contactDetails: 'employee2@dlrrd.gov.za',
+      dateTime: '2026-07-01T14:00',
+      place: 'East London Office, SCM loading zone',
+      province: 'Eastern Cape',
+      lossValue: 40000,
+      natureOfLoss: 'Inventory cart hijacked on arrival',
+      injuriesFatalities: 'Guards threatened at gunpoint',
+      reportedBy: 'Employee User 2',
+      registerNumber: 'DALRRD-OHS-X2Z5',
+      classification: 'Confidential',
+      reportedToSapsSsa: 'Yes',
+      outcomeOfInvestigation: 'Under investigation',
+      responsiblePerson: 'Chief Investigator',
+      status: 'Under Investigation',
+      workflowStage: 'Investigation',
+      dateCreated: '2026-07-01',
+      dateReported: '2026-07-01',
+      ownerId: 'employee2'
+    },
+    {
+      id: 'emp-inc-6',
+      refNo: 'DALRRD-OHS-X2Z6',
+      incidentType: '["Theft"]',
+      department: 'General Support',
+      contactDetails: 'employee2@dlrrd.gov.za',
+      dateTime: '2026-07-02T09:00',
+      place: 'East London Office, Parking basement',
+      province: 'Eastern Cape',
+      lossValue: 12000,
+      natureOfLoss: 'State vehicle spare wheel stolen',
+      injuriesFatalities: 'None',
+      reportedBy: 'Employee User 2',
+      registerNumber: 'DALRRD-OHS-X2Z6',
+      classification: 'Restricted',
+      reportedToSapsSsa: 'No',
+      outcomeOfInvestigation: 'Under investigation',
+      responsiblePerson: 'Chief Investigator',
+      status: 'Under Investigation',
+      workflowStage: 'Investigation',
+      dateCreated: '2026-07-02',
+      dateReported: '2026-07-02',
+      ownerId: 'employee2'
+    },
+    {
+      id: 'emp-inc-7',
+      refNo: 'DALRRD-OHS-X2Z7',
+      incidentType: '["Theft"]',
+      department: 'Registry Services',
+      contactDetails: 'employee2@dlrrd.gov.za',
+      dateTime: '2026-07-03T16:00',
+      place: 'East London Office, Room 102',
+      province: 'Eastern Cape',
+      lossValue: 3000,
+      natureOfLoss: 'Lost office access credentials card',
+      injuriesFatalities: 'None',
+      reportedBy: 'Employee User 2',
+      registerNumber: 'DALRRD-OHS-X2Z7',
+      classification: 'Restricted',
+      reportedToSapsSsa: 'No',
+      outcomeOfInvestigation: 'Card disabled. Replacement card issued.',
+      responsiblePerson: 'System Administrator',
+      status: 'Closed',
+      workflowStage: 'Closed',
+      dateCreated: '2026-07-03',
+      dateReported: '2026-07-03',
+      ownerId: 'employee2'
+    }
+  ];
+
+  for (const inc of seedIncidents) {
+    await pool.request()
+      .input('id', inc.id)
+      .input('refNo', inc.refNo)
+      .input('incidentType', inc.incidentType)
+      .input('department', inc.department)
+      .input('contactDetails', inc.contactDetails)
+      .input('dateTime', inc.dateTime)
+      .input('place', inc.place)
+      .input('province', inc.province)
+      .input('lossValue', inc.lossValue)
+      .input('natureOfLoss', inc.natureOfLoss)
+      .input('injuriesFatalities', inc.injuriesFatalities)
+      .input('reportedBy', inc.reportedBy)
+      .input('registerNumber', inc.registerNumber)
+      .input('classification', inc.classification)
+      .input('reportedToSapsSsa', inc.reportedToSapsSsa)
+      .input('outcomeOfInvestigation', inc.outcomeOfInvestigation)
+      .input('responsiblePerson', inc.responsiblePerson)
+      .input('status', inc.status)
+      .input('workflowStage', inc.workflowStage)
+      .input('dateCreated', inc.dateCreated)
+      .input('dateReported', inc.dateReported)
+      .input('ownerId', inc.ownerId)
+      .query(`INSERT INTO incidents (
+        id, refNo, incidentType, department, contactDetails, dateTime, place, province, lossValue, 
+        natureOfLoss, injuriesFatalities, reportedBy, registerNumber, classification, reportedToSapsSsa, 
+        outcomeOfInvestigation, responsiblePerson, status, workflowStage, dateCreated, dateReported, ownerId
+      ) VALUES (@id, @refNo, @incidentType, @department, @contactDetails, @dateTime, @place, @province, @lossValue, 
+        @natureOfLoss, @injuriesFatalities, @reportedBy, @registerNumber, @classification, @reportedToSapsSsa, 
+        @outcomeOfInvestigation, @responsiblePerson, @status, @workflowStage, @dateCreated, @dateReported, @ownerId)`);
+  }
 }
 
 // Mock checklist data helper

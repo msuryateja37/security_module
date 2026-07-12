@@ -191,6 +191,7 @@ export const ROLE_PERMISSIONS: Record<SecurityRole, Permission[]> = {
     'incident:update',
     'investigation:verify',
     'reports:view_archive',
+    'reports:submit_operational',
     'sla:view',
     'ai:chat'
   ],
@@ -213,11 +214,16 @@ export const ROLE_PERMISSIONS: Record<SecurityRole, Permission[]> = {
   ],
   // System Administrator (ICT/MTS): manages users, roles, permissions, SLA
   // configurations, notification templates and escalation rules (FR-036–FR-040).
-  // No incident case-data scope beyond their own reported incidents.
+  // Expanded for expected support screen flows (register, approval panel, reports).
   system_administrator: [
     'dashboard:view',
     'incident:create',
     'incident:track_own',
+    'incident:view_all',
+    'case:assign_investigator',
+    'investigation:verify',
+    'investigation:approve',
+    'reports:view_archive',
     'admin:manage_roles',
     'admin:system_config',
     'ai:chat'
@@ -277,10 +283,10 @@ export const NAV_ITEMS: NavItem[] = [
   { view: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
   { view: 'submit_reports', label: 'Submit Reports', icon: FileText, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
   { view: 'my_cases', label: 'My Cases', icon: Briefcase, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'security_director', 'system_administrator'] },
-  { view: 'register', label: 'Investigation', icon: Search, roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director'] },
-  { view: 'approval', label: 'Approval', icon: ClipboardCheck, roles: ['security_coordinator', 'deputy_director', 'security_director'] },
+  { view: 'register', label: 'Breaches Register', icon: Search, roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
+  { view: 'approval', label: 'Approval', icon: ClipboardCheck, roles: ['security_coordinator', 'deputy_director', 'security_director', 'system_administrator'] },
   { view: 'sla_monitor', label: 'SLA Monitor', icon: Clock, roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director'] },
-  { view: 'reports_archive', label: 'Reports', icon: Archive, roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director'] },
+  { view: 'reports_archive', label: 'Reports', icon: Archive, roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
   { view: 'leaves', label: 'Leaves Management', icon: CalendarDays, roles: ['security_coordinator'] },
   { view: 'leave_management', label: 'Leave Management', icon: CalendarCheck, roles: ['security_director'] },
   { view: 'assistant', label: 'AI Assistant', icon: Sparkles, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
@@ -290,11 +296,11 @@ export const NAV_ITEMS: NavItem[] = [
 
 export const REPORT_TABS: ReportTab[] = [
   { view: 'incident', label: 'Incident Notification', roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
-  { view: 'bto', label: 'Back to Office Report', roles: ['security_coordinator', 'chief_security_investigator', 'security_director'] },
-  { view: 'investigation', label: 'Investigation Report', roles: ['security_coordinator', 'chief_security_investigator', 'security_director'] },
-  { view: 'stats', label: 'Monthly Performance Statistics', roles: ['security_coordinator', 'security_director'] },
-  { view: 'quarterly', label: 'Monthly & Quarterly Report', roles: ['security_coordinator', 'chief_security_investigator', 'security_director'] },
-  { view: 'tra', label: 'TRA Checklist', roles: ['security_coordinator', 'chief_security_investigator', 'security_director'] }
+  { view: 'bto', label: 'Back to Office Report', roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
+  { view: 'investigation', label: 'Investigation Report', roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
+  { view: 'stats', label: 'Monthly Performance Statistics', roles: ['security_coordinator', 'deputy_director', 'security_director', 'system_administrator'] },
+  { view: 'quarterly', label: 'Monthly & Quarterly Report', roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
+  { view: 'tra', label: 'TRA Checklist', roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] }
 ];
 
 export const getUserByUsername = (username: string): UserProfile | undefined => {

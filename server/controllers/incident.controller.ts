@@ -4,7 +4,7 @@ import { ResponseView } from '../views/response.view.js';
 import { AuthenticatedRequest } from '../security/auth.middleware.js';
 import { AuditService } from '../security/audit.service.js';
 import { SlaService } from '../security/sla.service.js';
-import { ROLE_USERS } from '../security/roleAccess.js';
+import { ROLE_USERS, isNationalRole, isProvincialRole } from '../security/roleAccess.js';
 import { LeaveService } from '../services/leave.service.js';
 import { NotificationService } from '../services/notification.service.js';
 import { ConfigService } from '../services/config.service.js';
@@ -20,6 +20,64 @@ const getEscalationTarget = (notifyRole: string) => {
 };
 
 export const IncidentController = {
+  async getDashboardSummary(req: AuthenticatedRequest, res: Response) {
+    try {
+      const user = req.user!;
+      let incidents = await IncidentModel.getAll();
+
+      // Scoping incidents
+      if (user.role === 'security_coordinator') {
+        incidents = incidents.filter(i => i.province === user.province || i.province === 'National');
+      } else if (user.role === 'employee') {
+        incidents = incidents.filter(i =>
+          i.ownerId === user.username || i.reportedBy === user.displayName || i.contactDetails === user.email
+        );
+      } else if (user.role === 'chief_security_investigator') {
+        incidents = incidents.filter(i =>
+          i.responsiblePerson === user.displayName || i.assignedInvestigator === user.displayName
+        );
+      }
+
+      // Scoping TRA audits
+      const { TraAuditModel } = await import('../models/traAudit.model.js');
+      let traAudits = await TraAuditModel.getAll();
+      
+      if (user.role !== 'system_administrator' && !isNationalRole(user.role)) {
+        if (isProvincialRole(user.role)) {
+          const users = await UserModel.getAll();
+          const provinceUsernames = new Set(
+            users.filter(u => u.province === user.province).map(u => u.username)
+          );
+          traAudits = traAudits.filter(r => !r.ownerId || provinceUsernames.has(r.ownerId));
+        } else {
+          traAudits = traAudits.filter(r => r.ownerId === user.username);
+        }
+      }
+
+      const totalIncidents = incidents.length;
+      const openIncidents = incidents.filter(
+        i => i.status === 'Open' || i.workflowStage === 'Submitted' || i.workflowStage === 'Under Review'
+      ).length;
+      const escalatedIncidents = incidents.filter(
+        i => i.isEscalated || i.workflowStage === 'Escalated'
+      ).length;
+      const traRecordsCount = traAudits.length > 0 ? traAudits.length : 1;
+
+      const summary = {
+        roleLabel: user.role,
+        province: user.province || 'Gauteng',
+        totalIncidents,
+        openIncidents,
+        escalatedIncidents,
+        traRecordsCount
+      };
+
+      ResponseView.sendSuccess(res, summary, 'Dashboard summary calculated successfully');
+    } catch (error) {
+      ResponseView.sendError(res, error as any, 'Failed to generate dashboard summary');
+    }
+  },
+
   async getAll(req: AuthenticatedRequest, res: Response) {
     try {
       const user = req.user!;
@@ -28,8 +86,8 @@ export const IncidentController = {
       // Provincial Segregation (RBAC & MISS compliance, FR-033)
       if (user.role === 'security_coordinator') {
         incidents = incidents.filter(i => i.province === user.province || i.province === 'National');
-      } else if (user.role === 'employee' || user.role === 'system_administrator') {
-        // Employees and the System Administrator only see incidents they reported themselves.
+      } else if (user.role === 'employee') {
+        // Employees only see incidents they reported themselves.
         // ownerId is authoritative; name/email matching kept for pre-migration records
         incidents = incidents.filter(i =>
           i.ownerId === user.username || i.reportedBy === user.displayName || i.contactDetails === user.email
