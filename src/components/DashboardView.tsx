@@ -14,6 +14,7 @@ import {
   ClipboardList,
   Sparkles
 } from 'lucide-react';
+import { CoordinatorDashboardView } from './CoordinatorDashboardView';
 
 
 interface DashboardViewProps {
@@ -30,6 +31,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   traAudits = []
 }) => {
   const isEmployee = currentUser.role === 'employee';
+  const isCoordinator = currentUser.role === 'security_coordinator';
 
   // 1. Calculations for Admin Dashboard
   const totalIncidents = incidents.length;
@@ -90,6 +92,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const animatedValue = (val: number) => {
     return Math.round(val * progress);
   };
+
+  // COORDINATOR DASHBOARD — dedicated mockup-matched view
+  if (isCoordinator) {
+    return (
+      <CoordinatorDashboardView
+        currentUser={currentUser}
+        onNavigate={onNavigate}
+      />
+    );
+  }
 
   // EMPLOYEE DASHBOARD RENDERING (matching support/EMPLOYEE2/DASHBOARD.png)
   if (isEmployee) {

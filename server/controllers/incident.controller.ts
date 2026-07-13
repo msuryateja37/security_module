@@ -11,6 +11,35 @@ import { ConfigService } from '../services/config.service.js';
 import { CaseEventModel } from '../models/caseEvent.model.js';
 import { UserModel } from '../models/user.model.js';
 import { notifyReporterOfProgress } from './caseWorkflow.controller.js';
+import { query } from '../config/db.js';
+
+// Province name → 2–3 letter official South-African code used in the SIM ref format
+const PROVINCE_CODES: Record<string, string> = {
+  'Gauteng': 'GP',
+  'Western Cape': 'WC',
+  'Eastern Cape': 'EC',
+  'KwaZulu Natal': 'KZN',
+  'KwaZulu-Natal': 'KZN',
+  'Limpopo': 'LP',
+  'Mpumalanga': 'MP',
+  'Free State': 'FS',
+  'North West': 'NW',
+  'Northern Cape': 'NC',
+  'National': 'NAT',
+};
+
+/**
+ * Generate a canonical SIM reference number:  SIM-{YYYY}-{provinceCode}-{seqN}
+ * The sequence number is the total count of incidents in the DB + 1,
+ * giving a globally increasing number regardless of province.
+ */
+async function generateSimRefNo(province: string): Promise<string> {
+  const year = new Date().getFullYear();
+  const code = PROVINCE_CODES[province] || province.substring(0, 2).toUpperCase();
+  const rows = await query<{ total: number }>('SELECT COUNT(*) AS total FROM incidents');
+  const seq = (rows[0]?.total ?? 0) + 1;
+  return `SIM-${year}-${code}-${seq}`;
+}
 
 // Workflow: significant/big cases are escalated to the role configured in the
 // escalation matrix (default: the Chief Security Director), who then
@@ -63,13 +92,91 @@ export const IncidentController = {
       ).length;
       const traRecordsCount = traAudits.length > 0 ? traAudits.length : 1;
 
+      // ── Coordinator-specific extended stats ──────────────────────────────────
+      let coordinatorStats: Record<string, unknown> = {};
+      if (user.role === 'security_coordinator') {
+        const slaRules = await ConfigService.getSlaRules();
+        const incidentsWithSla = incidents.map(inc => ({
+          ...inc,
+          slaInfo: SlaService.calculateSla(inc, slaRules)
+        }));
+
+        const openInProvince = incidents.filter(
+          i => (i.status === 'Open' || i.workflowStage === 'Submitted' || i.workflowStage === 'Under Review')
+        ).length;
+
+        // Pending assignment: open but no investigator assigned
+        const pendingAssignment = incidents.filter(
+          i => !i.assignedInvestigator && (i.status === 'Open' || i.workflowStage === 'Submitted' || i.workflowStage === 'Under Review')
+        ).length;
+
+        // SLA breaches
+        const slaBreaches = incidentsWithSla.filter(
+          i => i.slaInfo?.status === 'Overdue'
+        ).length;
+
+        // In progress: Under Investigation / Investigation stage
+        const inProgress = incidents.filter(
+          i => i.status === 'Under Investigation' || i.workflowStage === 'Investigation' || i.workflowStage === 'Pending DD Review' || i.workflowStage === 'Pending Approval'
+        ).length;
+
+        // Closed
+        const closedCount = incidents.filter(
+          i => i.status === 'Closed' || i.workflowStage === 'Closed'
+        ).length;
+
+        // Severity distribution (by classification mapped to urgency)
+        const severityMap: Record<string, number> = { urgent: 0, high: 0, medium: 0, low: 0 };
+        for (const inc of incidents) {
+          const cl = (inc.classification || '').toLowerCase();
+          if (cl === 'top secret') severityMap.urgent++;
+          else if (cl === 'secret') severityMap.high++;
+          else if (cl === 'confidential') severityMap.medium++;
+          else severityMap.low++;
+        }
+
+        // Recent incidents — last 20, most recent first
+        const recent = [...incidents]
+          .sort((a, b) => new Date(b.dateTime || b.dateCreated).getTime() - new Date(a.dateTime || a.dateCreated).getTime())
+          .slice(0, 20)
+          .map(inc => ({
+            id: inc.id,
+            refNo: inc.refNo,
+            reportedBy: inc.reportedBy,
+            place: inc.place,
+            province: inc.province,
+            incidentType: Array.isArray(inc.incidentType) ? inc.incidentType.join(', ') : inc.incidentType,
+            classification: inc.classification,
+            status: inc.status,
+            workflowStage: inc.workflowStage,
+            dateTime: inc.dateTime,
+            assignedInvestigator: inc.assignedInvestigator,
+            slaInfo: incidentsWithSla.find(s => s.id === inc.id)?.slaInfo
+          }));
+
+        coordinatorStats = {
+          openInProvince,
+          pendingAssignment,
+          slaBreaches,
+          escalated: escalatedIncidents,
+          inProgress,
+          closed: closedCount,
+          total: totalIncidents,
+          severityDistribution: severityMap,
+          recentIncidents: recent,
+          assignInvestigatorsCount: pendingAssignment,
+          slaEscalationsCount: slaBreaches + escalatedIncidents,
+        };
+      }
+
       const summary = {
         roleLabel: user.role,
         province: user.province || 'Gauteng',
         totalIncidents,
         openIncidents,
         escalatedIncidents,
-        traRecordsCount
+        traRecordsCount,
+        ...coordinatorStats
       };
 
       ResponseView.sendSuccess(res, summary, 'Dashboard summary calculated successfully');
@@ -77,6 +184,7 @@ export const IncidentController = {
       ResponseView.sendError(res, error as any, 'Failed to generate dashboard summary');
     }
   },
+
 
   async getAll(req: AuthenticatedRequest, res: Response) {
     try {
@@ -131,9 +239,13 @@ export const IncidentController = {
       const user = req.user!;
       const incident = req.body;
       
-      if (!incident.id || !incident.refNo) {
-        return ResponseView.sendError(res, 'Missing incident ID or Reference Number', 'Validation failed', 400);
+      if (!incident.id) {
+        return ResponseView.sendError(res, 'Missing incident ID', 'Validation failed', 400);
       }
+
+      // Always generate an authoritative SIM reference number server-side — never trust the client value
+      const province = incident.province || user.province || 'Gauteng';
+      incident.refNo = await generateSimRefNo(province);
 
       // Auto-populate reporter info if missing
       if (user.role === 'employee' || user.role === 'system_administrator') {
