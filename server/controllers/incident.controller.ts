@@ -211,10 +211,55 @@ export const IncidentController = {
 
       // Attach dynamic SLA status to each incident (targets from system configuration, FR-037)
       const slaRules = await ConfigService.getSlaRules();
-      const enrichedIncidents = incidents.map(inc => ({
+      let enrichedIncidents = incidents.map(inc => ({
         ...inc,
         slaInfo: SlaService.calculateSla(inc, slaRules)
       }));
+
+      // Pagination and filtration query parameters
+      const page = req.query.page ? parseInt(req.query.page as string, 10) : undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
+      const search = req.query.search ? (req.query.search as string).trim().toLowerCase() : undefined;
+      const status = req.query.status ? (req.query.status as string).trim().toLowerCase() : undefined;
+      const coordinatorTab = req.query.coordinatorTab ? (req.query.coordinatorTab as string).trim() : undefined;
+
+      // Filter by coordinator tab if applicable
+      if (user.role === 'security_coordinator' && coordinatorTab) {
+        enrichedIncidents = enrichedIncidents.filter(incident => {
+          const isProvincialMatch = incident.province === user.province;
+          const isAssignedToMe = incident.responsiblePerson === user.displayName;
+          const isUnassigned = !incident.responsiblePerson || incident.responsiblePerson === 'Unassigned' || incident.responsiblePerson.trim() === '';
+
+          if (coordinatorTab === 'assigned') {
+            return isProvincialMatch && isAssignedToMe;
+          }
+          return isProvincialMatch && isUnassigned;
+        });
+      }
+
+      // Filter by search term
+      if (search) {
+        enrichedIncidents = enrichedIncidents.filter(incident => 
+          (incident.refNo || '').toLowerCase().includes(search) ||
+          (incident.place || '').toLowerCase().includes(search) ||
+          (incident.province || '').toLowerCase().includes(search) ||
+          (incident.status || '').toLowerCase().includes(search)
+        );
+      }
+
+      // Filter by status (stage)
+      if (status && status !== 'all cases') {
+        const getStage = (incident: any): string => {
+          const stage = incident.workflowStage;
+          if (stage) {
+            return stage === 'Closed' ? 'approved' : String(stage).toLowerCase();
+          }
+          return incident.status === 'Closed' ? 'approved' : incident.status.toLowerCase();
+        };
+        enrichedIncidents = enrichedIncidents.filter(incident => 
+          getStage(incident) === status
+        );
+      }
 
       await AuditService.log({
         timestamp: new Date().toISOString(),
@@ -228,7 +273,26 @@ export const IncidentController = {
         clearanceLevel: user.clearanceLevel
       });
 
-      ResponseView.sendSuccess(res, enrichedIncidents, 'Fetched incidents successfully');
+      // Paginate if requested
+      if (page !== undefined && limit !== undefined) {
+        const total = enrichedIncidents.length;
+        const startIndex = (page - 1) * limit;
+        const endIndex = startIndex + limit;
+        const paginatedIncidents = enrichedIncidents.slice(startIndex, endIndex);
+        const pages = Math.ceil(total / limit);
+
+        ResponseView.sendSuccess(res, {
+          incidents: paginatedIncidents,
+          pagination: {
+            total,
+            page,
+            limit,
+            pages
+          }
+        }, 'Fetched incidents successfully');
+      } else {
+        ResponseView.sendSuccess(res, enrichedIncidents, 'Fetched incidents successfully');
+      }
     } catch (error) {
       ResponseView.sendError(res, error as any, 'Failed to fetch incidents');
     }

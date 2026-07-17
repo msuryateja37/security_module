@@ -112,7 +112,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>
             DLRRD Security Management Services / Dashboard / Employee
           </span>
-          <h1 className="page-title" style={{ margin: '0.25rem 0 0 0' }}>Security Management</h1>
+          <h1 className="page-title" style={{ margin: '0.25rem 0 0 0', color: 'var(--text-primary)' }}>Security Management</h1>
         </div>
 
         {/* Profile Card */}
@@ -259,48 +259,69 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </tr>
                   </thead>
                   <tbody>
-                    {myIncidents.map(inc => {
-                      const slaStatus = inc.slaInfo?.status || 'On Track';
-                      const slaBadgeClass = slaStatus === 'Overdue' ? 'danger' : slaStatus === 'At Risk' ? 'warning' : 'success';
-                      return (
-                        <tr key={inc.id}>
-                          <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{inc.refNo}</td>
-                          <td style={{ fontSize: '0.8rem' }}>
-                            {new Date(inc.dateTime).toLocaleDateString('en-ZA', { year: 'numeric', month: '2-digit', day: '2-digit' })}
-                          </td>
-                          <td style={{ fontSize: '0.8rem' }}>{inc.natureOfCase || 'Theft'}</td>
-                          <td>
-                            <span className={`badge ${slaBadgeClass}`} style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem' }}>
-                              {slaStatus}
-                            </span>
-                          </td>
-                          <td>
-                             <span style={{ fontSize: '0.8rem', fontWeight: 600, color: inc.classification === 'Top Secret' || inc.classification === 'Secret' ? '#B4432D' : 'var(--text-secondary)' }}>
-                               {inc.classification || 'Restricted'}
-                             </span>
-                           </td>
-                          <td style={{ textAlign: 'center' }}>
-                            <button 
-                              className="btn btn-secondary" 
-                              onClick={() => onNavigate(`case:${inc.id}`)}
-                              style={{ padding: '0.25rem 0.6rem', fontSize: '0.72rem' }}
-                            >
-                              Open
-                            </button>
-                          </td>
-                        </tr>
+                    {(() => {
+                      const sortedIncidents = [...myIncidents].sort(
+                        (a, b) => new Date(b.dateTime || b.dateCreated).getTime() - new Date(a.dateTime || a.dateCreated).getTime()
                       );
-                    })}
-                    {myIncidents.length === 0 && (
-                      <tr>
-                        <td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
-                          No incidents reported by you.
-                        </td>
-                      </tr>
-                    )}
+                      const latestTen = sortedIncidents.slice(0, 10);
+                      
+                      if (latestTen.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                              No incidents reported by you.
+                            </td>
+                          </tr>
+                        );
+                      }
+                      
+                      return latestTen.map(inc => {
+                        const slaStatus = inc.slaInfo?.status || 'On Track';
+                        const slaBadgeClass = slaStatus === 'Overdue' ? 'danger' : slaStatus === 'At Risk' ? 'warning' : 'success';
+                        return (
+                          <tr key={inc.id}>
+                            <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{inc.refNo}</td>
+                            <td style={{ fontSize: '0.8rem' }}>
+                              {new Date(inc.dateTime).toLocaleDateString('en-ZA', { year: 'numeric', month: '2-digit', day: '2-digit' })}
+                            </td>
+                            <td style={{ fontSize: '0.8rem' }}>{inc.natureOfCase || 'Theft'}</td>
+                            <td>
+                              <span className={`badge ${slaBadgeClass}`} style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem' }}>
+                                {slaStatus}
+                              </span>
+                            </td>
+                            <td>
+                               <span style={{ fontSize: '0.8rem', fontWeight: 600, color: inc.classification === 'Top Secret' || inc.classification === 'Secret' ? '#B4432D' : 'var(--text-secondary)' }}>
+                                 {inc.classification || 'Restricted'}
+                               </span>
+                             </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <button 
+                                className="btn btn-secondary" 
+                                onClick={() => onNavigate(`case:${inc.id}`)}
+                                style={{ padding: '0.25rem 0.6rem', fontSize: '0.72rem' }}
+                              >
+                                Open
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
                   </tbody>
                 </table>
               </div>
+              {myIncidents.length > 10 && (
+                <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
+                  <button 
+                    className="btn btn-secondary"
+                    onClick={() => onNavigate('my_cases')}
+                    style={{ fontSize: '0.8rem', padding: '0.4rem 1.25rem' }}
+                  >
+                    See More
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -314,7 +335,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     <div className="screen-fade-up">
       {/* Header matching Dashboard.png */}
       <div style={{ marginBottom: '2rem' }}>
-        <h1 className="page-title" style={{ margin: 0 }}>Dashboard</h1>
+        <h1 className="page-title" style={{ margin: 0, color: 'var(--text-primary)' }}>Dashboard</h1>
         <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
           {roleLabel} &bull; {provinceLabel} &bull; Reports to Adrian Ferreira
         </p>

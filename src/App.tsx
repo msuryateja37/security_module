@@ -51,8 +51,7 @@ import {
   Bell,
   Menu,
   X,
-  UserRound,
-  KeyRound
+  UserRound
 } from 'lucide-react';
 import { useModal } from './components/NotificationModal';
 
@@ -746,6 +745,8 @@ function App() {
       case 'leaves': return 'Leaves Management';
       case 'leave_management': return 'Leave Management';
       case 'case_detail': return 'Case File';
+      case 'tra_checklist': return 'Threat & Risk Assessment (TRA)';
+      case 'bto_report': return 'Back to Office Report';
       default: return 'CD: Security Services';
     }
   };
@@ -1100,15 +1101,11 @@ function App() {
                   <span className="profile-field-label">Province Scope</span>
                   <span className="profile-field-val">{currentUser.province}</span>
                 </div>
-                <div className="profile-field">
-                  <span className="profile-field-label">Security Cleared Level</span>
-                  <span className="profile-field-val badge success" style={{ fontSize: '0.6rem', padding: '0.1rem 0.3rem', width: 'fit-content' }}>{currentUser.clearanceLevel}</span>
-                </div>
               </div>
-              <div className="profile-dropdown-footer" style={{ display: 'flex', gap: '0.5rem' }}>
+              <div className="profile-dropdown-footer">
                 <button
                   className="btn btn-primary"
-                  style={{ flex: 1, fontSize: '0.75rem', padding: '0.35rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}
+                  style={{ width: '100%', fontSize: '0.75rem', padding: '0.35rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}
                   onClick={() => {
                     setShowProfileCard(false);
                     setProfileInitialTab('personal');
@@ -1117,18 +1114,6 @@ function App() {
                 >
                   <UserRound size={14} />
                   View Profile
-                </button>
-                <button
-                  className="btn btn-secondary"
-                  style={{ flex: 1, fontSize: '0.75rem', padding: '0.35rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}
-                  onClick={() => {
-                    setShowProfileCard(false);
-                    setProfileInitialTab('security');
-                    setActiveView('profile');
-                  }}
-                >
-                  <KeyRound size={14} />
-                  Change Password
                 </button>
               </div>
             </div>
@@ -1168,17 +1153,19 @@ function App() {
           {activeView === 'submit_reports' && canAccessView(currentUser.role, 'submit_reports') && (
             <div>
               {/* Horizontal Tabs to switch report forms */}
-              <div className="horizontal-tab-bar">
-                {allowedReportTabs.map(tab => (
-                  <button
-                    key={tab.view}
-                    className={`horizontal-tab ${submitReportSubView === tab.view ? 'active' : ''}`}
-                    onClick={() => setSubmitReportSubView(tab.view)}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
+              {allowedReportTabs.length > 1 && (
+                <div className="horizontal-tab-bar">
+                  {allowedReportTabs.map(tab => (
+                    <button
+                      key={tab.view}
+                      className={`horizontal-tab ${submitReportSubView === tab.view ? 'active' : ''}`}
+                      onClick={() => setSubmitReportSubView(tab.view)}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* Form rendering */}
               {submitReportSubView === 'incident' && canAccessReportTab(currentUser.role, 'incident') && (
@@ -1226,6 +1213,7 @@ function App() {
                 <TraChecklistView 
                   reports={traAudits}
                   onSubmitReport={handleAddTraAudit}
+                  currentUser={currentUser}
                 />
               )}
             </div>
@@ -1288,6 +1276,22 @@ function App() {
               onUpdateStats={handleUpdateStats}
               onSaveQuarterlyReport={handleAddQtrReport}
               incidents={incidents}
+              currentUser={currentUser}
+            />
+          )}
+
+          {activeView === 'tra_checklist' && canAccessView(currentUser.role, 'tra_checklist') && (
+            <TraChecklistView 
+              reports={traAudits}
+              onSubmitReport={handleAddTraAudit}
+              currentUser={currentUser}
+            />
+          )}
+
+          {activeView === 'bto_report' && canAccessView(currentUser.role, 'bto_report') && (
+            <BackToOfficeView 
+              reports={btoReports}
+              onSubmitReport={handleAddBtoReport}
             />
           )}
 

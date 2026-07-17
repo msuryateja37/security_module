@@ -14,6 +14,7 @@ interface ReportsArchiveViewProps {
   onUpdateStats: (newStats: PerformanceStats[]) => void;
   onSaveQuarterlyReport?: (report: QuarterlyReport) => void;
   incidents: SecurityIncident[]; // Passed incidents list for auto-generation
+  currentUser?: any;
 }
 
 type DocType = 'bto' | 'inv' | 'qtr' | 'tra';
@@ -35,9 +36,13 @@ export const ReportsArchiveView: React.FC<ReportsArchiveViewProps> = ({
   stats: _stats = [],
   onUpdateStats: _onUpdateStats,
   onSaveQuarterlyReport: _onSaveQuarterlyReport,
-  incidents = []
+  incidents = [],
+  currentUser
 }) => {
-  const [activeTab, setActiveTab] = useState<'monthly_stats' | 'quarterly_report' | 'filing_archive'>('monthly_stats');
+  const isCoordinator = currentUser?.role === 'security_coordinator';
+  const [activeTab, setActiveTab] = useState<'monthly_stats' | 'quarterly_report' | 'filing_archive'>(
+    isCoordinator ? 'filing_archive' : 'monthly_stats'
+  );
   const [selectedProvince, setSelectedProvince] = useState<ProvinceType>('Gauteng');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDoc, setSelectedDoc] = useState<DocItem | null>(null);
@@ -314,18 +319,22 @@ export const ReportsArchiveView: React.FC<ReportsArchiveViewProps> = ({
 
       {/* Sub tabs matching perform.png and quaterly report.png */}
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid hsl(var(--border-color))', paddingBottom: '0.5rem' }}>
-        <button 
-          onClick={() => setActiveTab('monthly_stats')} 
-          style={subTabStyle('monthly_stats')}
-        >
-          Monthly Statistics
-        </button>
-        <button 
-          onClick={() => setActiveTab('quarterly_report')} 
-          style={subTabStyle('quarterly_report')}
-        >
-          Quarterly Report
-        </button>
+        {!isCoordinator && (
+          <>
+            <button 
+              onClick={() => setActiveTab('monthly_stats')} 
+              style={subTabStyle('monthly_stats')}
+            >
+              Monthly Statistics
+            </button>
+            <button 
+              onClick={() => setActiveTab('quarterly_report')} 
+              style={subTabStyle('quarterly_report')}
+            >
+              Quarterly Report
+            </button>
+          </>
+        )}
         <button 
           onClick={() => setActiveTab('filing_archive')} 
           style={subTabStyle('filing_archive')}

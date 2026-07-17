@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import type { SecurityIncident } from '../types/security';
 import { getViewLabelForRole } from '../security/roleAccess';
 import { Briefcase, Eye, Search, UserCheck, ArrowUpCircle, X, Send, Sparkles, ShieldAlert, ShieldCheck, Check, Info } from 'lucide-react';
@@ -35,20 +35,19 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
   const [drawerCase, setDrawerCase] = useState<SecurityIncident | null>(null);
   const { showAlert, showConfirm } = useModal();
 
+  // Pagination states
+  const [incidentsList, setIncidentsList] = useState<SecurityIncident[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const limit = 10;
+
   // Employees and the System Administrator only track incidents they reported themselves
   const tracksOwnOnly = currentUser.role === 'employee' || currentUser.role === 'system_administrator';
 
   const isUnassignedCase = (incident: SecurityIncident) => {
     return !incident.responsiblePerson || incident.responsiblePerson === 'Unassigned' || incident.responsiblePerson.trim() === '';
-  };
-
-  const matchesSearch = (incident: SecurityIncident) => {
-    return (
-      incident.refNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      incident.place.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      incident.province.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      incident.status.toLowerCase().includes(searchTerm.toLowerCase())
-    );
   };
 
   const coordinatorAssignedCount = useMemo(() => {
@@ -92,12 +91,61 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
     return true;
   });
 
-  const matchesStatusFilter = (incident: SecurityIncident) => {
-    if (statusFilter === 'All Cases') return true;
-    return getCaseStageLabel(incident).toLowerCase() === statusFilter.toLowerCase();
+  const authFetch = (url: string, currentUser: any, options: RequestInit = {}) => {
+    return fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+        'x-username': currentUser.username,
+        'x-user-role': currentUser.role,
+      }
+    });
   };
 
-  const myCases = scopedCases.filter(incident => matchesSearch(incident) && matchesStatusFilter(incident));
+  const fetchIncidents = async () => {
+    setIsLoading(true);
+    try {
+      const queryParams = new URLSearchParams({
+        page: currentPage.toString(),
+        limit: limit.toString(),
+        search: searchTerm,
+        status: statusFilter,
+        coordinatorTab: coordinatorTab
+      });
+
+      const res = await authFetch(`/api/incidents?${queryParams.toString()}`, currentUser);
+      const json = await res.json();
+      if (json.success && json.data) {
+        setIncidentsList(json.data.incidents || []);
+        setTotalCount(json.data.pagination?.total || 0);
+        setTotalPages(json.data.pagination?.pages || 0);
+      }
+    } catch (error) {
+      console.error('Error fetching paginated incidents:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchIncidents();
+  }, [currentPage, searchTerm, statusFilter, coordinatorTab, incidents]);
+
+  const handleSearchChange = (val: string) => {
+    setSearchTerm(val);
+    setCurrentPage(1);
+  };
+
+  const handleStatusFilterChange = (val: string) => {
+    setStatusFilter(val);
+    setCurrentPage(1);
+  };
+
+  const handleCoordinatorTabChange = (val: 'assigned' | 'unassigned') => {
+    setCoordinatorTab(val);
+    setCurrentPage(1);
+  };
 
   // Header band statistics for the current scope
   const isClosed = (i: SecurityIncident) => i.status === 'Closed' || i.workflowStage === 'Closed';
@@ -226,13 +274,13 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
         <div className="horizontal-tab-bar" style={{ marginBottom: '16px' }}>
           <button
             className={`horizontal-tab ${coordinatorTab === 'assigned' ? 'active' : ''}`}
-            onClick={() => setCoordinatorTab('assigned')}
+            onClick={() => handleCoordinatorTabChange('assigned')}
           >
             Assigned to Me ({coordinatorAssignedCount})
           </button>
           <button
             className={`horizontal-tab ${coordinatorTab === 'unassigned' ? 'active' : ''}`}
-            onClick={() => setCoordinatorTab('unassigned')}
+            onClick={() => handleCoordinatorTabChange('unassigned')}
           >
             Unassigned in {currentUser.province || 'My Province'} ({coordinatorUnassignedCount})
           </button>
@@ -249,7 +297,7 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
               className="filter-search-input"
               placeholder="Search cases by reference number, province, place or status..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
             />
           </div>
           <div style={{ display: 'flex', gap: '7px', flexWrap: 'wrap' }}>
@@ -257,7 +305,7 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
               <button
                 key={f}
                 className={`filter-chip ${statusFilter === f ? 'active' : ''}`}
-                onClick={() => setStatusFilter(f)}
+                onClick={() => handleStatusFilterChange(f)}
               >
                 {f}
               </button>
@@ -277,92 +325,98 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
           <div style={{ textAlign: 'right' }}>{tracksOwnOnly ? 'View' : 'Actions'}</div>
         </div>
 
-        {myCases.map(incident => {
-          const isUnassigned = isUnassignedCase(incident);
-          const canEscalate = !isUnassigned && incident.status !== 'Closed' && !incident.isEscalated && ['security_coordinator', 'security_director'].includes(currentUser.role);
-          const caseClosed = isClosed(incident);
-          const triage = !tracksOwnOnly && !caseClosed ? triageCase(incident) : null;
-          const stage = getCaseStageLabel(incident);
-          return (
-            <div
-              key={incident.id}
-              className="list-grid-row"
-              style={{ gridTemplateColumns: gridCols }}
-              onClick={() => setDrawerCase(incident)}
-            >
-              <div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); onSelectCase(incident); }}
-                  className="cell-ref"
-                  style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}
-                  title="Open the full case file"
-                >
-                  {incident.refNo}
-                </button>
-                <span className="cell-sub" style={{ display: 'block' }}>Reported {fmtDate(incident.dateReported)}</span>
-                {slaLine(incident)}
-              </div>
-              <div className="cell-body">{incident.province}</div>
-              <div className="cell-body" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={incident.place}>
-                {incident.place}
-              </div>
-              <div style={{ fontWeight: 700, color: isUnassigned ? 'var(--color-danger)' : 'var(--text-primary)', fontSize: '13px' }}>
-                {isUnassigned ? 'Unassigned' : incident.responsiblePerson}
-              </div>
-              <div>
-                <span className="chip-status" style={getStatusChipColors(stage)}>{stage}</span>
-              </div>
-              <div>
-                <span className="chip-neutral">{incident.classification}</span>
-              </div>
-              {!tracksOwnOnly && (
+        {isLoading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
+            <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Loading incidents...</span>
+          </div>
+        ) : (
+          incidentsList.map(incident => {
+            const isUnassigned = isUnassignedCase(incident);
+            const canEscalate = !isUnassigned && incident.status !== 'Closed' && !incident.isEscalated && ['security_coordinator', 'security_director'].includes(currentUser.role);
+            const caseClosed = isClosed(incident);
+            const triage = !tracksOwnOnly && !caseClosed ? triageCase(incident) : null;
+            const stage = getCaseStageLabel(incident);
+            return (
+              <div
+                key={incident.id}
+                className="list-grid-row"
+                style={{ gridTemplateColumns: gridCols }}
+                onClick={() => setDrawerCase(incident)}
+              >
                 <div>
-                  {triage ? (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onSelectCase(incident); }}
+                    className="cell-ref"
+                    style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}
+                    title="Open the full case file"
+                  >
+                    {incident.refNo}
+                  </button>
+                  <span className="cell-sub" style={{ display: 'block' }}>Reported {fmtDate(incident.dateReported)}</span>
+                  {slaLine(incident)}
+                </div>
+                <div className="cell-body">{incident.province}</div>
+                <div className="cell-body" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={incident.place}>
+                  {incident.place}
+                </div>
+                <div style={{ fontWeight: 700, color: isUnassigned ? 'var(--color-danger)' : 'var(--text-primary)', fontSize: '13px' }}>
+                  {isUnassigned ? 'Unassigned' : incident.responsiblePerson}
+                </div>
+                <div>
+                  <span className="chip-status" style={getStatusChipColors(stage)}>{stage}</span>
+                </div>
+                <div>
+                  <span className="chip-neutral">{incident.classification}</span>
+                </div>
+                {!tracksOwnOnly && (
+                  <div>
+                    {triage ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setTriageTarget(incident); }}
+                        className={`badge ${triage.verdict === 'Routine' ? 'success' : 'warning'}`}
+                        style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', border: 'none' }}
+                        title="Why did the AI suggest this? Click for the full reasoning."
+                      >
+                        <Sparkles size={11} /> {triage.verdict}
+                      </button>
+                    ) : (
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>—</span>
+                    )}
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end', whiteSpace: 'nowrap', alignItems: 'center' }}>
+                  {isUnassigned && currentUser.role === 'security_coordinator' && (
                     <button
-                      onClick={(e) => { e.stopPropagation(); setTriageTarget(incident); }}
-                      className={`badge ${triage.verdict === 'Routine' ? 'success' : 'warning'}`}
-                      style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', border: 'none' }}
-                      title="Why did the AI suggest this? Click for the full reasoning."
+                      className="btn btn-primary"
+                      onClick={(e) => { e.stopPropagation(); handleAssignToMe(incident); }}
+                      style={{ padding: '6px 10px', fontSize: '11.5px' }}
                     >
-                      <Sparkles size={11} /> {triage.verdict}
+                      <UserCheck size={12} /> Assign to Me
                     </button>
-                  ) : (
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>—</span>
+                  )}
+                  <button
+                    className="row-icon-btn"
+                    onClick={(e) => { e.stopPropagation(); setDrawerCase(incident); }}
+                    title={tracksOwnOnly ? 'Track Case' : 'Quick View'}
+                  >
+                    <Eye size={15} />
+                  </button>
+                  {canEscalate && (
+                    <button
+                      className="btn btn-primary"
+                      onClick={(e) => { e.stopPropagation(); openEscalationForm(incident); }}
+                      style={{ padding: '6px 10px', fontSize: '11.5px' }}
+                    >
+                      <ArrowUpCircle size={12} /> Escalate
+                    </button>
                   )}
                 </div>
-              )}
-              <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end', whiteSpace: 'nowrap', alignItems: 'center' }}>
-                {isUnassigned && currentUser.role === 'security_coordinator' && (
-                  <button
-                    className="btn btn-primary"
-                    onClick={(e) => { e.stopPropagation(); handleAssignToMe(incident); }}
-                    style={{ padding: '6px 10px', fontSize: '11.5px' }}
-                  >
-                    <UserCheck size={12} /> Assign to Me
-                  </button>
-                )}
-                <button
-                  className="row-icon-btn"
-                  onClick={(e) => { e.stopPropagation(); setDrawerCase(incident); }}
-                  title={tracksOwnOnly ? 'Track Case' : 'Quick View'}
-                >
-                  <Eye size={15} />
-                </button>
-                {canEscalate && (
-                  <button
-                    className="btn btn-primary"
-                    onClick={(e) => { e.stopPropagation(); openEscalationForm(incident); }}
-                    style={{ padding: '6px 10px', fontSize: '11.5px' }}
-                  >
-                    <ArrowUpCircle size={12} /> Escalate
-                  </button>
-                )}
               </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
 
-        {myCases.length === 0 && (
+        {!isLoading && incidentsList.length === 0 && (
           <div className="list-empty">
             <Briefcase size={36} style={{ opacity: 0.3, marginBottom: '0.5rem' }} />
             <p>
@@ -374,6 +428,47 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
             </p>
           </div>
         )}
+
+        {/* Pagination Controls */}
+        {!isLoading && totalCount > 0 && (() => {
+          const startNum = (currentPage - 1) * limit + 1;
+          const endNum = Math.min(currentPage * limit, totalCount);
+          return (
+            <div className="pagination-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 22px', borderTop: '1px solid #EDF2EF' }}>
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                Showing {startNum} to {endNum} of {totalCount} cases
+              </div>
+              <div style={{ display: 'flex', gap: '5px' }}>
+                <button 
+                  className="btn btn-secondary" 
+                  style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                >
+                  Previous
+                </button>
+                {Array.from({ length: totalPages }, (_, idx) => idx + 1).map(p => (
+                  <button
+                    key={p}
+                    className={`btn ${currentPage === p ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ padding: '4px 8px', fontSize: '0.75rem', minWidth: '24px' }}
+                    onClick={() => setCurrentPage(p)}
+                  >
+                    {p}
+                  </button>
+                ))}
+                <button 
+                  className="btn btn-secondary" 
+                  style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Case quick-view drawer (design handoff §4) */}
