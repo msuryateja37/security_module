@@ -40,7 +40,7 @@ export const NotificationService = {
         );
       }
 
-      if (prefs.emailNotifications && user.email) {
+      if (user.email) {
         // Fire-and-forget — SMTP latency must not block the API response
         void EmailService.send(user.email, title, `Dear ${user.displayName},\n\n${message}\n\nSIMS — Security Incident Management System\nThis is an automated message; do not reply.`);
       }

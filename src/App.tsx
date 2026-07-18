@@ -715,6 +715,8 @@ function App() {
       case 'leaves': return 'Leaves Management';
       case 'leave_management': return 'Leave Management';
       case 'case_detail': return 'Case File';
+      case 'tra_checklist': return 'Threat & Risk Assessment (TRA)';
+      case 'bto_report': return 'Back to Office Report';
       default: return 'CD: Security Services';
     }
   };
@@ -1017,17 +1019,19 @@ function App() {
           {activeView === 'submit_reports' && canAccessView(currentUser.role, 'submit_reports') && (
             <div>
               {/* Horizontal Tabs to switch report forms */}
-              <div className="horizontal-tab-bar">
-                {allowedReportTabs.map(tab => (
-                  <button
-                    key={tab.view}
-                    className={`horizontal-tab ${submitReportSubView === tab.view ? 'active' : ''}`}
-                    onClick={() => setSubmitReportSubView(tab.view)}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
+              {allowedReportTabs.length > 1 && (
+                <div className="horizontal-tab-bar">
+                  {allowedReportTabs.map(tab => (
+                    <button
+                      key={tab.view}
+                      className={`horizontal-tab ${submitReportSubView === tab.view ? 'active' : ''}`}
+                      onClick={() => setSubmitReportSubView(tab.view)}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* Form rendering */}
               {submitReportSubView === 'incident' && canAccessReportTab(currentUser.role, 'incident') && (
@@ -1075,6 +1079,7 @@ function App() {
                 <TraChecklistView 
                   reports={traAudits}
                   onSubmitReport={handleAddTraAudit}
+                  currentUser={currentUser}
                 />
               )}
             </div>
@@ -1137,6 +1142,22 @@ function App() {
               onUpdateStats={handleUpdateStats}
               onSaveQuarterlyReport={handleAddQtrReport}
               incidents={incidents}
+              currentUser={currentUser}
+            />
+          )}
+
+          {activeView === 'tra_checklist' && canAccessView(currentUser.role, 'tra_checklist') && (
+            <TraChecklistView 
+              reports={traAudits}
+              onSubmitReport={handleAddTraAudit}
+              currentUser={currentUser}
+            />
+          )}
+
+          {activeView === 'bto_report' && canAccessView(currentUser.role, 'bto_report') && (
+            <BackToOfficeView 
+              reports={btoReports}
+              onSubmitReport={handleAddBtoReport}
             />
           )}
 

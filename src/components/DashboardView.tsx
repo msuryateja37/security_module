@@ -114,7 +114,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>
             DLRRD Security Management Services / Dashboard / Employee
           </span>
-          <h1 className="page-title" style={{ margin: '0.25rem 0 0 0' }}>Security Management</h1>
+          <h1 className="page-title" style={{ margin: '0.25rem 0 0 0', color: 'var(--text-primary)' }}>Security Management</h1>
         </div>
 
         {/* Profile Card */}
@@ -322,7 +322,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     <div className="screen-fade-up">
       {/* Header matching Dashboard.png */}
       <div style={{ marginBottom: '2rem' }}>
-        <h1 className="page-title" style={{ margin: 0 }}>Dashboard</h1>
+        <h1 className="page-title" style={{ margin: 0, color: 'var(--text-primary)' }}>Dashboard</h1>
         <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
           {roleLabel} &bull; {provinceLabel} &bull; Reports to Adrian Ferreira
         </p>

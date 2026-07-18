@@ -368,13 +368,13 @@ export const CoordinatorDashboardView: React.FC<CoordinatorDashboardViewProps> =
               icon={Users}
               label="Assign investigators"
               count={stats.assignInvestigatorsCount}
-              onClick={() => onNavigate('incidents')}
+              onClick={() => onNavigate('my_cases')}
             />
             <ActionItem
               icon={AlertTriangle}
               label="SLA & escalations"
               count={stats.slaEscalationsCount}
-              onClick={() => onNavigate('incidents')}
+              onClick={() => onNavigate('my_cases')}
             />
             <ActionItem
               icon={ClipboardList}
@@ -389,7 +389,7 @@ export const CoordinatorDashboardView: React.FC<CoordinatorDashboardViewProps> =
             <ActionItem
               icon={MapPin}
               label={`Incidents in ${province}`}
-              onClick={() => onNavigate('incidents')}
+              onClick={() => onNavigate('my_cases')}
             />
           </div>
         </div>
@@ -404,7 +404,7 @@ export const CoordinatorDashboardView: React.FC<CoordinatorDashboardViewProps> =
           </div>
           <button
             className="coord-btn coord-btn--ghost"
-            onClick={() => onNavigate('incidents')}
+            onClick={() => onNavigate('my_cases')}
           >
             View all <ChevronRight size={14} />
           </button>

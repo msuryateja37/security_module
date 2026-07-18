@@ -43,7 +43,9 @@ export type AppView =
   | 'profile'
   | 'leaves'
   | 'leave_management'
-  | 'case_detail';
+  | 'case_detail'
+  | 'tra_checklist'
+  | 'bto_report';
 
 export type ReportSubView = 'incident' | 'bto' | 'investigation' | 'stats' | 'quarterly' | 'tra';
 
@@ -283,10 +285,12 @@ export const NAV_ITEMS: NavItem[] = [
   { view: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
   { view: 'submit_reports', label: 'Submit Reports', icon: FileText, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
   { view: 'my_cases', label: 'My Cases', icon: Briefcase, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'security_director', 'system_administrator'] },
-  { view: 'register', label: 'Breaches Register', icon: Search, roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
-  { view: 'approval', label: 'Approval', icon: ClipboardCheck, roles: ['security_coordinator', 'deputy_director', 'security_director', 'system_administrator'] },
-  { view: 'sla_monitor', label: 'SLA Monitor', icon: Clock, roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director'] },
-  { view: 'reports_archive', label: 'Reports', icon: Archive, roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
+  { view: 'tra_checklist', label: 'TRA Checklist', icon: ClipboardCheck, roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
+  { view: 'bto_report', label: 'Back to office', icon: FileText, roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
+  { view: 'register', label: 'Breaches Register', icon: Search, roles: ['chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
+  { view: 'approval', label: 'Approval', icon: ClipboardCheck, roles: ['deputy_director', 'security_director', 'system_administrator'] },
+  { view: 'sla_monitor', label: 'SLA Monitor', icon: Clock, roles: ['chief_security_investigator', 'deputy_director', 'security_director'] },
+  { view: 'reports_archive', label: 'Reports', icon: Archive, roles: ['chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
   { view: 'leaves', label: 'Leaves Management', icon: CalendarDays, roles: ['security_coordinator'] },
   { view: 'leave_management', label: 'Leave Management', icon: CalendarCheck, roles: ['security_director'] },
   { view: 'assistant', label: 'AI Assistant', icon: Sparkles, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
@@ -296,11 +300,11 @@ export const NAV_ITEMS: NavItem[] = [
 
 export const REPORT_TABS: ReportTab[] = [
   { view: 'incident', label: 'Incident Notification', roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
-  { view: 'bto', label: 'Back to Office Report', roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
-  { view: 'investigation', label: 'Investigation Report', roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
-  { view: 'stats', label: 'Monthly Performance Statistics', roles: ['security_coordinator', 'deputy_director', 'security_director', 'system_administrator'] },
-  { view: 'quarterly', label: 'Monthly & Quarterly Report', roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
-  { view: 'tra', label: 'TRA Checklist', roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] }
+  { view: 'bto', label: 'Back to Office Report', roles: ['chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
+  { view: 'investigation', label: 'Investigation Report', roles: ['chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
+  { view: 'stats', label: 'Monthly Performance Statistics', roles: ['deputy_director', 'security_director', 'system_administrator'] },
+  { view: 'quarterly', label: 'Monthly & Quarterly Report', roles: ['chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
+  { view: 'tra', label: 'TRA Checklist', roles: ['chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] }
 ];
 
 export const getUserByUsername = (username: string): UserProfile | undefined => {
@@ -339,8 +343,37 @@ export const isValidRole = (role: string): role is SecurityRole =>
 
 export const getViewLabelForRole = (view: AppView, role: SecurityRole): string => {
   if (view === 'my_cases') {
-    // Employees and the System Administrator only track their own reported incidents
-    return role === 'employee' || role === 'system_administrator' ? 'Track My Incidents' : 'My Assigned Cases';
+    if (role === 'employee' || role === 'system_administrator') {
+      return 'Track My Incidents';
+    }
+    if (role === 'security_coordinator') {
+      return 'Incidents';
+    }
+    return 'My Assigned Cases';
+  }
+  if (view === 'submit_reports') {
+    if (role === 'employee' || role === 'security_coordinator') {
+      return 'Report Incident';
+    }
+    return 'Submit Reports';
+  }
+  if (view === 'bto_report') {
+    if (role === 'security_coordinator') {
+      return 'Back To Office';
+    }
+    return 'Back to office';
+  }
+  if (view === 'assistant') {
+    if (role === 'security_coordinator') {
+      return 'AI Chatbot';
+    }
+    return 'AI Assistant';
+  }
+  if (view === 'leaves') {
+    if (role === 'security_coordinator') {
+      return 'Leave Management';
+    }
+    return 'Leaves Management';
   }
   if (view === 'profile') {
     return 'My Profile';
