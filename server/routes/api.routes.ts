@@ -27,6 +27,9 @@ router.post('/auth/refresh-token', AuthController.refreshToken);
 router.get('/auth/profile', requirePermission('dashboard:view'), AuthController.profile);
 // Self-service profile management (contact details, notification preferences, portal credential, own audit trail)
 router.put('/auth/profile', requirePermission('dashboard:view'), AuthController.updateProfile);
+// Self-service profile photo (any authenticated role) — upload/replace and retrieve own avatar
+router.put('/auth/avatar', requirePermission('dashboard:view'), AuthController.updateAvatar);
+router.get('/auth/avatar', requirePermission('dashboard:view'), AuthController.getAvatar);
 router.put('/auth/preferences', requirePermission('dashboard:view'), AuthController.updatePreferences);
 router.post('/auth/change-password', requirePermission('dashboard:view'), AuthController.changePassword);
 router.get('/auth/my-activity', requirePermission('dashboard:view'), AuthController.myActivity);
@@ -38,6 +41,9 @@ router.get('/users', requirePermission('admin:manage_roles'), AuthController.use
 router.post('/users', requirePermission('admin:manage_roles'), AdminController.createUser);
 router.put('/users/:username/details', requirePermission('admin:manage_roles'), AdminController.updateUser);
 router.put('/users/:username/active', requirePermission('admin:manage_roles'), AdminController.setUserActive);
+// Admin management of another account's profile photo (view/replace) on the user profile page
+router.get('/users/:username/avatar', requirePermission('admin:manage_roles'), AuthController.getUserAvatar);
+router.put('/users/:username/avatar', requirePermission('admin:manage_roles'), AuthController.updateUserAvatar);
 // Temporary Security Coordinator management (Chief Security Director only — leave cover, matrix item 2)
 router.post('/users/:username/temp-coordinator', requirePermission('admin:manage_roles'), AuthController.assignTempCoordinator);
 router.delete('/users/:username/temp-coordinator', requirePermission('admin:manage_roles'), AuthController.revokeTempCoordinator);
@@ -116,6 +122,12 @@ router.post('/quarterly-reports', requirePermission('reports:submit_operational'
 
 router.get('/tra-audits', requirePermission('reports:view_archive'), ReportController.getAllTra);
 router.post('/tra-audits', requirePermission('reports:submit_operational'), ReportController.createTra);
+// Digital signature (email-PIN) for TRA sign-off. Gated on the broad archive-view
+// permission so both assessors (coordinators) and managers (national roles) qualify;
+// the manager-sign endpoint additionally enforces role + ownership in the controller.
+router.post('/tra-audits/sign/request-otp', requirePermission('reports:view_archive'), ReportController.requestSignOtp);
+router.post('/tra-audits/sign/verify-otp', requirePermission('reports:view_archive'), ReportController.verifySignOtp);
+router.post('/tra-audits/:id/manager-sign', requirePermission('reports:view_archive'), ReportController.managerSignTra);
 
 router.get('/search', requirePermission('dashboard:view'), SearchController.search);
 

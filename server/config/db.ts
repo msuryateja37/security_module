@@ -119,6 +119,7 @@ async function ensureUsersAndOwnershipMssql(pool: mssql.ConnectionPool) {
     ['jobTitle', 'VARCHAR(255)'],
     ['phoneNumber', 'VARCHAR(50)'],
     ['directorate', 'VARCHAR(255)'],
+    ['avatarUrl', 'VARCHAR(500)'],
     ['preferences', 'NVARCHAR(MAX)'],
     ['passwordHash', 'VARCHAR(255)'],
     ['passwordChangedAt', 'VARCHAR(50)'],
@@ -166,6 +167,12 @@ async function ensureUsersAndOwnershipMssql(pool: mssql.ConnectionPool) {
   for (const table of OWNED_TABLES) {
     await pool.request().query(`IF COL_LENGTH('${table}', 'ownerId') IS NULL ALTER TABLE ${table} ADD ownerId VARCHAR(100);`);
   }
+
+  // TRA two-step sign-off: coordinator/assessor submits ('pending_manager'),
+  // a manager counter-signs to finalise ('signed'). Legacy rows predate the
+  // workflow, so treat any NULL status as already 'signed'.
+  await pool.request().query(`IF COL_LENGTH('tra_audits', 'status') IS NULL ALTER TABLE tra_audits ADD status VARCHAR(30) DEFAULT 'signed';`);
+  await pool.request().query(`UPDATE tra_audits SET status = 'signed' WHERE status IS NULL;`);
 
   await backfillOwnership(sql => pool.request().query(sql).then(() => undefined));
 }

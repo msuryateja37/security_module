@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import type { ChecklistItem } from '../types/security';
 import type { UserProfile } from '../security/roleAccess';
 import { getPermissionsForRole } from '../security/roleAccess';
-import { Save, Settings2, Activity, UserPlus, RefreshCw, Mail, Smartphone, BellRing } from 'lucide-react';
+import { Save, Settings2, Activity, UserPlus, RefreshCw, Mail, Smartphone, BellRing, ArrowLeft, KeyRound, Pencil, Power, ShieldCheck, MapPin, Phone, Hash, Briefcase, Building2, Clock, UserCog, Check, X, Camera, ImagePlus, Loader2 } from 'lucide-react';
 import { PROVINCES } from '../data/mockData';
 import { useModal } from './NotificationModal';
 import { Pagination } from './Pagination';
@@ -67,6 +67,48 @@ const formatUptime = (seconds: number) => {
   return h > 0 ? `${h}h ${m}m` : `${m}m ${seconds % 60}s`;
 };
 
+// Plain-language summary of each system role, shown on the Role Overview card.
+const ROLE_DESCRIPTIONS: Record<string, string> = {
+  employee: 'Front-line staff member who reports security incidents and tracks their own submissions.',
+  security_coordinator: 'Provincial owner of incidents — triages, updates, approves and closes cases within their own province.',
+  chief_security_investigator: 'Conducts assigned investigations and submits investigation reports to the review chain.',
+  deputy_director: 'National verification layer — reviews and recommends before the Chief Security Director signs off.',
+  security_director: 'National authority — approves cases, assigns investigators and manages roles and leave allocation.',
+  system_administrator: 'ICT / MTS — manages users, roles, SLA rules, notification templates and escalation configuration.'
+};
+
+// Data-visibility scope for each role, surfaced alongside the permission chips.
+const ROLE_DATA_SCOPE: Record<string, string> = {
+  employee: 'Own submissions only',
+  security_coordinator: 'Assigned province',
+  chief_security_investigator: 'Assigned cases (national)',
+  deputy_director: 'All provinces (national)',
+  security_director: 'All provinces (national)',
+  system_administrator: 'All provinces (national)'
+};
+
+// 'incident:create' -> 'Incident · Create'
+const formatPermission = (permission: string) => {
+  const humanize = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  const [group, action] = permission.split(':');
+  return action ? `${humanize(group)} · ${humanize(action)}` : humanize(group);
+};
+
+const initialsOf = (name: string) =>
+  name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
+
+// Profile-photo upload limits — kept in step with the server (fileStorage.service.ts).
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
+const ALLOWED_AVATAR_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'image/heic'];
+
+const readFileAsDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('Could not read the selected file'));
+    reader.readAsDataURL(file);
+  });
+
 export const AdministrationView: React.FC<AdministrationViewProps> = ({ checklists, onUpdateChecklist, currentUser }) => {
   const [activeTab, setActiveTab] = useState<'sla' | 'users' | 'roles' | 'categories' | 'notifications' | 'system_logs' | 'checklist' | 'staff'>('sla');
   const [localChecklists, setLocalChecklists] = useState<ChecklistItem[]>(checklists);
@@ -80,8 +122,17 @@ export const AdministrationView: React.FC<AdministrationViewProps> = ({ checklis
   const [showAddUser, setShowAddUser] = useState(false);
   const [newUser, setNewUser] = useState({ ...EMPTY_NEW_USER });
   const [editingUsername, setEditingUsername] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState({ displayName: '', email: '', role: '', province: '', office: '', clearanceLevel: '' });
+  const [editDraft, setEditDraft] = useState({ displayName: '', email: '', role: '', province: '', office: '', clearanceLevel: '', jobTitle: '', phoneNumber: '', persalNumber: '' });
   const [userSearchTerm, setUserSearchTerm] = useState('');
+  // Full-page user profile: which account is open, and whether its details are in edit mode.
+  const [viewingUsername, setViewingUsername] = useState<string | null>(null);
+  const [profileEditMode, setProfileEditMode] = useState(false);
+  // Profile photo of the account currently open in the profile view. objectUrl is the
+  // fetched stored photo; localPreview is the just-picked image shown instantly on upload.
+  const avatarFileInputRef = React.useRef<HTMLInputElement>(null);
+  const [viewAvatarObjectUrl, setViewAvatarObjectUrl] = useState<string | null>(null);
+  const [viewAvatarPreview, setViewAvatarPreview] = useState<string | null>(null);
+  const [viewAvatarUploading, setViewAvatarUploading] = useState(false);
 
   // System configuration
   const [configLoaded, setConfigLoaded] = useState(false);
@@ -329,6 +380,60 @@ export const AdministrationView: React.FC<AdministrationViewProps> = ({ checklis
     }
   };
 
+  const openProfile = (user: AdminUser) => {
+    setViewingUsername(user.username);
+    setProfileEditMode(false);
+    setViewAvatarPreview(null);
+  };
+
+  const closeProfile = () => {
+    setViewingUsername(null);
+    setProfileEditMode(false);
+    setEditingUsername(null);
+    setViewAvatarPreview(null);
+  };
+
+  const handlePickUserPhoto = () => avatarFileInputRef.current?.click();
+
+  const handleUserAvatarSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file later
+    if (!file || !viewingUsername) return;
+
+    if (!ALLOWED_AVATAR_TYPES.includes(file.type)) {
+      showAlert('Please choose an image file (PNG, JPG, GIF, WEBP, BMP or HEIC).', 'Unsupported File', 'warning');
+      return;
+    }
+    if (file.size > MAX_AVATAR_BYTES) {
+      showAlert('Profile photos must be 5 MB or smaller. Please choose a smaller image.', 'Image Too Large', 'warning');
+      return;
+    }
+
+    setViewAvatarUploading(true);
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const res = await fetch(`/api/users/${encodeURIComponent(viewingUsername)}/avatar`, {
+        method: 'PUT',
+        headers: jsonHeaders,
+        body: JSON.stringify({ fileName: file.name, mimeType: file.type, dataBase64: dataUrl }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        // Show the just-picked image immediately; the user list refresh brings the
+        // new stored path so the effect re-fetches and every avatar stays in step.
+        setViewAvatarPreview(dataUrl);
+        loadUsers();
+        showAlert(`Profile photo for '${viewingUsername}' has been updated.`, 'Photo Updated', 'success');
+      } else {
+        showAlert(json.message || json.error || 'Failed to update profile photo.', 'Upload Failed', 'danger');
+      }
+    } catch {
+      showAlert('Could not upload the image. Please try again.', 'Upload Failed', 'danger');
+    } finally {
+      setViewAvatarUploading(false);
+    }
+  };
+
   const startEditUser = (user: AdminUser) => {
     setEditingUsername(user.username);
     setEditDraft({
@@ -337,8 +442,17 @@ export const AdministrationView: React.FC<AdministrationViewProps> = ({ checklis
       role: user.role,
       province: user.province,
       office: user.office,
-      clearanceLevel: user.clearanceLevel
+      clearanceLevel: user.clearanceLevel,
+      jobTitle: user.jobTitle || '',
+      phoneNumber: user.phoneNumber || '',
+      persalNumber: user.persalNumber || ''
     });
+    setProfileEditMode(true);
+  };
+
+  const cancelEditUser = () => {
+    setProfileEditMode(false);
+    setEditingUsername(null);
   };
 
   const handleSaveEdit = async () => {
@@ -352,6 +466,7 @@ export const AdministrationView: React.FC<AdministrationViewProps> = ({ checklis
       const json = await res.json();
       if (json.success) {
         showAlert(`Account '${editingUsername}' was updated and recorded in the audit trail.`, 'User Updated', 'success');
+        setProfileEditMode(false);
         setEditingUsername(null);
         loadUsers();
       } else {
@@ -490,6 +605,49 @@ export const AdministrationView: React.FC<AdministrationViewProps> = ({ checklis
     );
   });
 
+  // The account currently open in the full-page profile view (kept in sync with the live user list).
+  const viewingUser = viewingUsername ? users.find(u => u.username === viewingUsername) || null : null;
+
+  // Close the profile view automatically if its account disappears from the list (e.g. after a filter/sync).
+  React.useEffect(() => {
+    if (viewingUsername && !usersLoading && !users.some(u => u.username === viewingUsername)) {
+      closeProfile();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewingUsername, users, usersLoading]);
+
+  // Fetch the open account's stored profile photo whenever it (or its stored path) changes.
+  React.useEffect(() => {
+    if (!viewingUsername || !viewingUser?.avatarUrl) {
+      setViewAvatarObjectUrl(null);
+      return;
+    }
+    let objectUrl: string | null = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/users/${encodeURIComponent(viewingUsername)}/avatar`, { headers: authHeaders });
+        if (!res.ok || cancelled) return;
+        const blob = await res.blob();
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setViewAvatarObjectUrl(objectUrl);
+      } catch {
+        /* keep the initials fallback */
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewingUsername, viewingUser?.avatarUrl]);
+
+  // Once the stored photo reflects a new upload, drop the local preview override.
+  React.useEffect(() => {
+    if (viewAvatarObjectUrl) setViewAvatarPreview(null);
+  }, [viewAvatarObjectUrl]);
+
   // Audit logs are already filtered + paged by the server; render them directly.
 
   // Client-side user pagination resets to page one when the user search changes.
@@ -625,8 +783,8 @@ export const AdministrationView: React.FC<AdministrationViewProps> = ({ checklis
         </div>
       )}
 
-      {/* USERS TAB */}
-      {activeTab === 'users' && (
+      {/* USERS TAB — account list (hidden while a profile is open) */}
+      {activeTab === 'users' && !viewingUsername && (
         <div className="glass-card" style={{ padding: '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
             <div>
@@ -705,43 +863,6 @@ export const AdministrationView: React.FC<AdministrationViewProps> = ({ checklis
             </div>
           )}
 
-          {/* Edit User Details form */}
-          {editingUsername && (
-            <div style={{ background: 'var(--bg-subtle)', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', border: '1px solid var(--border-color)' }}>
-              <h4 style={{ margin: '0 0 0.75rem 0' }}>Edit details for '{editingUsername}'</h4>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                <div>
-                  <label style={fieldLabel}>Display Name</label>
-                  <input type="text" className="form-input" style={smallInput} value={editDraft.displayName} onChange={e => setEditDraft({ ...editDraft, displayName: e.target.value })} />
-                </div>
-                <div>
-                  <label style={fieldLabel}>Email Address</label>
-                  <input type="email" className="form-input" style={smallInput} value={editDraft.email} onChange={e => setEditDraft({ ...editDraft, email: e.target.value })} />
-                </div>
-                <div>
-                  <label style={fieldLabel}>System Role</label>
-                  <select className="form-input" style={smallInput} value={editDraft.role} onChange={e => setEditDraft({ ...editDraft, role: e.target.value })}>
-                    {roleOptions.map(opt => (
-                      <option key={opt.role} value={opt.role}>{opt.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label style={fieldLabel}>Province</label>
-                  <select className="form-input" style={smallInput} value={editDraft.province} onChange={e => setEditDraft({ ...editDraft, province: e.target.value })}>
-                    {PROVINCE_OPTIONS.map(p => (
-                      <option key={p} value={p}>{p}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                <button className="btn btn-secondary" style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }} onClick={() => setEditingUsername(null)}>Cancel</button>
-                <button className="btn btn-success" style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }} onClick={handleSaveEdit}>Save Changes</button>
-              </div>
-            </div>
-          )}
-
           {usersLoading ? (
             <p style={{ color: 'var(--text-secondary)' }}>Loading users…</p>
           ) : (
@@ -802,26 +923,13 @@ export const AdministrationView: React.FC<AdministrationViewProps> = ({ checklis
                         </td>
                       )}
                       <td style={{ textAlign: 'center' }}>
-                        <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
-                          <button className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }} onClick={() => handleResetPassword(user.email || 'user@dlrrd.gov.za')}>
-                            Reset PW
-                          </button>
-                          <button className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }} onClick={() => startEditUser(user)}>
-                            Edit
-                          </button>
-                          {user.role === 'employee' && user.isActive !== false && (
-                            <button className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }} onClick={() => handleAssignTemp(user)}>
-                              Make Acting
-                            </button>
-                          )}
-                          <button
-                            className={`btn ${user.isActive === false ? 'btn-success' : 'btn-secondary'}`}
-                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem', color: user.isActive === false ? '#052E22' : 'var(--color-danger)' }}
-                            onClick={() => handleToggleActive(user)}
-                          >
-                            {user.isActive === false ? 'Activate' : 'Deactivate'}
-                          </button>
-                        </div>
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: '0.3rem 0.85rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                          onClick={() => openProfile(user)}
+                        >
+                          <UserCog size={13} /> View More
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -837,6 +945,310 @@ export const AdministrationView: React.FC<AdministrationViewProps> = ({ checklis
           )}
         </div>
       )}
+
+      {/* USERS TAB — full-page account profile */}
+      {activeTab === 'users' && viewingUser && (() => {
+        const u = viewingUser;
+        const isInactive = u.isActive === false;
+        const isActing = !!u.baseRole;
+        const rolePermissions = getPermissionsForRole(u.role);
+        const roleDescription = ROLE_DESCRIPTIONS[u.role] || 'System role.';
+        const dataScope = ROLE_DATA_SCOPE[u.role] || u.province;
+        const statusBadge = isInactive
+          ? { label: 'Deactivated', cls: 'danger' }
+          : isActing
+            ? { label: 'Acting Assignment', cls: 'warning' }
+            : { label: 'Active', cls: 'success' };
+
+        const detailRows: { icon: React.ReactNode; label: string; value: React.ReactNode }[] = [
+          { icon: <Hash size={15} />, label: 'Username / PERSAL', value: u.username },
+          { icon: <Mail size={15} />, label: 'Email Address', value: u.email || '—' },
+          { icon: <ShieldCheck size={15} />, label: 'System Role', value: u.roleLabel },
+          { icon: <MapPin size={15} />, label: 'Province', value: u.province },
+          { icon: <Building2 size={15} />, label: 'Office', value: u.office || '—' },
+          { icon: <ShieldCheck size={15} />, label: 'Clearance Level', value: u.clearanceLevel || '—' },
+          { icon: <Briefcase size={15} />, label: 'Job Title', value: u.jobTitle || '—' },
+          { icon: <Phone size={15} />, label: 'Phone Number', value: u.phoneNumber || '—' },
+          { icon: <Hash size={15} />, label: 'PERSAL Number', value: u.persalNumber || '—' },
+          { icon: <Clock size={15} />, label: 'Last Login', value: u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : 'Never' }
+        ];
+
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <button
+              className="btn btn-secondary"
+              onClick={closeProfile}
+              style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem' }}
+            >
+              <ArrowLeft size={15} /> Back to Users
+            </button>
+
+            {/* Identity header */}
+            <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div style={{ height: '80px', background: 'linear-gradient(120deg, var(--color-primary), var(--color-primary-hover))' }} />
+              <div style={{ padding: '0 1.75rem 1.5rem' }}>
+                <div
+                  style={{
+                    position: 'relative',
+                    width: '92px', height: '92px', flexShrink: 0, marginTop: '-46px',
+                    opacity: isInactive ? 0.6 : 1
+                  }}
+                >
+                  {/* Circular face: photo when set, otherwise initials. Clipped on its
+                      own so the edit badge below isn't cut off by the round mask. */}
+                  <div
+                    style={{
+                      position: 'relative',
+                      width: '100%', height: '100%', borderRadius: '50%', overflow: 'hidden',
+                      background: 'var(--bg-subtle)', border: '4px solid var(--card-bg, #fff)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '1.9rem', fontWeight: 700, color: 'var(--color-primary)',
+                      boxShadow: '0 6px 18px rgba(0,0,0,0.12)'
+                    }}
+                  >
+                    {viewAvatarPreview || viewAvatarObjectUrl ? (
+                      <img
+                        src={viewAvatarPreview || viewAvatarObjectUrl || ''}
+                        alt={`${u.displayName} profile photo`}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                    ) : (
+                      initialsOf(u.displayName)
+                    )}
+
+                    {viewAvatarUploading && (
+                      <div style={{
+                        position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: 'rgba(0,0,0,0.45)', color: '#fff'
+                      }}>
+                        <Loader2 size={22} style={{ animation: 'spin 1s linear infinite' }} />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Admin can add/replace this account's photo. Add (image) icon when
+                      there's none yet; Camera once a photo exists. */}
+                  <button
+                    type="button"
+                    onClick={handlePickUserPhoto}
+                    disabled={viewAvatarUploading}
+                    title={viewAvatarPreview || viewAvatarObjectUrl ? 'Change profile photo' : 'Add profile photo'}
+                    aria-label={viewAvatarPreview || viewAvatarObjectUrl ? 'Change profile photo' : 'Add profile photo'}
+                    style={{
+                      position: 'absolute', bottom: '2px', right: '2px',
+                      width: '30px', height: '30px', borderRadius: '50%',
+                      border: '2px solid var(--card-bg, #fff)', background: 'var(--color-primary)', color: '#fff',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      cursor: viewAvatarUploading ? 'default' : 'pointer', padding: 0,
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.25)'
+                    }}
+                  >
+                    {viewAvatarPreview || viewAvatarObjectUrl ? <Camera size={14} /> : <ImagePlus size={14} />}
+                  </button>
+
+                  <input
+                    ref={avatarFileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/gif,image/webp,image/bmp,image/heic"
+                    style={{ display: 'none' }}
+                    onChange={handleUserAvatarSelected}
+                  />
+                </div>
+                <div style={{ marginTop: '0.85rem' }}>
+                  <h2 style={{ margin: '0 0 0.5rem 0', fontSize: '1.5rem', lineHeight: 1.2 }}>{u.displayName}</h2>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center' }}>
+                    <span className="badge primary">{u.roleLabel}</span>
+                    <span className={`badge ${statusBadge.cls}`}>{statusBadge.label}</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                      <MapPin size={13} /> {u.province}
+                    </span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                      <Mail size={13} /> {u.email || '—'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Account actions (hidden while editing) */}
+                {!profileEditMode && (
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap' }}>
+                    <button
+                      className="btn btn-secondary"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem' }}
+                      onClick={() => handleResetPassword(u.email || 'user@dlrrd.gov.za')}
+                    >
+                      <KeyRound size={15} /> Reset Password
+                    </button>
+                    {u.role === 'employee' && !isInactive && (
+                      <button
+                        className="btn btn-secondary"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem' }}
+                        onClick={() => handleAssignTemp(u)}
+                      >
+                        <UserCog size={15} /> Make Acting
+                      </button>
+                    )}
+                    <button
+                      className={`btn ${isInactive ? 'btn-success' : 'btn-secondary'}`}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', color: isInactive ? '#052E22' : 'var(--color-danger)' }}
+                      onClick={() => handleToggleActive(u)}
+                    >
+                      <Power size={15} /> {isInactive ? 'Activate Account' : 'Deactivate Account'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Account details (read-only / editable) */}
+            <div className="glass-card" style={{ padding: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <h3 style={{ margin: 0 }}>Account Details</h3>
+                {!profileEditMode ? (
+                  <button
+                    className="btn btn-success"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem' }}
+                    onClick={() => startEditUser(u)}
+                  >
+                    <Pencil size={14} /> Edit
+                  </button>
+                ) : (
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      className="btn btn-secondary"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}
+                      onClick={cancelEditUser}
+                    >
+                      <X size={14} /> Cancel
+                    </button>
+                    <button
+                      className="btn btn-success"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}
+                      onClick={handleSaveEdit}
+                    >
+                      <Check size={14} /> Save Changes
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {profileEditMode ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+                  <div>
+                    <label style={fieldLabel}>Display Name</label>
+                    <input type="text" className="form-input" style={smallInput} value={editDraft.displayName} onChange={e => setEditDraft({ ...editDraft, displayName: e.target.value })} />
+                  </div>
+                  <div>
+                    <label style={fieldLabel}>Email Address</label>
+                    <input type="email" className="form-input" style={smallInput} value={editDraft.email} onChange={e => setEditDraft({ ...editDraft, email: e.target.value })} />
+                  </div>
+                  <div>
+                    <label style={fieldLabel}>System Role</label>
+                    <select className="form-input" style={smallInput} value={editDraft.role} onChange={e => setEditDraft({ ...editDraft, role: e.target.value })} disabled={isActing}>
+                      {roleOptions.map(opt => (
+                        <option key={opt.role} value={opt.role}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={fieldLabel}>Province</label>
+                    <select className="form-input" style={smallInput} value={editDraft.province} onChange={e => setEditDraft({ ...editDraft, province: e.target.value })}>
+                      {PROVINCE_OPTIONS.map(p => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={fieldLabel}>Office</label>
+                    <input type="text" className="form-input" style={smallInput} value={editDraft.office} onChange={e => setEditDraft({ ...editDraft, office: e.target.value })} />
+                  </div>
+                  <div>
+                    <label style={fieldLabel}>Clearance Level</label>
+                    <select className="form-input" style={smallInput} value={editDraft.clearanceLevel} onChange={e => setEditDraft({ ...editDraft, clearanceLevel: e.target.value })}>
+                      {CLEARANCE_OPTIONS.map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={fieldLabel}>Job Title</label>
+                    <input type="text" className="form-input" style={smallInput} value={editDraft.jobTitle} onChange={e => setEditDraft({ ...editDraft, jobTitle: e.target.value })} />
+                  </div>
+                  <div>
+                    <label style={fieldLabel}>Phone Number</label>
+                    <input type="text" className="form-input" style={smallInput} value={editDraft.phoneNumber} onChange={e => setEditDraft({ ...editDraft, phoneNumber: e.target.value })} />
+                  </div>
+                  <div>
+                    <label style={fieldLabel}>PERSAL Number</label>
+                    <input type="text" className="form-input" style={smallInput} value={editDraft.persalNumber} onChange={e => setEditDraft({ ...editDraft, persalNumber: e.target.value })} />
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.9rem' }}>
+                  {detailRows.map(row => (
+                    <div key={row.label} style={{ display: 'flex', gap: '0.65rem', alignItems: 'flex-start', padding: '0.65rem 0.75rem', background: 'var(--bg-subtle)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                      <span style={{ color: 'var(--color-primary)', marginTop: '0.1rem', flexShrink: 0 }}>{row.icon}</span>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.03em', color: 'var(--text-secondary)', fontWeight: 600 }}>{row.label}</div>
+                        <div style={{ fontSize: '0.88rem', fontWeight: 600, wordBreak: 'break-word' }}>{row.value}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Role overview */}
+            <div className="glass-card" style={{ padding: '1.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.75rem' }}>
+                <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'linear-gradient(135deg, var(--color-primary), var(--color-primary-hover))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+                  <ShieldCheck size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0 }}>Role Overview</h3>
+                  <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>{u.roleLabel} · {u.roleCode}</p>
+                </div>
+              </div>
+
+              <p style={{ fontSize: '0.9rem', lineHeight: 1.5, color: 'var(--text-secondary)', margin: '0 0 1.1rem 0' }}>{roleDescription}</p>
+
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
+                <div style={{ flex: '1 1 160px', padding: '0.85rem 1rem', background: 'var(--bg-subtle)', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.03em', color: 'var(--text-secondary)', fontWeight: 600 }}>Data Scope</div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 700, marginTop: '0.15rem' }}>{dataScope}</div>
+                </div>
+                <div style={{ flex: '1 1 160px', padding: '0.85rem 1rem', background: 'var(--bg-subtle)', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.03em', color: 'var(--text-secondary)', fontWeight: 600 }}>Permissions</div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 700, marginTop: '0.15rem' }}>{rolePermissions.length} granted</div>
+                </div>
+                {isActing && u.baseRole && (
+                  <div style={{ flex: '1 1 160px', padding: '0.85rem 1rem', background: 'var(--bg-subtle)', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                    <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.03em', color: 'var(--text-secondary)', fontWeight: 600 }}>Permanent Role</div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: 700, marginTop: '0.15rem' }}>{ROLE_DESCRIPTIONS[u.baseRole] ? u.baseRole.replace(/_/g, ' ') : u.baseRole}</div>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.03em', color: 'var(--text-secondary)', fontWeight: 700, marginBottom: '0.6rem' }}>
+                Access Permissions
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                {rolePermissions.map(perm => (
+                  <span
+                    key={perm}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
+                      padding: '0.35rem 0.7rem', borderRadius: '999px', fontSize: '0.78rem', fontWeight: 600,
+                      background: 'rgba(116, 71, 39, 0.08)', color: 'var(--color-primary)', border: '1px solid rgba(116, 71, 39, 0.18)'
+                    }}
+                  >
+                    <Check size={12} /> {formatPermission(perm)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ROLES TAB - MATRIX MAPPING */}
       {activeTab === 'roles' && (

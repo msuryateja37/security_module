@@ -269,4 +269,7 @@ export interface TraAudit {
   };
   dateCreated: string;
   ownerId?: string;
+  // 'pending_manager' after the assessor submits, 'signed' once a manager
+  // counter-signs. Legacy records without a status are treated as 'signed'.
+  status?: 'pending_manager' | 'signed';
 }

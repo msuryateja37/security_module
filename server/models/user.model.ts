@@ -29,6 +29,7 @@ interface UserRow {
   jobTitle?: string | null;
   phoneNumber?: string | null;
   directorate?: string | null;
+  avatarUrl?: string | null;
   preferences?: string | null;
   passwordHash?: string | null;
   passwordChangedAt?: string | null;
@@ -63,6 +64,7 @@ const rowToProfile = (row: UserRow): UserProfile => ({
   jobTitle: row.jobTitle ?? row.roleLabel,
   phoneNumber: row.phoneNumber ?? '',
   directorate: row.directorate ?? DEFAULT_DIRECTORATE,
+  avatarUrl: row.avatarUrl ?? null,
   lastLoginAt: row.lastLoginAt ?? null,
   passwordChangedAt: row.passwordChangedAt ?? null,
   preferences: parsePreferences(row.preferences),
@@ -264,6 +266,27 @@ export const UserModel = {
     const result = await execute(
       `UPDATE users SET ${sets.join(', ')} WHERE username = ? AND isActive = 1`,
       params
+    );
+    return result.changes > 0;
+  },
+
+  /** Self-service profile photo — stores the blob/local storage path of the uploaded image. */
+  async updateAvatar(username: string, avatarUrl: string): Promise<boolean> {
+    const result = await execute(
+      'UPDATE users SET avatarUrl = ? WHERE username = ? AND isActive = 1',
+      [avatarUrl, username]
+    );
+    return result.changes > 0;
+  },
+
+  /**
+   * Admin sets any account's profile photo — unlike the self-service path this
+   * has no isActive filter, so a deactivated user's photo can still be managed.
+   */
+  async setAvatar(username: string, avatarUrl: string): Promise<boolean> {
+    const result = await execute(
+      'UPDATE users SET avatarUrl = ? WHERE username = ?',
+      [avatarUrl, username]
     );
     return result.changes > 0;
   },

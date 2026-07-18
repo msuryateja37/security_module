@@ -8,6 +8,8 @@ import { ResponseView } from '../views/response.view.js';
 import { AuthenticatedRequest } from '../security/auth.middleware.js';
 import { isNationalRole, isProvincialRole, UserProfile } from '../security/roleAccess.js';
 import { parsePagination, paginate } from '../utils/pagination.js';
+import { SignatureOtpService } from '../services/signatureOtp.service.js';
+import { AuditService } from '../security/audit.service.js';
 
 // Apply optional free-text search over the given fields, then respond with either
 // the full array (legacy) or a single page (when ?page/?pageSize is present).
@@ -162,6 +164,8 @@ export const ReportController = {
         return ResponseView.sendError(res, 'Missing audit ID or Office Name', 'Validation failed', 400);
       }
       audit.ownerId = req.user!.username;
+      // A freshly submitted checklist always awaits the manager's counter-signature.
+      audit.status = 'pending_manager';
 
       const success = await TraAuditModel.create(audit);
       if (success) {
@@ -171,6 +175,91 @@ export const ReportController = {
       }
     } catch (error) {
       ResponseView.sendError(res, error as any, 'Failed to create TRA audit');
+    }
+  },
+
+  // Email a one-time PIN to the authenticated signer's departmental address. The
+  // signer must confirm this PIN before their drawn signature is accepted.
+  async requestSignOtp(req: AuthenticatedRequest, res: Response) {
+    try {
+      const user = req.user!;
+      const purpose = req.body?.purpose === 'manager' ? 'manager sign-off' : 'assessor sign-off';
+      const { emailed, devPin } = await SignatureOtpService.request(user.username, user.email, purpose);
+      ResponseView.sendSuccess(res, { emailed, devPin, email: user.email }, 'PIN sent');
+    } catch (error) {
+      ResponseView.sendError(res, error as any, 'Failed to send PIN');
+    }
+  },
+
+  // Verify a PIN without persisting anything — used by the assessor, whose record
+  // is only written when they submit the full checklist afterwards.
+  async verifySignOtp(req: AuthenticatedRequest, res: Response) {
+    try {
+      const result = SignatureOtpService.verify(req.user!.username, req.body?.pin || '');
+      if (result.ok) {
+        return ResponseView.sendSuccess(res, { verified: true }, 'PIN verified');
+      }
+      return ResponseView.sendError(res, result.error, 'Verification failed', 400);
+    } catch (error) {
+      ResponseView.sendError(res, error as any, 'Failed to verify PIN');
+    }
+  },
+
+  // Manager counter-signature on an existing pending record: verifies the PIN and
+  // persists the manager's signature atomically, finalising the checklist.
+  async managerSignTra(req: AuthenticatedRequest, res: Response) {
+    try {
+      const user = req.user!;
+      const id = req.params.id as string;
+      const { pin, signature } = req.body || {};
+
+      // Only supervisory (national) roles may counter-sign, and never the assessor
+      // who created the record.
+      if (!isNationalRole(user.role)) {
+        return ResponseView.sendError(res, 'Only a manager may counter-sign a TRA checklist', 'Forbidden', 403);
+      }
+      if (!signature) {
+        return ResponseView.sendError(res, 'Missing signature', 'Validation failed', 400);
+      }
+
+      const record = await TraAuditModel.getById(id);
+      if (!record) {
+        return ResponseView.sendError(res, 'TRA record not found', 'Not found', 404);
+      }
+      if (record.ownerId && record.ownerId === user.username) {
+        return ResponseView.sendError(res, 'You cannot counter-sign a checklist you submitted', 'Forbidden', 403);
+      }
+      if (record.status === 'signed') {
+        return ResponseView.sendError(res, 'This checklist has already been signed', 'Conflict', 409);
+      }
+
+      const otp = SignatureOtpService.verify(user.username, pin || '');
+      if (!otp.ok) {
+        return ResponseView.sendError(res, otp.error, 'Verification failed', 400);
+      }
+
+      const success = await TraAuditModel.signAsManager(id, signature, user.displayName);
+      if (!success) {
+        return ResponseView.sendError(res, 'Failed to save manager signature', 'Operation failed');
+      }
+
+      await AuditService.log({
+        timestamp: new Date().toISOString(),
+        userId: user.id,
+        username: user.username,
+        userRole: user.role,
+        province: user.province,
+        action: 'UPDATE',
+        resource: 'TRA Checklist',
+        resourceId: id,
+        details: `Manager counter-signed TRA checklist for ${record.officeName}`,
+        clearanceLevel: user.clearanceLevel
+      });
+
+      const updated = await TraAuditModel.getById(id);
+      ResponseView.sendSuccess(res, updated, 'Manager signature saved');
+    } catch (error) {
+      ResponseView.sendError(res, error as any, 'Failed to sign TRA checklist');
     }
   }
 };

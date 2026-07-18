@@ -82,6 +82,8 @@ export interface UserProfile {
   phoneNumber?: string;
   /** Organisational unit; defaults to CD: Security and Facilities Management Services. */
   directorate?: string;
+  /** Storage path of the user's profile photo (blob/local); the image is served via /api/auth/avatar. */
+  avatarUrl?: string | null;
   lastLoginAt?: string | null;
   passwordChangedAt?: string | null;
   preferences?: UserPreferences;

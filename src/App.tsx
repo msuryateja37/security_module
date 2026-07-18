@@ -38,6 +38,7 @@ import { AssistantView } from './components/AssistantView';
 import type { ChatMessage } from './components/AssistantView';
 import { LoginView } from './components/LoginView';
 import { ProfileView } from './components/ProfileView';
+import { Avatar } from './components/Avatar';
 import { LeavesView } from './components/LeavesView';
 import { LeaveManagementView } from './components/LeaveManagementView';
 import { relativeTime } from './utils/workdays';
@@ -45,7 +46,6 @@ import { Breadcrumbs, BreadcrumbTailProvider } from './components/Breadcrumbs';
 import type { Crumb } from './components/Breadcrumbs';
 import type { AppNotification } from './types/leave';
 import {
-  LogOut,
   Bell,
   Menu,
   X,
@@ -209,6 +209,13 @@ function App() {
   // decisions, acting-coordinator activations etc. appear without a reload.
   const [notifications, setNotifications] = useState<{ id: string; title: string; message: string; time: string; read: boolean; link?: string | null }[]>([]);
 
+  // The current user's profile photo, loaded once here and shared everywhere it
+  // is shown (top bar, profile dropdown, Profile page). The image is served by an
+  // authenticated endpoint, so an <img src> can't fetch it directly — we pull the
+  // bytes as a blob and expose an object URL. Re-runs whenever the stored avatar
+  // path changes (including right after an upload), so every avatar stays in sync.
+  const [avatarObjectUrl, setAvatarObjectUrl] = useState<string | null>(null);
+
   const authFetch = (url: string, options: RequestInit = {}) => {
     const headers = {
       ...(options.headers || {}),
@@ -268,6 +275,33 @@ function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser]);
+
+  // Load the current user's profile photo whenever the stored path changes.
+  useEffect(() => {
+    if (!currentUser?.avatarUrl) {
+      setAvatarObjectUrl(null);
+      return;
+    }
+    let objectUrl: string | null = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authFetch('/api/auth/avatar');
+        if (!res.ok || cancelled) return;
+        const blob = await res.blob();
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setAvatarObjectUrl(objectUrl);
+      } catch {
+        /* keep the initial-letter fallback */
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.avatarUrl, currentUser?.username]);
 
   const handleMarkAllNotificationsRead = () => {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
@@ -695,9 +729,33 @@ function App() {
     })
     .then(res => res.json())
     .then(json => {
-      if (json.success) setTraAudits(prev => [report, ...prev]);
+      if (json.success) {
+        // Trust the server-persisted record (carries ownerId + status), and fall
+        // back to the optimistic one if the payload is ever missing.
+        const saved: TraAudit = json.data && json.data.id ? json.data : report;
+        setTraAudits(prev => [saved, ...prev.filter(r => r.id !== saved.id)]);
+      } else {
+        showAlert(json.error || json.message || 'The TRA checklist could not be saved. Please try again.', 'Save Failed', 'danger');
+        refreshTraAudits();
+      }
     })
-    .catch(err => console.error('Error adding TRA audit:', err));
+    .catch(err => {
+      console.error('Error adding TRA audit:', err);
+      showAlert('Could not reach the server to save the TRA checklist. Please try again.', 'Save Failed', 'danger');
+    });
+  };
+
+  // Replace a TRA record in place (e.g. after a manager counter-signs it).
+  const handleUpdateTraAudit = (updated: TraAudit) => {
+    setTraAudits(prev => prev.map(r => (r.id === updated.id ? updated : r)));
+  };
+
+  // Reload TRA audits from the server (keeps the Signed Records list authoritative).
+  const refreshTraAudits = () => {
+    authFetch('/api/tra-audits')
+      .then(res => res.json())
+      .then(json => { if (json.success) setTraAudits(json.data); })
+      .catch(err => console.error('Error refreshing TRA audits:', err));
   };
 
   const getTopbarTitle = () => {
@@ -834,21 +892,22 @@ function App() {
           </ul>
         </div>
 
-        {/* Translucent bottom area containing Logout */}
-        <div className="logout-container-bottom" style={{ marginBottom: '0.5rem' }}>
-          <button 
-            onClick={() => {
-              localStorage.removeItem('dlrrd_logged_in_user');
-              setCurrentUser(null);
-              setActiveView('dashboard');
-              setSubmitReportSubView('incident');
-              setAssistantMessages([]);
-              setAssistantDraft(null);
-            }}
-            className="nav-link logout-btn-capsule"
+        {/* Bottom user identity card — click to open profile */}
+        <div className="sidebar-user-container">
+          <button
+            type="button"
+            className="sidebar-user-card"
+            onClick={() => setActiveView('profile')}
+            title="View profile"
           >
-            <LogOut size={18} />
-            <span className="nav-text">Logout</span>
+            <span className="sidebar-user-avatar">
+              <Avatar src={avatarObjectUrl} name={currentUser.displayName} />
+            </span>
+            <span className="sidebar-user-meta">
+              <span className="sidebar-user-name">{currentUser.displayName}</span>
+              <span className="sidebar-user-role">{currentUser.roleLabel}</span>
+              <span className="sidebar-user-province">{currentUser.province}</span>
+            </span>
           </button>
         </div>
       </nav>
@@ -895,7 +954,7 @@ function App() {
               style={{ cursor: 'pointer', userSelect: 'none' }}
             >
               <div className="profile-avatar">
-                {currentUser.displayName.charAt(0).toUpperCase()}
+                <Avatar src={avatarObjectUrl} name={currentUser.displayName} />
               </div>
               <div className="profile-info">
                 <span className="profile-name" style={{ textTransform: 'capitalize' }}>
@@ -947,7 +1006,7 @@ function App() {
           {showProfileCard && (
             <div className="profile-dropdown-card">
               <div className="profile-dropdown-header">
-                <div className="profile-avatar large">{currentUser.displayName.charAt(0).toUpperCase()}</div>
+                <div className="profile-avatar large"><Avatar src={avatarObjectUrl} name={currentUser.displayName} /></div>
                 <div className="profile-dropdown-info">
                   <h4 style={{ textTransform: 'capitalize', margin: 0 }}>{currentUser.displayName}</h4>
                   <p style={{ margin: '0.1rem 0 0 0' }}>{currentUser.roleLabel}</p>
@@ -1076,9 +1135,11 @@ function App() {
                 />
               )}
               {submitReportSubView === 'tra' && canAccessReportTab(currentUser.role, 'tra') && (
-                <TraChecklistView 
+                <TraChecklistView
                   reports={traAudits}
                   onSubmitReport={handleAddTraAudit}
+                  onUpdateReport={handleUpdateTraAudit}
+                  authFetch={authFetch}
                   currentUser={currentUser}
                 />
               )}
@@ -1147,9 +1208,11 @@ function App() {
           )}
 
           {activeView === 'tra_checklist' && canAccessView(currentUser.role, 'tra_checklist') && (
-            <TraChecklistView 
+            <TraChecklistView
               reports={traAudits}
               onSubmitReport={handleAddTraAudit}
+              onUpdateReport={handleUpdateTraAudit}
+              authFetch={authFetch}
               currentUser={currentUser}
             />
           )}
@@ -1202,9 +1265,18 @@ function App() {
             <ProfileView
               currentUser={currentUser}
               initialTab={profileInitialTab}
+              avatarObjectUrl={avatarObjectUrl}
               onUserUpdated={(user) => {
                 setCurrentUser(user);
                 localStorage.setItem('dlrrd_logged_in_user', JSON.stringify(user));
+              }}
+              onLogout={() => {
+                localStorage.removeItem('dlrrd_logged_in_user');
+                setCurrentUser(null);
+                setActiveView('dashboard');
+                setSubmitReportSubView('incident');
+                setAssistantMessages([]);
+                setAssistantDraft(null);
               }}
             />
           )}

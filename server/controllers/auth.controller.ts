@@ -5,6 +5,7 @@ import { ResponseView } from '../views/response.view.js';
 import { AuthenticatedRequest } from '../security/auth.middleware.js';
 import { AuditService } from '../security/audit.service.js';
 import { verifyPassword } from '../security/password.service.js';
+import { FileStorageService } from '../services/fileStorage.service.js';
 
 // Seed default for accounts that have never set their own credential.
 // Production auth is AD SSO (FR-031); this local credential is the pre-SSO login flow.
@@ -130,6 +131,156 @@ export const AuthController = {
 
     const updated = await UserModel.getByUsername(user.username);
     ResponseView.sendSuccess(res, updated, 'Profile updated successfully');
+  },
+
+  /**
+   * Self-service profile photo upload. Accepts a base64 image, stores it in the
+   * document store (Azure Blob in production, local disk in dev) and records the
+   * storage path on the user's row. Replaces any existing photo.
+   */
+  async updateAvatar(req: AuthenticatedRequest, res: Response) {
+    const user = req.user!;
+    const { fileName, mimeType, dataBase64 } = req.body || {};
+
+    if (!fileName || !dataBase64) {
+      return ResponseView.sendError(res, 'fileName and dataBase64 are required', 'Validation failed', 400);
+    }
+    if (!FileStorageService.isAllowedImageName(fileName)) {
+      return ResponseView.sendError(res, 'Profile photo must be an image (PNG, JPG, GIF, WEBP, BMP or HEIC)', 'Validation failed', 400);
+    }
+
+    let stored;
+    try {
+      stored = await FileStorageService.saveAvatar(user.username, fileName, dataBase64, mimeType);
+    } catch (err: any) {
+      return ResponseView.sendError(res, err.message || 'Failed to store profile photo', 'Validation failed', 400);
+    }
+
+    const success = await UserModel.updateAvatar(user.username, stored.storagePath);
+    if (!success) {
+      return ResponseView.sendError(res, 'Failed to update profile photo', 'Operation failed');
+    }
+
+    await AuditService.log({
+      timestamp: new Date().toISOString(),
+      userId: user.id,
+      username: user.username,
+      userRole: user.role,
+      province: user.province,
+      action: 'UPDATE',
+      resource: 'User Profile',
+      resourceId: user.id,
+      details: `Updated own profile photo (${Math.max(1, Math.round(stored.fileSize / 1024))} KB)`,
+      clearanceLevel: user.clearanceLevel
+    });
+
+    const updated = await UserModel.getByUsername(user.username);
+    ResponseView.sendSuccess(res, updated, 'Profile photo updated successfully');
+  },
+
+  /** Stream the authenticated user's own profile photo back for <img> rendering. */
+  async getAvatar(req: AuthenticatedRequest, res: Response) {
+    const user = req.user!;
+    const storagePath = user.avatarUrl;
+    if (!storagePath) {
+      return ResponseView.sendError(res, 'No profile photo set', 'Not found', 404);
+    }
+    if (!(await FileStorageService.exists(storagePath))) {
+      return ResponseView.sendError(res, 'Stored profile photo is missing', 'Not found', 404);
+    }
+
+    res.setHeader('Content-Type', FileStorageService.contentTypeFor(storagePath));
+    res.setHeader('Cache-Control', 'private, no-cache');
+    try {
+      const stream = await FileStorageService.openReadStream(storagePath);
+      stream.on('error', () => {
+        if (!res.headersSent) res.status(500).end();
+        else res.end();
+      });
+      stream.pipe(res);
+    } catch {
+      return ResponseView.sendError(res, 'Failed to read profile photo', 'Operation failed');
+    }
+  },
+
+  /**
+   * Admin: stream a specific account's profile photo for <img> rendering on the
+   * user management profile page. Gated on admin:manage_roles in the routes.
+   */
+  async getUserAvatar(req: AuthenticatedRequest, res: Response) {
+    const target = await UserModel.getByUsername(String(req.params.username || ''));
+    if (!target) {
+      return ResponseView.sendError(res, 'User not found', 'Not found', 404);
+    }
+    const storagePath = target.avatarUrl;
+    if (!storagePath) {
+      return ResponseView.sendError(res, 'No profile photo set', 'Not found', 404);
+    }
+    if (!(await FileStorageService.exists(storagePath))) {
+      return ResponseView.sendError(res, 'Stored profile photo is missing', 'Not found', 404);
+    }
+
+    res.setHeader('Content-Type', FileStorageService.contentTypeFor(storagePath));
+    res.setHeader('Cache-Control', 'private, no-cache');
+    try {
+      const stream = await FileStorageService.openReadStream(storagePath);
+      stream.on('error', () => {
+        if (!res.headersSent) res.status(500).end();
+        else res.end();
+      });
+      stream.pipe(res);
+    } catch {
+      return ResponseView.sendError(res, 'Failed to read profile photo', 'Operation failed');
+    }
+  },
+
+  /**
+   * Admin: upload/replace a specific account's profile photo. Same storage and
+   * validation as the self-service path, but records the acting administrator as
+   * the audit actor against the target user's record.
+   */
+  async updateUserAvatar(req: AuthenticatedRequest, res: Response) {
+    const actor = req.user!;
+    const { fileName, mimeType, dataBase64 } = req.body || {};
+
+    const target = await UserModel.getByUsername(String(req.params.username || ''));
+    if (!target) {
+      return ResponseView.sendError(res, 'User not found', 'Not found', 404);
+    }
+    if (!fileName || !dataBase64) {
+      return ResponseView.sendError(res, 'fileName and dataBase64 are required', 'Validation failed', 400);
+    }
+    if (!FileStorageService.isAllowedImageName(fileName)) {
+      return ResponseView.sendError(res, 'Profile photo must be an image (PNG, JPG, GIF, WEBP, BMP or HEIC)', 'Validation failed', 400);
+    }
+
+    let stored;
+    try {
+      stored = await FileStorageService.saveAvatar(target.username, fileName, dataBase64, mimeType);
+    } catch (err: any) {
+      return ResponseView.sendError(res, err.message || 'Failed to store profile photo', 'Validation failed', 400);
+    }
+
+    const success = await UserModel.setAvatar(target.username, stored.storagePath);
+    if (!success) {
+      return ResponseView.sendError(res, 'Failed to update profile photo', 'Operation failed');
+    }
+
+    await AuditService.log({
+      timestamp: new Date().toISOString(),
+      userId: actor.id,
+      username: actor.username,
+      userRole: actor.role,
+      province: actor.province,
+      action: 'UPDATE',
+      resource: 'User Profile',
+      resourceId: target.id,
+      details: `Updated profile photo for '${target.username}' (${Math.max(1, Math.round(stored.fileSize / 1024))} KB)`,
+      clearanceLevel: actor.clearanceLevel
+    });
+
+    const updated = await UserModel.getByUsername(target.username);
+    ResponseView.sendSuccess(res, updated, 'Profile photo updated successfully');
   },
 
   /** Notification preferences (FR-008 email + in-system alerts; FR-017 SLA reminders). */
