@@ -13,6 +13,7 @@ import { NotificationController } from '../controllers/notification.controller.j
 import { authenticateUser, requirePermission, AuthenticatedRequest } from '../security/auth.middleware.js';
 import { AuditService } from '../security/audit.service.js';
 import { ResponseView } from '../views/response.view.js';
+import { parsePagination } from '../utils/pagination.js';
 
 const router = express.Router();
 
@@ -52,6 +53,17 @@ router.get('/admin/system-health', requirePermission('admin:system_config'), Adm
 // Audit Trail Logs (Compliance Monitoring)
 router.get('/audit-logs', requirePermission('admin:manage_roles'), async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const pageParams = parsePagination(req.query);
+    if (pageParams) {
+      const search = typeof req.query.search === 'string' ? req.query.search : '';
+      const { data, total } = await AuditService.getPaginated({ ...pageParams, search });
+      const totalPages = Math.max(1, Math.ceil(total / pageParams.pageSize));
+      return ResponseView.sendPaginated(
+        res,
+        { data, page: Math.min(pageParams.page, totalPages), pageSize: pageParams.pageSize, total, totalPages },
+        'Fetched audit logs page successfully'
+      );
+    }
     const logs = await AuditService.getRecentLogs(100);
     ResponseView.sendSuccess(res, logs, 'Fetched audit logs successfully');
   } catch (err) {

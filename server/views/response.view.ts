@@ -14,6 +14,26 @@ export const ResponseView = {
     });
   },
 
+  // Paginated success payload: `data` is the page slice, `pagination` carries the
+  // page/total metadata the frontend Pagination component needs.
+  sendPaginated<T>(
+    res: Response,
+    result: { data: T[]; page: number; pageSize: number; total: number; totalPages: number },
+    message: string = 'Fetched page successfully'
+  ): void {
+    res.status(200).json({
+      success: true,
+      message,
+      data: result.data,
+      pagination: {
+        page: result.page,
+        pageSize: result.pageSize,
+        total: result.total,
+        totalPages: result.totalPages
+      }
+    });
+  },
+
   sendError(
     res: Response,
     error: string | Error,

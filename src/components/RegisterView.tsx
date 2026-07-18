@@ -4,6 +4,7 @@ import { PROVINCES } from '../data/mockData';
 import { Search, Eye, X, Save } from 'lucide-react';
 import { useModal } from './NotificationModal';
 import { getStatusChipColors, getCaseStageLabel } from '../utils/statusChips';
+import { Pagination } from './Pagination';
 
 interface RegisterViewProps {
   incidents: SecurityIncident[];
@@ -17,6 +18,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
   const [filterProvince, setFilterProvince] = useState('');
   const [filterClassification, setFilterClassification] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const { showAlert } = useModal();
   
   // Selected incident for detail view drawer
@@ -63,6 +65,11 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
       }
     }
   }, [initialSelectedIncidentId, incidents]);
+
+  // Reset pagination on filter change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterProvince, filterClassification, filterStatus]);
 
   // Save changes
   const handleSaveChanges = () => {
@@ -199,7 +206,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
             </tr>
           </thead>
           <tbody>
-            {filteredIncidents.map(inc => {
+            {filteredIncidents.slice((currentPage - 1) * 10, currentPage * 10).map(inc => {
               const stageLabel = getCaseStageLabel(inc);
 
               let classificationBadge = 'badge muted';
@@ -246,6 +253,12 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ incidents, onUpdateI
             )}
           </tbody>
         </table>
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filteredIncidents.length}
+          itemsPerPage={10}
+          onPageChange={setCurrentPage}
+        />
       </div>
 
       {/* Case Details Drawer (Slide-Over) */}

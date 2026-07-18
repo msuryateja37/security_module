@@ -1,12 +1,16 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { SecurityIncident } from '../types/security';
 import { AlertCircle, Clock, CheckCircle2 } from 'lucide-react';
+import { Pagination } from './Pagination';
 
 interface SlaMonitorViewProps {
   incidents: SecurityIncident[];
 }
 
 export const SlaMonitorView: React.FC<SlaMonitorViewProps> = ({ incidents }) => {
+  const [notifPage, setNotifPage] = useState(1);
+  const [prelimPage, setPrelimPage] = useState(1);
+
   const mappedSla = incidents.map(incident => {
     const incidentDate = new Date(incident.dateTime);
     const dateReported = new Date(incident.dateReported);
@@ -29,6 +33,9 @@ export const SlaMonitorView: React.FC<SlaMonitorViewProps> = ({ incidents }) => 
     };
   });
 
+  const openSlaItems = mappedSla.filter(item => item.incident.status === 'Open');
+  const investigationSlaItems = mappedSla.filter(item => item.incident.status === 'Under Investigation' || item.incident.status === 'SAPS Case');
+
   return (
     <div>
       <div className="header-row">
@@ -46,7 +53,7 @@ export const SlaMonitorView: React.FC<SlaMonitorViewProps> = ({ incidents }) => 
           </h3>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {mappedSla.filter(item => item.incident.status === 'Open').map(({ incident, hoursSinceReported, ackSlaPassed }) => (
+            {openSlaItems.slice((notifPage - 1) * 10, notifPage * 10).map(({ incident, hoursSinceReported, ackSlaPassed }) => (
               <div 
                 key={incident.id} 
                 className="glass-card" 
@@ -70,13 +77,19 @@ export const SlaMonitorView: React.FC<SlaMonitorViewProps> = ({ incidents }) => 
                 </div>
               </div>
             ))}
-            {mappedSla.filter(item => item.incident.status === 'Open').length === 0 && (
+            {openSlaItems.length === 0 && (
               <div style={{ textAlign: 'center', padding: '2rem', color: 'hsl(var(--text-muted))', fontSize: '0.9rem' }}>
                 <CheckCircle2 size={24} style={{ color: 'green', display: 'block', margin: '0 auto 0.5rem auto' }} />
                 All open notifications acknowledged within the 12-hour window.
               </div>
             )}
           </div>
+          <Pagination
+            currentPage={notifPage}
+            totalItems={openSlaItems.length}
+            itemsPerPage={10}
+            onPageChange={setNotifPage}
+          />
         </div>
 
         <div className="glass-card" style={{ padding: '1.5rem' }}>
@@ -86,7 +99,7 @@ export const SlaMonitorView: React.FC<SlaMonitorViewProps> = ({ incidents }) => 
           </h3>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {mappedSla.filter(item => item.incident.status === 'Under Investigation' || item.incident.status === 'SAPS Case').map(({ incident, daysSinceIncident, daysRemaining, investigationSlaPassed }) => (
+            {investigationSlaItems.slice((prelimPage - 1) * 10, prelimPage * 10).map(({ incident, daysSinceIncident, daysRemaining, investigationSlaPassed }) => (
               <div 
                 key={incident.id} 
                 className="glass-card" 
@@ -116,13 +129,19 @@ export const SlaMonitorView: React.FC<SlaMonitorViewProps> = ({ incidents }) => 
                 </div>
               </div>
             ))}
-            {mappedSla.filter(item => item.incident.status === 'Under Investigation' || item.incident.status === 'SAPS Case').length === 0 && (
+            {investigationSlaItems.length === 0 && (
               <div style={{ textAlign: 'center', padding: '2rem', color: 'hsl(var(--text-muted))', fontSize: '0.9rem' }}>
                 <CheckCircle2 size={24} style={{ color: 'green', display: 'block', margin: '0 auto 0.5rem auto' }} />
                 No active investigations currently tracked.
               </div>
             )}
           </div>
+          <Pagination
+            currentPage={prelimPage}
+            totalItems={investigationSlaItems.length}
+            itemsPerPage={10}
+            onPageChange={setPrelimPage}
+          />
         </div>
 
       </div>

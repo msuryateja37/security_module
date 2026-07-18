@@ -4,6 +4,7 @@ import type { LeaveDay, SubstituteCandidate } from '../types/leave';
 import { LEAVE_STATUS_BADGE } from '../types/leave';
 import { CalendarCheck, CheckCircle2, ThumbsDown, ThumbsUp, UserCheck } from 'lucide-react';
 import { useModal } from './NotificationModal';
+import { Pagination } from './Pagination';
 
 interface LeaveManagementViewProps {
   currentUser: UserProfile;
@@ -182,6 +183,12 @@ export const LeaveManagementView: React.FC<LeaveManagementViewProps> = ({ curren
   const [serverToday, setServerToday] = useState<string>(new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'pending' | 'upcoming' | 'history'>('pending');
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Reset pagination whenever the active tab changes
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab]);
 
   const authHeaders = {
     'x-username': currentUser.username,
@@ -326,9 +333,12 @@ export const LeaveManagementView: React.FC<LeaveManagementViewProps> = ({ curren
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         {loading && <p style={{ color: 'var(--text-secondary)' }}>Loading leave requests…</p>}
 
-        {activeTab === 'pending' && pendingBatches.map(group => (
+        {activeTab === 'pending' && pendingBatches.slice((currentPage - 1) * 10, currentPage * 10).map(group => (
           <PendingBatchCard key={group[0].batchId} group={group} authHeaders={authHeaders} onDecided={load} />
         ))}
+        {activeTab === 'pending' && (
+          <Pagination currentPage={currentPage} totalItems={pendingBatches.length} itemsPerPage={10} onPageChange={setCurrentPage} />
+        )}
         {activeTab === 'pending' && !loading && pendingBatches.length === 0 && (
           <div className="glass-card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
             <CheckCircle2 size={36} style={{ color: 'green', opacity: 0.5, marginBottom: '0.5rem' }} />
@@ -336,7 +346,10 @@ export const LeaveManagementView: React.FC<LeaveManagementViewProps> = ({ curren
           </div>
         )}
 
-        {activeTab === 'upcoming' && upcomingBatches.map(group => renderReadOnlyBatch(group, true))}
+        {activeTab === 'upcoming' && upcomingBatches.slice((currentPage - 1) * 10, currentPage * 10).map(group => renderReadOnlyBatch(group, true))}
+        {activeTab === 'upcoming' && (
+          <Pagination currentPage={currentPage} totalItems={upcomingBatches.length} itemsPerPage={10} onPageChange={setCurrentPage} />
+        )}
         {activeTab === 'upcoming' && !loading && upcomingBatches.length === 0 && (
           <div className="glass-card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
             <CalendarCheck size={36} style={{ opacity: 0.4, marginBottom: '0.5rem' }} />
@@ -344,7 +357,10 @@ export const LeaveManagementView: React.FC<LeaveManagementViewProps> = ({ curren
           </div>
         )}
 
-        {activeTab === 'history' && historyBatches.map(group => renderReadOnlyBatch(group, false))}
+        {activeTab === 'history' && historyBatches.slice((currentPage - 1) * 10, currentPage * 10).map(group => renderReadOnlyBatch(group, false))}
+        {activeTab === 'history' && (
+          <Pagination currentPage={currentPage} totalItems={historyBatches.length} itemsPerPage={10} onPageChange={setCurrentPage} />
+        )}
         {activeTab === 'history' && !loading && historyBatches.length === 0 && (
           <div className="glass-card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
             <p>No historical leave records yet.</p>

@@ -3,6 +3,7 @@ import type { SecurityIncident } from '../types/security';
 import { getViewLabelForRole } from '../security/roleAccess';
 import { Briefcase, Eye, Search, UserCheck, ArrowUpCircle, X, Send, Sparkles, ShieldAlert, ShieldCheck, Check, Info } from 'lucide-react';
 import { useModal } from './NotificationModal';
+import { Pagination } from './Pagination';
 import { triageCase } from '../utils/caseTriage';
 import type { TriageResult } from '../utils/caseTriage';
 import { getCaseStageLabel, getCaseTimeline, getStatusChipColors } from '../utils/statusChips';
@@ -33,6 +34,7 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
   const [triageTarget, setTriageTarget] = useState<SecurityIncident | null>(null);
   // Quick-view case drawer (right-side panel per design handoff)
   const [drawerCase, setDrawerCase] = useState<SecurityIncident | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
   const { showAlert, showConfirm } = useModal();
 
   // Employees and the System Administrator only track incidents they reported themselves
@@ -98,6 +100,11 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
   };
 
   const myCases = scopedCases.filter(incident => matchesSearch(incident) && matchesStatusFilter(incident));
+
+  // Reset pagination on filter or search change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, coordinatorTab]);
 
   // Header band statistics for the current scope
   const isClosed = (i: SecurityIncident) => i.status === 'Closed' || i.workflowStage === 'Closed';
@@ -277,7 +284,7 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
           <div style={{ textAlign: 'right' }}>{tracksOwnOnly ? 'View' : 'Actions'}</div>
         </div>
 
-        {myCases.map(incident => {
+        {myCases.slice((currentPage - 1) * 10, currentPage * 10).map(incident => {
           const isUnassigned = isUnassignedCase(incident);
           const canEscalate = !isUnassigned && incident.status !== 'Closed' && !incident.isEscalated && ['security_coordinator', 'security_director'].includes(currentUser.role);
           const caseClosed = isClosed(incident);
@@ -374,6 +381,12 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
             </p>
           </div>
         )}
+        <Pagination
+          currentPage={currentPage}
+          totalItems={myCases.length}
+          itemsPerPage={10}
+          onPageChange={setCurrentPage}
+        />
       </div>
 
       {/* Case quick-view drawer (design handoff §4) */}

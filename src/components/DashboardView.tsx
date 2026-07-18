@@ -15,6 +15,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { CoordinatorDashboardView } from './CoordinatorDashboardView';
+import { Pagination } from './Pagination';
 
 
 interface DashboardViewProps {
@@ -77,6 +78,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   // 4. Render animated count values
   const [progress, setProgress] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
   useEffect(() => {
     let raf = 0;
     const t0 = performance.now();
@@ -259,7 +261,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </tr>
                   </thead>
                   <tbody>
-                    {myIncidents.map(inc => {
+                    {myIncidents.slice((currentPage - 1) * 10, currentPage * 10).map(inc => {
                       const slaStatus = inc.slaInfo?.status || 'On Track';
                       const slaBadgeClass = slaStatus === 'Overdue' ? 'danger' : slaStatus === 'At Risk' ? 'warning' : 'success';
                       return (
@@ -301,6 +303,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </tbody>
                 </table>
               </div>
+              <Pagination
+                currentPage={currentPage}
+                totalItems={myIncidents.length}
+                itemsPerPage={10}
+                onPageChange={setCurrentPage}
+              />
             </div>
           </div>
 

@@ -12,6 +12,7 @@ import { CaseEventModel } from '../models/caseEvent.model.js';
 import { UserModel } from '../models/user.model.js';
 import { notifyReporterOfProgress } from './caseWorkflow.controller.js';
 import { query } from '../config/db.js';
+import { parsePagination, paginate } from '../utils/pagination.js';
 
 // Province name → 2–3 letter official South-African code used in the SIM ref format
 const PROVINCE_CODES: Record<string, string> = {
@@ -211,10 +212,27 @@ export const IncidentController = {
 
       // Attach dynamic SLA status to each incident (targets from system configuration, FR-037)
       const slaRules = await ConfigService.getSlaRules();
-      const enrichedIncidents = incidents.map(inc => ({
+      let enrichedIncidents = incidents.map(inc => ({
         ...inc,
         slaInfo: SlaService.calculateSla(inc, slaRules)
       }));
+
+      // Optional server-side filtering — applied only when the caller passes the params.
+      const search = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
+      const filterProvince = typeof req.query.province === 'string' ? req.query.province : '';
+      const filterClassification = typeof req.query.classification === 'string' ? req.query.classification : '';
+      const filterStatus = typeof req.query.status === 'string' ? req.query.status : '';
+
+      if (filterProvince) enrichedIncidents = enrichedIncidents.filter(i => i.province === filterProvince);
+      if (filterClassification) enrichedIncidents = enrichedIncidents.filter(i => i.classification === filterClassification);
+      if (filterStatus) enrichedIncidents = enrichedIncidents.filter(i => i.status === filterStatus);
+      if (search) {
+        enrichedIncidents = enrichedIncidents.filter(i =>
+          [i.refNo, i.place, i.province, i.status, i.reportedBy, i.classification,
+           Array.isArray(i.incidentType) ? i.incidentType.join(' ') : i.incidentType]
+            .some(field => (field || '').toString().toLowerCase().includes(search))
+        );
+      }
 
       await AuditService.log({
         timestamp: new Date().toISOString(),
@@ -227,6 +245,13 @@ export const IncidentController = {
         details: `Fetched ${enrichedIncidents.length} incidents (Scoped for ${user.province})`,
         clearanceLevel: user.clearanceLevel
       });
+
+      // Opt-in pagination: returns one page + total when ?page/?pageSize is present,
+      // otherwise the full scoped array (aggregate consumers rely on the full set).
+      const pageParams = parsePagination(req.query);
+      if (pageParams) {
+        return ResponseView.sendPaginated(res, paginate(enrichedIncidents, pageParams), 'Fetched incidents page successfully');
+      }
 
       ResponseView.sendSuccess(res, enrichedIncidents, 'Fetched incidents successfully');
     } catch (error) {

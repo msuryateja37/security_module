@@ -45,14 +45,11 @@ import { Breadcrumbs, BreadcrumbTailProvider } from './components/Breadcrumbs';
 import type { Crumb } from './components/Breadcrumbs';
 import type { AppNotification } from './types/leave';
 import {
-  Settings,
   LogOut,
-  Search,
   Bell,
   Menu,
   X,
-  UserRound,
-  KeyRound
+  UserRound
 } from 'lucide-react';
 import { useModal } from './components/NotificationModal';
 
@@ -170,10 +167,6 @@ function App() {
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
 
   // Search, Notifications, Profile, and Settings states
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<any>(null);
-  const [showSearchResults, setShowSearchResults] = useState(false);
-
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileCard, setShowProfileCard] = useState(false);
   const [showSettingsDrawer, setShowSettingsDrawer] = useState(false);
@@ -183,7 +176,7 @@ function App() {
   // Close topbar dropdowns when clicking anywhere outside them.
   // Trigger elements are excluded so their own onClick toggles keep working.
   useEffect(() => {
-    if (!showProfileCard && !showNotifications && !showSearchResults) return;
+    if (!showProfileCard && !showNotifications) return;
 
     const handlePointerDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -193,20 +186,16 @@ function App() {
       if (showNotifications && !target.closest('.topbar-notif-btn') && !target.closest('.notifications-dropdown')) {
         setShowNotifications(false);
       }
-      if (showSearchResults && !target.closest('.topbar-search-container') && !target.closest('.search-results-dropdown')) {
-        setShowSearchResults(false);
-      }
     };
 
     document.addEventListener('mousedown', handlePointerDown);
     return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [showProfileCard, showNotifications, showSearchResults]);
+  }, [showProfileCard, showNotifications]);
 
   // Close topbar dropdowns when navigating to a different screen
   useEffect(() => {
     setShowProfileCard(false);
     setShowNotifications(false);
-    setShowSearchResults(false);
   }, [activeView]);
 
   // Draft prepared by the SIMS Assistant, waiting for user review in the incident form
@@ -298,26 +287,6 @@ function App() {
     }
   };
 
-  const handleSearch = (q: string) => {
-    setSearchQuery(q);
-    if (!q.trim()) {
-      setSearchResults(null);
-      setShowSearchResults(false);
-      return;
-    }
-    
-    authFetch(`/api/search?q=${encodeURIComponent(q)}`)
-      .then(res => res.json())
-      .then(json => {
-        if (json.success) {
-          setSearchResults(json.data);
-          setShowSearchResults(true);
-        }
-      })
-      .catch(err => {
-        console.error('Search failed:', err);
-      });
-  };
 
   // Initial Load & LocalStorage-to-Database Migration
   useEffect(() => {
@@ -898,27 +867,11 @@ function App() {
             <h2 className="topbar-title">{getTopbarTitle()}</h2>
           </div>
           <div className="topbar-right">
-            <div className="topbar-search-container">
-              <Search className="topbar-search-icon" size={16} />
-              <input 
-                type="text" 
-                className="topbar-search-input" 
-                placeholder="Search database (incidents, BTO, TRA)..." 
-                value={searchQuery}
-                onChange={(e) => handleSearch(e.target.value)}
-              />
-            </div>
-            
-            <button className="topbar-btn" onClick={() => setShowSettingsDrawer(true)} title="System Settings">
-              <Settings size={18} />
-            </button>
-            
             <button
               className="topbar-btn topbar-notif-btn"
               onClick={() => {
                 setShowNotifications(!showNotifications);
                 setShowProfileCard(false);
-                setShowSearchResults(false);
               }}
               title="Notifications"
               style={{ position: 'relative' }}
@@ -936,7 +889,6 @@ function App() {
               onClick={() => {
                 setShowProfileCard(!showProfileCard);
                 setShowNotifications(false);
-                setShowSearchResults(false);
               }}
               style={{ cursor: 'pointer', userSelect: 'none' }}
             >
@@ -952,93 +904,6 @@ function App() {
             </div>
           </div>
 
-          {/* Search Dropdown Overlay */}
-          {showSearchResults && searchResults && (
-            <div className="search-results-dropdown">
-              <div className="search-results-header">
-                <span>Search Results for "{searchQuery}"</span>
-                <button onClick={() => setShowSearchResults(false)} className="search-close-btn">&times;</button>
-              </div>
-              <div className="search-results-body">
-                {searchResults.incidents && searchResults.incidents.length > 0 && (
-                  <div className="search-section">
-                    <h4>Incidents ({searchResults.incidents.length})</h4>
-                    <ul>
-                      {searchResults.incidents.map((inc: any) => (
-                        <li key={inc.id} onClick={() => {
-                          navigateToView('register');
-                          setShowSearchResults(false);
-                        }}>
-                          <div className="search-item-title">{inc.refNo} - {inc.place}</div>
-                          <div className="search-item-desc">{inc.natureOfLoss}</div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {searchResults.btoReports && searchResults.btoReports.length > 0 && (
-                  <div className="search-section">
-                    <h4>Back to Office Reports ({searchResults.btoReports.length})</h4>
-                    <ul>
-                      {searchResults.btoReports.map((rep: any) => (
-                        <li key={rep.id} onClick={() => {
-                          navigateToView('reports_archive');
-                          setShowSearchResults(false);
-                        }}>
-                          <div className="search-item-title">{rep.eventName} - {rep.officialName}</div>
-                          <div className="search-item-desc">{rep.venue} ({rep.date})</div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {searchResults.investigationReports && searchResults.investigationReports.length > 0 && (
-                  <div className="search-section">
-                    <h4>Investigation Reports ({searchResults.investigationReports.length})</h4>
-                    <ul>
-                      {searchResults.investigationReports.map((rep: any) => (
-                        <li key={rep.id} onClick={() => {
-                          navigateToView('reports_archive');
-                          setShowSearchResults(false);
-                        }}>
-                          <div className="search-item-title">{rep.subject}</div>
-                          <div className="search-item-desc">Officer: {rep.officerName} | Rank: {rep.rank}</div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {searchResults.traAudits && searchResults.traAudits.length > 0 && (
-                  <div className="search-section">
-                    <h4>TRA Checklist Audits ({searchResults.traAudits.length})</h4>
-                    <ul>
-                      {searchResults.traAudits.map((rep: any) => (
-                        <li key={rep.id} onClick={() => {
-                          navigateToView('reports_archive');
-                          setShowSearchResults(false);
-                        }}>
-                          <div className="search-item-title">{rep.officeName}</div>
-                          <div className="search-item-desc">Assessor: {rep.assessorName} | Location: {rep.officeLocation}</div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {(!searchResults.incidents || searchResults.incidents.length === 0) &&
-                 (!searchResults.btoReports || searchResults.btoReports.length === 0) &&
-                 (!searchResults.investigationReports || searchResults.investigationReports.length === 0) &&
-                 (!searchResults.traAudits || searchResults.traAudits.length === 0) && (
-                  <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                    No matching records found.
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
           {/* Notifications Dropdown Overlay */}
           {showNotifications && (
@@ -1100,15 +965,11 @@ function App() {
                   <span className="profile-field-label">Province Scope</span>
                   <span className="profile-field-val">{currentUser.province}</span>
                 </div>
-                <div className="profile-field">
-                  <span className="profile-field-label">Security Cleared Level</span>
-                  <span className="profile-field-val badge success" style={{ fontSize: '0.6rem', padding: '0.1rem 0.3rem', width: 'fit-content' }}>{currentUser.clearanceLevel}</span>
-                </div>
               </div>
-              <div className="profile-dropdown-footer" style={{ display: 'flex', gap: '0.5rem' }}>
+              <div className="profile-dropdown-footer">
                 <button
                   className="btn btn-primary"
-                  style={{ flex: 1, fontSize: '0.75rem', padding: '0.35rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}
+                  style={{ width: '100%', fontSize: '0.75rem', padding: '0.35rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}
                   onClick={() => {
                     setShowProfileCard(false);
                     setProfileInitialTab('personal');
@@ -1117,18 +978,6 @@ function App() {
                 >
                   <UserRound size={14} />
                   View Profile
-                </button>
-                <button
-                  className="btn btn-secondary"
-                  style={{ flex: 1, fontSize: '0.75rem', padding: '0.35rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}
-                  onClick={() => {
-                    setShowProfileCard(false);
-                    setProfileInitialTab('security');
-                    setActiveView('profile');
-                  }}
-                >
-                  <KeyRound size={14} />
-                  Change Password
                 </button>
               </div>
             </div>

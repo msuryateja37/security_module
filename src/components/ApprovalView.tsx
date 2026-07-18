@@ -5,6 +5,7 @@ import { ClipboardCheck, ShieldAlert, Award, CheckCircle2, FileText, FolderOpen,
 import { useModal } from './NotificationModal';
 import { useBreadcrumbTail } from './Breadcrumbs';
 import { getStatusChipColors } from '../utils/statusChips';
+import { Pagination } from './Pagination';
 
 // Approval Control Panel — role-aware workflow queues.
 // Chief Security Director: escalated cases awaiting an investigator, investigations
@@ -65,7 +66,13 @@ export const ApprovalView: React.FC<ApprovalViewProps> = ({ incidents, btoReport
       ];
 
   const [activeTab, setActiveTab] = useState<QueueKey>(tabs[0].key);
+  const [currentPage, setCurrentPage] = useState(1);
   const activeQueue: SecurityIncident[] = activeTab === 'reports' ? [] : queues[activeTab] || [];
+
+  // Reset pagination whenever the active queue changes
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab]);
 
   useBreadcrumbTail(tabs.find(t => t.key === activeTab)?.label);
 
@@ -132,7 +139,7 @@ export const ApprovalView: React.FC<ApprovalViewProps> = ({ incidents, btoReport
           <p style={{ fontSize: '0.82rem', color: 'hsl(var(--text-secondary))', marginBottom: '1.25rem' }}>{queueHint[activeTab]}</p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {activeQueue.map(incident => (
+            {activeQueue.slice((currentPage - 1) * 10, currentPage * 10).map(incident => (
               <div
                 key={incident.id}
                 className="glass-card"
@@ -218,6 +225,12 @@ export const ApprovalView: React.FC<ApprovalViewProps> = ({ incidents, btoReport
               </div>
             )}
           </div>
+          <Pagination
+            currentPage={currentPage}
+            totalItems={activeQueue.length}
+            itemsPerPage={10}
+            onPageChange={setCurrentPage}
+          />
         </div>
       ) : (
         <div className="glass-card" style={{ padding: '1.5rem' }}>

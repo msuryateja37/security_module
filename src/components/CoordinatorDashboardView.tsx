@@ -14,6 +14,7 @@ import {
   Zap,
 } from 'lucide-react';
 import type { UserProfile } from '../security/roleAccess';
+import { Pagination } from './Pagination';
 
 interface CoordinatorStats {
   province: string;
@@ -212,6 +213,7 @@ export const CoordinatorDashboardView: React.FC<CoordinatorDashboardViewProps> =
   const [stats, setStats] = useState<CoordinatorStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
   const hasFetched = useRef(false);
 
   const loadStats = useCallback(async () => {
@@ -431,7 +433,7 @@ export const CoordinatorDashboardView: React.FC<CoordinatorDashboardViewProps> =
                   </td>
                 </tr>
               )}
-              {stats.recentIncidents.map(inc => (
+              {(stats.recentIncidents || []).slice((currentPage - 1) * 10, currentPage * 10).map(inc => (
                 <tr
                   key={inc.id}
                   className="coord-table-row"
@@ -467,6 +469,12 @@ export const CoordinatorDashboardView: React.FC<CoordinatorDashboardViewProps> =
             </tbody>
           </table>
         </div>
+        <Pagination
+          currentPage={currentPage}
+          totalItems={(stats.recentIncidents || []).length}
+          itemsPerPage={10}
+          onPageChange={setCurrentPage}
+        />
       </div>
     </div>
   );

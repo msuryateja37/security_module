@@ -5,6 +5,7 @@ import { LEAVE_STATUS_BADGE } from '../types/leave';
 import { addDays, buildMonthGrid, isPublicHoliday, isWorkingDay, MONTH_NAMES } from '../utils/workdays';
 import { CalendarDays, ChevronLeft, ChevronRight, ListChecks, Plus, Send, X } from 'lucide-react';
 import { useModal } from './NotificationModal';
+import { Pagination } from './Pagination';
 
 interface LeavesViewProps {
   currentUser: UserProfile;
@@ -37,6 +38,7 @@ export const LeavesView: React.FC<LeavesViewProps> = ({ currentUser }) => {
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const authHeaders = {
     'x-username': currentUser.username,
@@ -354,7 +356,7 @@ export const LeavesView: React.FC<LeavesViewProps> = ({ currentUser }) => {
               <p>You have not requested any leave yet.</p>
             </div>
           )}
-          {batches.map(group => (
+          {batches.slice((currentPage - 1) * 10, currentPage * 10).map(group => (
             <div key={group[0].batchId} className="glass-card" style={{ padding: '1.25rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', borderBottom: '1px solid var(--border-color, #e5e7eb)', paddingBottom: '0.6rem', marginBottom: '0.75rem' }}>
                 <div>
@@ -398,6 +400,7 @@ export const LeavesView: React.FC<LeavesViewProps> = ({ currentUser }) => {
               </div>
             </div>
           ))}
+          <Pagination currentPage={currentPage} totalItems={batches.length} itemsPerPage={10} onPageChange={setCurrentPage} />
         </div>
       )}
     </div>

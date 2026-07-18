@@ -7,6 +7,29 @@ import { UserModel } from '../models/user.model.js';
 import { ResponseView } from '../views/response.view.js';
 import { AuthenticatedRequest } from '../security/auth.middleware.js';
 import { isNationalRole, isProvincialRole, UserProfile } from '../security/roleAccess.js';
+import { parsePagination, paginate } from '../utils/pagination.js';
+
+// Apply optional free-text search over the given fields, then respond with either
+// the full array (legacy) or a single page (when ?page/?pageSize is present).
+function respondList<T>(
+  res: Response,
+  req: AuthenticatedRequest,
+  records: T[],
+  searchFields: (r: T) => (string | undefined)[],
+  message: string
+): void {
+  let list = records;
+  const search = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
+  if (search) {
+    list = list.filter(r => searchFields(r).some(f => (f || '').toLowerCase().includes(search)));
+  }
+  const pageParams = parsePagination(req.query);
+  if (pageParams) {
+    ResponseView.sendPaginated(res, paginate(list, pageParams), message);
+    return;
+  }
+  ResponseView.sendSuccess(res, list, message);
+}
 
 // Provincial data segregation for report records (FR-033 / NFR-013).
 // Reports carry ownerId (users.username); the owner's province determines which
@@ -32,7 +55,7 @@ export const ReportController = {
   async getAllBto(req: AuthenticatedRequest, res: Response) {
     try {
       const reports = await scopeByOwner(await BtoReportModel.getAll(), req.user!);
-      ResponseView.sendSuccess(res, reports, 'Fetched BTO reports successfully');
+      respondList(res, req, reports, r => [r.officialName, r.eventName, r.venue, r.purpose], 'Fetched BTO reports successfully');
     } catch (error) {
       ResponseView.sendError(res, error as any, 'Failed to fetch BTO reports');
     }
@@ -61,7 +84,7 @@ export const ReportController = {
   async getAllInv(req: AuthenticatedRequest, res: Response) {
     try {
       const reports = await scopeByOwner(await InvReportModel.getAll(), req.user!);
-      ResponseView.sendSuccess(res, reports, 'Fetched investigation reports successfully');
+      respondList(res, req, reports, (r: any) => [r.subject, r.officerName, r.office, r.purpose], 'Fetched investigation reports successfully');
     } catch (error) {
       ResponseView.sendError(res, error as any, 'Failed to fetch investigation reports');
     }
@@ -97,7 +120,7 @@ export const ReportController = {
       } else if (!isNationalRole(user.role) && user.role !== 'system_administrator') {
         reports = reports.filter(r => r.ownerId === user.username);
       }
-      ResponseView.sendSuccess(res, reports, 'Fetched quarterly reports successfully');
+      respondList(res, req, reports, (r: any) => [r.province, r.program, r.branch, r.quarterNumber, r.year], 'Fetched quarterly reports successfully');
     } catch (error) {
       ResponseView.sendError(res, error as any, 'Failed to fetch quarterly reports');
     }
@@ -126,7 +149,7 @@ export const ReportController = {
   async getAllTra(req: AuthenticatedRequest, res: Response) {
     try {
       const audits = await scopeByOwner(await TraAuditModel.getAll(), req.user!);
-      ResponseView.sendSuccess(res, audits, 'Fetched TRA audits successfully');
+      respondList(res, req, audits, (r: any) => [r.officeName, r.assessorName, r.officeLocation, r.managerName], 'Fetched TRA audits successfully');
     } catch (error) {
       ResponseView.sendError(res, error as any, 'Failed to fetch TRA audits');
     }

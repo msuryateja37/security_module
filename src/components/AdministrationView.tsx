@@ -5,6 +5,7 @@ import { getPermissionsForRole } from '../security/roleAccess';
 import { Save, Settings2, Activity, UserPlus, RefreshCw, Mail, Smartphone, BellRing } from 'lucide-react';
 import { PROVINCES } from '../data/mockData';
 import { useModal } from './NotificationModal';
+import { Pagination } from './Pagination';
 
 interface AdministrationViewProps {
   checklists: ChecklistItem[];
@@ -97,6 +98,14 @@ export const AdministrationView: React.FC<AdministrationViewProps> = ({ checklis
   const [health, setHealth] = useState<any>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLogRow[]>([]);
   const [logSearchTerm, setLogSearchTerm] = useState('');
+  // System Logs use server-side pagination (the audit trail can grow unbounded).
+  const [logSearchDebounced, setLogSearchDebounced] = useState('');
+  const [logPage, setLogPage] = useState(1);
+  const [logTotal, setLogTotal] = useState(0);
+  const LOGS_PER_PAGE = 10;
+  // User Management uses client-side pagination (the account list is small/bounded).
+  const [userPage, setUserPage] = useState(1);
+  const USERS_PER_PAGE = 10;
 
   // Role Permissions Matrix State (matching Roles.png mockup)
   const [permissionMatrix, setPermissionMatrix] = useState<Record<string, Record<string, boolean>>>({
@@ -205,26 +214,51 @@ export const AdministrationView: React.FC<AdministrationViewProps> = ({ checklis
 
   const loadHealth = React.useCallback(async () => {
     try {
-      const [healthRes, logsRes] = await Promise.all([
-        fetch('/api/admin/system-health', { headers: authHeaders }),
-        fetch('/api/audit-logs', { headers: authHeaders })
-      ]);
-      const healthJson = await healthRes.json();
+      const res = await fetch('/api/admin/system-health', { headers: authHeaders });
+      const healthJson = await res.json();
       if (healthJson.success) setHealth(healthJson.data);
-      const logsJson = await logsRes.json();
-      if (logsJson.success) setAuditLogs(logsJson.data);
     } catch (err) {
       console.error('Failed to load system health:', err);
     }
   }, [currentUser.username]);
+
+  // Server-side paginated audit-log fetch (page + keyword search handled by the API).
+  const loadLogs = React.useCallback(async () => {
+    try {
+      const params = new URLSearchParams({ page: String(logPage), pageSize: String(LOGS_PER_PAGE) });
+      if (logSearchDebounced.trim()) params.set('search', logSearchDebounced.trim());
+      const res = await fetch(`/api/audit-logs?${params.toString()}`, { headers: authHeaders });
+      const json = await res.json();
+      if (json.success) {
+        setAuditLogs(json.data);
+        setLogTotal(json.pagination?.total ?? json.data.length);
+      }
+    } catch (err) {
+      console.error('Failed to load audit logs:', err);
+    }
+  }, [currentUser.username, logPage, logSearchDebounced]);
+
+  // Debounce the log keyword box so each keystroke doesn't hit the server.
+  React.useEffect(() => {
+    const t = setTimeout(() => setLogSearchDebounced(logSearchTerm), 300);
+    return () => clearTimeout(t);
+  }, [logSearchTerm]);
+
+  // A new search resets to the first page of results.
+  React.useEffect(() => {
+    setLogPage(1);
+  }, [logSearchDebounced]);
 
   React.useEffect(() => {
     if (activeTab === 'users') loadUsers();
     if (activeTab === 'sla' || activeTab === 'categories' || activeTab === 'notifications') {
       if (!configLoaded) loadConfig();
     }
-    if (activeTab === 'system_logs') loadHealth();
-  }, [activeTab, loadUsers, loadConfig, loadHealth, configLoaded]);
+    if (activeTab === 'system_logs') {
+      loadHealth();
+      loadLogs();
+    }
+  }, [activeTab, loadUsers, loadConfig, loadHealth, loadLogs, configLoaded]);
 
   const saveConfig = async (key: string, value: object, successMessage: string) => {
     try {
@@ -456,15 +490,12 @@ export const AdministrationView: React.FC<AdministrationViewProps> = ({ checklis
     );
   });
 
-  const filteredLogs = auditLogs.filter(log => {
-    const term = logSearchTerm.toLowerCase();
-    return (
-      log.username.toLowerCase().includes(term) ||
-      log.action.toLowerCase().includes(term) ||
-      log.resource.toLowerCase().includes(term) ||
-      (log.details && log.details.toLowerCase().includes(term))
-    );
-  });
+  // Audit logs are already filtered + paged by the server; render them directly.
+
+  // Client-side user pagination resets to page one when the user search changes.
+  React.useEffect(() => {
+    setUserPage(1);
+  }, [userSearchTerm]);
 
   const smallInput = { padding: '0.35rem 0.5rem', fontSize: '0.8rem' };
   const fieldLabel = { fontSize: '0.72rem', fontWeight: 600 as const, color: 'var(--text-secondary)', marginBottom: '0.2rem', display: 'block' };
@@ -728,7 +759,7 @@ export const AdministrationView: React.FC<AdministrationViewProps> = ({ checklis
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredUsers.map(user => (
+                  {filteredUsers.slice((userPage - 1) * USERS_PER_PAGE, userPage * USERS_PER_PAGE).map(user => (
                     <tr key={user.id} style={user.isActive === false ? { opacity: 0.55 } : undefined}>
                       <td style={{ fontWeight: 600 }}>{user.displayName}</td>
                       <td>{user.email || '—'}</td>
@@ -796,6 +827,12 @@ export const AdministrationView: React.FC<AdministrationViewProps> = ({ checklis
                   ))}
                 </tbody>
               </table>
+              <Pagination
+                currentPage={userPage}
+                totalItems={filteredUsers.length}
+                itemsPerPage={USERS_PER_PAGE}
+                onPageChange={setUserPage}
+              />
             </div>
           )}
         </div>
@@ -1043,7 +1080,7 @@ export const AdministrationView: React.FC<AdministrationViewProps> = ({ checklis
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredLogs.map(log => (
+                  {auditLogs.map(log => (
                     <tr key={log.id}>
                       <td style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>{new Date(log.timestamp).toLocaleString()}</td>
                       <td style={{ fontWeight: 600 }}>{log.username}</td>
@@ -1055,13 +1092,19 @@ export const AdministrationView: React.FC<AdministrationViewProps> = ({ checklis
                       </td>
                     </tr>
                   ))}
-                  {filteredLogs.length === 0 && (
+                  {auditLogs.length === 0 && (
                     <tr>
                       <td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>No audit logs matched search criteria.</td>
                     </tr>
                   )}
                 </tbody>
               </table>
+              <Pagination
+                currentPage={logPage}
+                totalItems={logTotal}
+                itemsPerPage={LOGS_PER_PAGE}
+                onPageChange={setLogPage}
+              />
             </div>
           </div>
         </div>

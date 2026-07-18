@@ -4,6 +4,7 @@ import { PROVINCES, MONTHS, PERFORMANCE_INDICATORS } from '../data/mockData';
 import { Archive, Printer, Eye, X, Search, Download } from 'lucide-react';
 import { useModal } from './NotificationModal';
 import { ROLE_USERS } from '../security/roleAccess';
+import { Pagination } from './Pagination';
 
 interface ReportsArchiveViewProps {
   btoReports: BackToOfficeReport[];
@@ -41,7 +42,13 @@ export const ReportsArchiveView: React.FC<ReportsArchiveViewProps> = ({
   const [selectedProvince, setSelectedProvince] = useState<ProvinceType>('Gauteng');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDoc, setSelectedDoc] = useState<DocItem | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
   const { showAlert } = useModal();
+
+  // Reset pagination on search or tab change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, activeTab]);
 
   // Quarterly metadata states
   const [qtrNumber, setQtrNumber] = useState<'Q1' | 'Q2' | 'Q3' | 'Q4'>('Q2');
@@ -579,7 +586,7 @@ export const ReportsArchiveView: React.FC<ReportsArchiveViewProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {filteredDocs.map(doc => (
+                {filteredDocs.slice((currentPage - 1) * 10, currentPage * 10).map(doc => (
                   <tr key={doc.id}>
                     <td>
                       <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
@@ -614,6 +621,12 @@ export const ReportsArchiveView: React.FC<ReportsArchiveViewProps> = ({
                 )}
               </tbody>
             </table>
+            <Pagination
+              currentPage={currentPage}
+              totalItems={filteredDocs.length}
+              itemsPerPage={10}
+              onPageChange={setCurrentPage}
+            />
           </div>
         </div>
       )}
