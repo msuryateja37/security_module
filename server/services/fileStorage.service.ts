@@ -54,7 +54,7 @@ const sanitizeFileName = (name: string): string => {
   return base.length > 0 ? base.slice(0, 180) : 'attachment';
 };
 
-// Case refNos look like SEC/2026/001 — slashes would nest extra folders, so
+// Case refNos look like GAU/07-2026/1001 — slashes would nest extra folders, so
 // they become dashes: one folder per case, named after the case.
 const sanitizeCaseFolder = (caseRef: string): string => {
   const safe = caseRef.replace(/[\\/]/g, '-').replace(/[^\w-]/g, '_');
@@ -150,7 +150,7 @@ export const FileStorageService = {
 
   /**
    * Persist a base64 payload for a case. caseRef names the per-case folder
-   * (the incident refNo, e.g. SEC/2026/001 -> folder SEC-2026-001).
+   * (the incident refNo, e.g. GAU/07-2026/1001 -> folder GAU-07-2026-1001).
    * Returns the storagePath to record on the attachment row and the decoded
    * size in bytes. Throws on oversized/empty payloads.
    */

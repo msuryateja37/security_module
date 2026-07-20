@@ -578,7 +578,7 @@ input::placeholder{color:#9AA8A1;}
         <div style="font-size:13px;color:#7C8B84;margin-bottom:18px;">Urgent flash incident dispatch form for immediate central monitoring in Pretoria HQ</div>
         <div style="padding:14px 16px;background:#FFF9EC;border:1px solid #F0DFB4;border-radius:10px;display:flex;gap:11px;margin-bottom:24px;">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#B98A2F" stroke-width="2" stroke-linecap="round" style="flex:none;margin-top:1px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
-          <div style="font-size:12.5px;color:#7A6230;line-height:1.55;"><strong>Immediate Dispatch Mode:</strong> Submitting this NOC Initial Notification will generate an urgent reference code (<strong>NOC/SEC/2026/xxxx</strong>) and route a real-time notification to National Operations Centre supervisors.</div>
+          <div style="font-size:12.5px;color:#7A6230;line-height:1.55;"><strong>Immediate Dispatch Mode:</strong> Submitting this NOC Initial Notification will generate an urgent reference code (<strong>GAU/07-2026/xxxx</strong>) and route a real-time notification to National Operations Centre supervisors.</div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px 24px;">
           <div><div style="font-size:12.5px;font-weight:700;color:#13241D;margin-bottom:7px;">NOC Duty Officer / Hotline Ref</div><input placeholder="e.g. NOC-HOTLINE-0800 / Desk 4" style="width:100%;padding:11px 14px;border:1.5px solid #D4DED9;border-radius:9px;font-family:'Public Sans';font-size:13.5px;color:#13241D;outline:none;transition:all .15s;" style-focus="border-color:#2FB98A;box-shadow:0 0 0 3px rgba(47,185,138,.15);"></div>
@@ -767,14 +767,14 @@ class Component extends DCLogic {
     const fmtRk = (n) => n >= 1000000 ? 'R ' + (n / 1000000).toFixed(2) + 'M' : 'R ' + Math.round(n / 1000) + 'k';
 
     const allCases = [
-      { ref: 'SEC/2026/2819', desc: 'Theft of laptop equipment', prov: 'Gauteng', place: 'Pretoria CBD Office', officer: 'Security Coordinator 1 (Gauteng)', status: 'UNDER REVIEW', cls: 'Confidential', date: '10 Jul 2026', due: 'Day 0/14 · due 30 Jul', loss: 86500 },
-      { ref: 'SEC/2026/2504', desc: 'Unauthorised access to server room', prov: 'Gauteng', place: 'Head Office, Arcadia', officer: 'Unassigned', status: 'SUBMITTED', cls: 'Secret', date: '10 Jul 2026', due: 'Day 0/14 · due 30 Jul', loss: 0 },
-      { ref: 'SEC/2026/9921', desc: 'Lost access card reported', prov: 'KwaZulu-Natal', place: 'Durban Regional Office', officer: 'Unassigned', status: 'OPEN', cls: 'Restricted', date: '08 Jul 2026', due: 'Day 2/14 · due 28 Jul', loss: 1200 },
-      { ref: 'SEC/2026/4500', desc: 'Vandalism of perimeter fencing', prov: 'Gauteng', place: 'Ekurhuleni Regional Office', officer: 'Chief Director', status: 'ESCALATED', cls: 'Unclassified', date: '08 Jul 2026', due: 'Day 2/14 · due 28 Jul', loss: 245000 },
-      { ref: 'SEC/2026/6211', desc: 'Document security breach', prov: 'Western Cape', place: 'Cape Town Office', officer: 'Chief Security Investigator', status: 'APPROVED', cls: 'Top Secret', date: '08 Jul 2026', due: 'Closed 09 Jul', loss: 412000 },
-      { ref: 'SEC/2026/5624', desc: 'Vehicle break-in, state fleet', prov: 'Gauteng', place: 'Johannesburg Office', officer: 'Security Coordinator 1 (Gauteng)', status: 'UNDER REVIEW', cls: 'Unclassified', date: '08 Jul 2026', due: 'Day 2/14 · due 28 Jul', loss: 38900 },
-      { ref: 'SEC/2026/3310', desc: 'Suspicious individual on premises', prov: 'Limpopo', place: 'Polokwane Office', officer: 'Chief Director', status: 'ESCALATED', cls: 'Restricted', date: '07 Jul 2026', due: 'Day 3/14 · due 27 Jul', loss: 0 },
-      { ref: 'SEC/2026/1529', desc: 'Missing survey equipment', prov: 'Gauteng', place: 'Tshwane Office', officer: 'Security Coordinator 1 (Gauteng)', status: 'APPROVED', cls: 'Confidential', date: '07 Jul 2026', due: 'Closed 08 Jul', loss: 132000 }
+      { ref: 'GAU/07-2026/2819', desc: 'Theft of laptop equipment', prov: 'Gauteng', place: 'Pretoria CBD Office', officer: 'Security Coordinator 1 (Gauteng)', status: 'UNDER REVIEW', cls: 'Confidential', date: '10 Jul 2026', due: 'Day 0/14 · due 30 Jul', loss: 86500 },
+      { ref: 'GAU/07-2026/2504', desc: 'Unauthorised access to server room', prov: 'Gauteng', place: 'Head Office, Arcadia', officer: 'Unassigned', status: 'SUBMITTED', cls: 'Secret', date: '10 Jul 2026', due: 'Day 0/14 · due 30 Jul', loss: 0 },
+      { ref: 'KZN/07-2026/9921', desc: 'Lost access card reported', prov: 'KwaZulu-Natal', place: 'Durban Regional Office', officer: 'Unassigned', status: 'OPEN', cls: 'Restricted', date: '08 Jul 2026', due: 'Day 2/14 · due 28 Jul', loss: 1200 },
+      { ref: 'GAU/07-2026/4500', desc: 'Vandalism of perimeter fencing', prov: 'Gauteng', place: 'Ekurhuleni Regional Office', officer: 'Chief Director', status: 'ESCALATED', cls: 'Unclassified', date: '08 Jul 2026', due: 'Day 2/14 · due 28 Jul', loss: 245000 },
+      { ref: 'WCP/07-2026/6211', desc: 'Document security breach', prov: 'Western Cape', place: 'Cape Town Office', officer: 'Chief Security Investigator', status: 'APPROVED', cls: 'Top Secret', date: '08 Jul 2026', due: 'Closed 09 Jul', loss: 412000 },
+      { ref: 'GAU/07-2026/5624', desc: 'Vehicle break-in, state fleet', prov: 'Gauteng', place: 'Johannesburg Office', officer: 'Security Coordinator 1 (Gauteng)', status: 'UNDER REVIEW', cls: 'Unclassified', date: '08 Jul 2026', due: 'Day 2/14 · due 28 Jul', loss: 38900 },
+      { ref: 'LIM/07-2026/3310', desc: 'Suspicious individual on premises', prov: 'Limpopo', place: 'Polokwane Office', officer: 'Chief Director', status: 'ESCALATED', cls: 'Restricted', date: '07 Jul 2026', due: 'Day 3/14 · due 27 Jul', loss: 0 },
+      { ref: 'GAU/07-2026/1529', desc: 'Missing survey equipment', prov: 'Gauteng', place: 'Tshwane Office', officer: 'Security Coordinator 1 (Gauteng)', status: 'APPROVED', cls: 'Confidential', date: '07 Jul 2026', due: 'Closed 08 Jul', loss: 132000 }
     ];
 
     const withChip = (c) => {
@@ -925,8 +925,8 @@ class Component extends DCLogic {
           }),
           selCount: Object.values(s.types).filter(Boolean).length,
           narrQs: narrData.map(([q, ph]) => ({ q, ph })),
-          submitStd: () => this.setState({ submittedRef: 'SEC/2026/' + (1000 + Math.floor(Math.random() * 9000)), step: 1, types: {} }),
-          submitNoc: () => this.setState({ submittedRef: 'NOC/SEC/2026/' + (1000 + Math.floor(Math.random() * 9000)), types: {} }),
+          submitStd: () => this.setState({ submittedRef: 'GAU/07-2026/' + (1000 + Math.floor(Math.random() * 9000)), step: 1, types: {} }),
+          submitNoc: () => this.setState({ submittedRef: 'NAT/07-2026/' + (1000 + Math.floor(Math.random() * 9000)), types: {} }),
           schemeStd: () => this.setState({ scheme: 'standard' }),
           resetForm: () => this.setState({ submittedRef: null, step: 1, types: {}, scheme: 'standard' }),
           successTitle: isNoc ? 'NOC Flash Alert Dispatched' : 'Incident Report Submitted',

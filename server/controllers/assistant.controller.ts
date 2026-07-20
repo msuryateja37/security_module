@@ -108,7 +108,7 @@ const ALL_TOOLS: ChatCompletionFunctionTool[] = [
     function: {
       name: 'get_incident_details',
       description:
-        'Get the full details of one incident by its reference number (e.g. SEC/2026/1234). ' +
+        'Get the full details of one incident by its reference number (e.g. GAU/07-2026/1234). ' +
         'Use when the user asks about a specific incident or wants an overview/summary of it.',
       parameters: {
         type: 'object',
@@ -131,7 +131,7 @@ const ALL_TOOLS: ChatCompletionFunctionTool[] = [
       parameters: {
         type: 'object',
         properties: {
-          refNo: { type: 'string', description: 'The incident reference number, e.g. SEC/2026/1234' }
+          refNo: { type: 'string', description: 'The incident reference number, e.g. GAU/07-2026/1234' }
         },
         required: ['refNo']
       }

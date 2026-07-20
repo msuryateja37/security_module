@@ -14,32 +14,32 @@ import { notifyReporterOfProgress } from './caseWorkflow.controller.js';
 import { query } from '../config/db.js';
 import { parsePagination, paginate } from '../utils/pagination.js';
 
-// Province name → 2–3 letter official South-African code used in the SIM ref format
+// Province name → 3-letter short form code used in incident reference numbers
 const PROVINCE_CODES: Record<string, string> = {
-  'Gauteng': 'GP',
-  'Western Cape': 'WC',
-  'Eastern Cape': 'EC',
+  'Gauteng': 'GAU',
+  'Western Cape': 'WCP',
+  'Eastern Cape': 'ECP',
   'KwaZulu Natal': 'KZN',
   'KwaZulu-Natal': 'KZN',
-  'Limpopo': 'LP',
-  'Mpumalanga': 'MP',
-  'Free State': 'FS',
-  'North West': 'NW',
-  'Northern Cape': 'NC',
+  'Limpopo': 'LIM',
+  'Mpumalanga': 'MPU',
+  'Free State': 'FST',
+  'North West': 'NWP',
+  'Northern Cape': 'NCP',
   'National': 'NAT',
 };
 
 /**
- * Generate a canonical SIM reference number:  SIM-{YYYY}-{provinceCode}-{seqN}
- * The sequence number is the total count of incidents in the DB + 1,
- * giving a globally increasing number regardless of province.
+ * Generate a canonical incident reference number: [PROV_SHORT]/[MM-YYYY]/[RANDOM_NUMBER]
+ * Example: GAU/07-2026/4829
  */
 async function generateSimRefNo(province: string): Promise<string> {
-  const year = new Date().getFullYear();
-  const code = PROVINCE_CODES[province] || province.substring(0, 2).toUpperCase();
-  const rows = await query<{ total: number }>('SELECT COUNT(*) AS total FROM incidents');
-  const seq = (rows[0]?.total ?? 0) + 1;
-  return `SIM-${year}-${code}-${seq}`;
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const year = now.getFullYear();
+  const code = PROVINCE_CODES[province] || (province ? province.replace(/[^A-Za-z]/g, '').substring(0, 3).toUpperCase() : 'NAT');
+  const randNum = Math.floor(1000 + Math.random() * 9000);
+  return `${code}/${month}-${year}/${randNum}`;
 }
 
 // Workflow: significant/big cases are escalated to the role configured in the
