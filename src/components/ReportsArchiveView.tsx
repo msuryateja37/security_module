@@ -263,14 +263,17 @@ export const ReportsArchiveView: React.FC<ReportsArchiveViewProps> = ({
       creator: r.program || '',
       data: r
     })),
-    ...(traAudits || []).map(r => ({
-      id: r.id,
-      type: 'tra' as DocType,
-      title: `TRA Checklist Audit: ${r.officeName || 'Facility'}`,
-      date: r.dateCreated || '',
-      creator: r.assessorName || '',
-      data: r
-    }))
+    ...(traAudits || []).map(r => {
+      const isPending = r.status ? r.status === 'pending_manager' : !r.managerSignature;
+      return {
+        id: r.id,
+        type: 'tra' as DocType,
+        title: `TRA Checklist Audit: ${r.officeName || 'Facility'} (${isPending ? 'In Progress' : 'Signed'})`,
+        date: r.dateCreated || '',
+        creator: r.assessorName || '',
+        data: r
+      };
+    })
   ].sort((a, b) => b.date.localeCompare(a.date));
 
   const filteredDocs = allDocs.filter(d => 
@@ -674,12 +677,18 @@ export const ReportsArchiveView: React.FC<ReportsArchiveViewProps> = ({
               {/* TRA Audit Content */}
               {selectedDoc.type === 'tra' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  <div><strong>Office / Facility:</strong> {selectedDoc.data.officeName}</div>
+                  <div><strong>Office / Facility:</strong> {selectedDoc.data.officeName || 'Facility'} ({selectedDoc.data.officeLocation || 'Gauteng'})</div>
                   <div><strong>Assessor:</strong> {selectedDoc.data.assessorName}</div>
-                  <div><strong>Date of Assessment:</strong> {selectedDoc.data.dateCreated}</div>
-                  <div><strong>Risk Score:</strong> <span className="badge danger">High Risk</span></div>
-                  <div><strong>Threats Identified:</strong> <p style={{ marginTop: '0.25rem', whiteSpace: 'pre-wrap' }}>{selectedDoc.data.threatsText}</p></div>
-                  <div><strong>Mitigation Plan:</strong> <p style={{ marginTop: '0.25rem', whiteSpace: 'pre-wrap' }}>{selectedDoc.data.mitigationPlan}</p></div>
+                  <div><strong>Manager Counter-Signer:</strong> {selectedDoc.data.managerName || 'Awaiting Manager Counter-Signature'}</div>
+                  <div><strong>Date of Assessment:</strong> {selectedDoc.data.dateCreated || selectedDoc.data.date}</div>
+                  <div><strong>Status:</strong> <span style={{
+                    background: (selectedDoc.data.status === 'pending_manager' || !selectedDoc.data.managerSignature) ? '#FEF3C7' : '#EEF7F2',
+                    color: (selectedDoc.data.status === 'pending_manager' || !selectedDoc.data.managerSignature) ? '#B45309' : '#1D8A50',
+                    fontWeight: 700,
+                    padding: '0.2rem 0.5rem',
+                    borderRadius: '4px',
+                    fontSize: '0.78rem'
+                  }}>{selectedDoc.data.status === 'pending_manager' || !selectedDoc.data.managerSignature ? 'In Progress' : 'Signed'}</span></div>
                 </div>
               )}
 

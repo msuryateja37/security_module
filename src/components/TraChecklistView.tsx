@@ -87,6 +87,12 @@ export const TraChecklistView: React.FC<TraChecklistViewProps> = ({ reports, onS
   const [signModal, setSignModal] = useState<null | 'assessor' | 'manager'>(null);
 
   const isManager = MANAGER_ROLES.includes(currentUser?.role);
+  
+  const latestReport = useMemo(() => {
+    if (!reports || reports.length === 0) return null;
+    return [...reports].sort((a, b) => (b.dateCreated || b.date || '').localeCompare(a.dateCreated || a.date || ''))[0];
+  }, [reports]);
+
   // A manager may counter-sign a viewed record only when it is still pending and
   // they are not the coordinator who submitted it.
   const canManagerSign = !!viewingReport
@@ -325,7 +331,7 @@ export const TraChecklistView: React.FC<TraChecklistViewProps> = ({ reports, onS
     onSubmitReport(report);
     handleCloseViewReport();
     setActiveTab('records');
-    showAlert('TRA checklist submitted and signed. It is now pending the manager’s counter-signature.', 'Submitted — Pending Manager', 'success');
+    showAlert('TRA checklist submitted and signed by assessor. Stored in Signed Records as In Progress until the manager counter-signs.', 'Submitted — In Progress', 'success');
   };
 
   const assessorSig = parseSignature(assessorSignature);
@@ -433,11 +439,64 @@ export const TraChecklistView: React.FC<TraChecklistViewProps> = ({ reports, onS
 
   return (
     <div className="screen-fade-up">
-      <div className="header-row" style={{ marginBottom: '1.5rem' }}>
+      <div className="header-row" style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h1 className="page-title">Threat & Risk Assessment (TRA)</h1>
           <p className="page-subtitle">53-item digital checklist &bull; MPSS 2009 & MISS 1996 aligned</p>
         </div>
+        {latestReport && (
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.1)',
+            border: '1px solid rgba(255, 255, 255, 0.18)',
+            backdropFilter: 'blur(8px)',
+            padding: '0.65rem 1.15rem',
+            borderRadius: 'var(--radius-md)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.85rem'
+          }}>
+            <div style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '50%',
+              background: 'rgba(255, 255, 255, 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#ffffff',
+              flexShrink: 0
+            }}>
+              <Clock size={18} />
+            </div>
+            <div>
+              <div style={{
+                fontSize: '0.68rem',
+                fontWeight: 700,
+                color: 'var(--color-mint-200)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em'
+              }}>
+                Latest Checklist Conducted
+              </div>
+              <div style={{
+                fontSize: '0.92rem',
+                fontWeight: 800,
+                color: '#ffffff',
+                marginTop: '2px',
+                lineHeight: 1.2
+              }}>
+                {latestReport.officeLocation || latestReport.officeName || 'Facility'} &bull; {latestReport.date} {latestReport.time ? `at ${latestReport.time}` : ''}
+              </div>
+              <div style={{
+                fontSize: '0.75rem',
+                color: 'var(--color-mint-300)',
+                marginTop: '2px'
+              }}>
+                Assessor: {latestReport.assessorName}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Sub tabs: Checklist & Signing vs Signed Records */}
@@ -463,7 +522,7 @@ export const TraChecklistView: React.FC<TraChecklistViewProps> = ({ reports, onS
       {viewingReport && (
         <div style={{ background: '#fef3c7', border: '1px solid #f59e0b', color: '#b45309', padding: '0.75rem 1rem', borderRadius: '6px', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>
-            Viewing Signed Record: {viewingReport.officeLocation || viewingReport.officeName} (Read-Only)
+            Viewing Record: {viewingReport.officeLocation || viewingReport.officeName} &bull; Status: {viewingReport.status === 'pending_manager' || !parseSignature(viewingReport.managerSignature).signed ? 'In Progress (Awaiting Manager Signature)' : 'Signed'} (Read-Only)
           </span>
           <button
             type="button"
@@ -727,7 +786,7 @@ export const TraChecklistView: React.FC<TraChecklistViewProps> = ({ reports, onS
                     alignItems: 'center',
                     gap: '0.25rem'
                   }}>
-                    {isPending ? <><Clock size={11} /> Pending Manager</> : <><Check size={11} /> Signed</>}
+                    {isPending ? <><Clock size={11} /> In Progress</> : <><Check size={11} /> Signed</>}
                   </span>
                   <span style={{
                     background: assessorSigned ? '#EEF7F2' : '#f3f4f6',

@@ -720,6 +720,9 @@ function App() {
   };
 
   const handleAddTraAudit = (report: TraAudit) => {
+    // Optimistically update state so the record is immediately visible as In Progress in Signed Records
+    setTraAudits(prev => [report, ...prev.filter(r => r.id !== report.id)]);
+
     authFetch('/api/tra-audits', {
       method: 'POST',
       headers: {
@@ -742,6 +745,7 @@ function App() {
     .catch(err => {
       console.error('Error adding TRA audit:', err);
       showAlert('Could not reach the server to save the TRA checklist. Please try again.', 'Save Failed', 'danger');
+      refreshTraAudits();
     });
   };
 
