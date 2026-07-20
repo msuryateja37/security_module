@@ -293,6 +293,7 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
       classification,
       reportedToSapsSsa: reportedToSaps,
       outcomeOfInvestigation: formType === 'noc' ? 'NOC Flash Notification dispatched. National Operations Centre review active.' : 'New report submitted. Preliminary review pending.',
+      responsiblePerson: 'Unassigned',
       status: 'Open',
       natureOfCase,
       workflowStage: 'Submitted',

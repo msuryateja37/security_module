@@ -287,18 +287,11 @@ export const IncidentController = {
       // Every new report enters the workflow at the start, regardless of client payload
       incident.workflowStage = 'Submitted';
 
-      // Auto-route to the province's effective coordinator (FR-006). A coordinator
-      // on approved leave is replaced in this pool by their acting substitute, so
-      // new incidents during the leave go to the leave cover automatically.
+      // No auto-assignment upon incident form submission.
+      // Every submitted incident enters as 'Unassigned' so that the Security Coordinator 
+      // can review the report and assign it to themselves.
       const provinceCoordinators = await LeaveService.getEffectiveCoordinatorsForProvince(incident.province);
-
-      if (provinceCoordinators.length === 1) {
-        // Automatically assign to the single effective coordinator
-        incident.responsiblePerson = provinceCoordinators[0].displayName;
-      } else {
-        // Leave unassigned for manual assignment if there are 0 or 2+ coordinators
-        incident.responsiblePerson = 'Unassigned';
-      }
+      incident.responsiblePerson = 'Unassigned';
 
       const success = await IncidentModel.create(incident);
       if (success) {
@@ -323,7 +316,7 @@ export const IncidentController = {
           actor: user.username,
           actorName: user.displayName,
           actorRole: user.role,
-          notes: `Incident ${incident.refNo} submitted and auto-routed to ${incident.responsiblePerson === 'Unassigned' ? `the ${incident.province} coordinator pool` : incident.responsiblePerson}`
+          notes: `Incident ${incident.refNo} submitted and routed to the ${incident.province} coordinator pool for review`
         });
 
         const templates = await ConfigService.getNotificationTemplates();
