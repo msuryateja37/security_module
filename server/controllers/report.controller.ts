@@ -10,6 +10,7 @@ import { isNationalRole, isProvincialRole, UserProfile } from '../security/roleA
 import { parsePagination, paginate } from '../utils/pagination.js';
 import { SignatureOtpService } from '../services/signatureOtp.service.js';
 import { AuditService } from '../security/audit.service.js';
+import { NotificationService } from '../services/notification.service.js';
 
 // Apply optional free-text search over the given fields, then respond with either
 // the full array (legacy) or a single page (when ?page/?pageSize is present).
@@ -169,6 +170,36 @@ export const ReportController = {
 
       const success = await TraAuditModel.create(audit);
       if (success) {
+        // Dispatch notifications to Security Directors, Deputy Directors, and Province Coordinators
+        try {
+          const allUsers = await UserModel.getAll();
+          const targetUsernames = allUsers
+            .filter(u => 
+              u.role === 'security_director' ||
+              u.role === 'deputy_director' ||
+              (u.role === 'security_coordinator' && u.province === req.user!.province)
+            )
+            .map(u => u.username)
+            .filter(un => un !== req.user!.username);
+
+          await NotificationService.notifyMany(
+            targetUsernames,
+            `TRA Checklist Submitted — ${audit.officeName}`,
+            `Assessor ${audit.assessorName} has submitted a Threat & Risk Assessment for ${audit.officeName || audit.officeLocation}. Status: In Progress (Pending Manager Counter-Signature).`,
+            `/reports-archive`
+          );
+
+          // Confirmation notification to assessor
+          await NotificationService.notify(
+            req.user!.username,
+            `TRA Checklist Submitted`,
+            `Your Threat & Risk Assessment for ${audit.officeName || audit.officeLocation} was submitted successfully and is stored as In Progress pending manager review.`,
+            `/reports-archive`
+          );
+        } catch (notifErr) {
+          console.error('[ReportController] Failed to dispatch TRA submission notifications:', notifErr);
+        }
+
         ResponseView.sendSuccess(res, audit, 'Created TRA audit successfully', 201);
       } else {
         ResponseView.sendError(res, 'Failed to create record', 'Operation failed');
@@ -241,6 +272,28 @@ export const ReportController = {
       const success = await TraAuditModel.signAsManager(id, signature, user.displayName);
       if (!success) {
         return ResponseView.sendError(res, 'Failed to save manager signature', 'Operation failed');
+      }
+
+      // Dispatch notifications upon manager sign-off
+      try {
+        const allUsers = await UserModel.getAll();
+        const targetUsernames = allUsers
+          .filter(u => 
+            u.role === 'security_director' ||
+            u.role === 'deputy_director' ||
+            (record.ownerId && u.username === record.ownerId) ||
+            (u.role === 'security_coordinator' && u.province === user.province)
+          )
+          .map(u => u.username);
+
+        await NotificationService.notifyMany(
+          targetUsernames,
+          `TRA Checklist Counter-Signed — ${record.officeName}`,
+          `Manager ${user.displayName} has counter-signed the Threat & Risk Assessment for ${record.officeName}. Status is now updated to Signed.`,
+          `/reports-archive`
+        );
+      } catch (notifErr) {
+        console.error('[ReportController] Failed to dispatch TRA manager sign notifications:', notifErr);
       }
 
       await AuditService.log({
