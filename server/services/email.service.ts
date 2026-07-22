@@ -5,6 +5,11 @@ import nodemailer from 'nodemailer';
 //   SMTP_HOST, SMTP_PORT (default 587), SMTP_USER, SMTP_PASS, SMTP_FROM
 // When SMTP_HOST is not set (local development) sends are logged and skipped,
 // so the rest of the notification flow keeps working without a mail server.
+//
+// MAIL_REDIRECT_TO — UAT/testing safety net. When set, EVERY outbound message is
+// delivered to that single address instead of the real recipient, with the intended
+// recipient preserved in the subject and body so routing can still be verified.
+// This MUST be left unset in production, where mail goes to the real officers.
 
 let transporter: nodemailer.Transporter | null = null;
 
@@ -31,16 +36,25 @@ export const EmailService = {
       return false;
     }
 
+    // In redirected (UAT) mode the real recipient is kept visible, not lost
+    const redirectTo = process.env.MAIL_REDIRECT_TO;
+    const recipient = redirectTo || to;
+    const finalSubject = redirectTo ? `[SIMS] [→ ${to}] ${subject}` : `[SIMS] ${subject}`;
+    const finalText = redirectTo
+      ? `[TEST REDIRECT] This message was addressed to ${to} and was redirected here for verification.\n\n${text}`
+      : text;
+
     try {
       await transport.sendMail({
         from: process.env.SMTP_FROM || 'sims-noreply@dlrrd.gov.za',
-        to,
-        subject: `[SIMS] ${subject}`,
-        text
+        to: recipient,
+        subject: finalSubject,
+        text: finalText
       });
+      if (redirectTo) console.log(`[EmailService] Sent (redirected ${to} → ${redirectTo}): "${subject}"`);
       return true;
     } catch (err) {
-      console.error(`[EmailService] Failed to send email to ${to}:`, err);
+      console.error(`[EmailService] Failed to send email to ${recipient}:`, err);
       return false;
     }
   }

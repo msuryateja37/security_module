@@ -338,10 +338,13 @@ export const IncidentController = {
             caseLink
           );
 
-          // FR-007: the national office (Chief Security Director) is notified of ALL incidents
+          // FR-007: the national office is notified of ALL incidents — the Deputy Director:
+          // Physical Security (national monitoring/escalations) and the Chief Security Director
           const allUsers = await UserModel.getAll();
           await NotificationService.notifyMany(
-            allUsers.filter(u => u.role === 'security_director').map(u => u.username),
+            allUsers
+              .filter(u => u.role === 'deputy_director' || u.role === 'security_director')
+              .map(u => u.username),
             rendered.title,
             rendered.message,
             caseLink
