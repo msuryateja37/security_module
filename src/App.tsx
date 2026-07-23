@@ -795,10 +795,14 @@ function App() {
     }
 
     if (activeView === 'case_detail') {
+      // The fallback must also be access-checked — roles without 'my_cases' (e.g. Deputy
+      // Director) would otherwise be sent to a view that renders nothing.
       const origin: AppView =
         caseOrigin && caseOrigin !== 'case_detail' && canAccessView(currentUser.role, caseOrigin)
           ? caseOrigin
-          : 'my_cases';
+          : canAccessView(currentUser.role, 'my_cases')
+            ? 'my_cases'
+            : getDefaultViewForRole(currentUser.role);
       return [
         home,
         {
@@ -1169,16 +1173,28 @@ function App() {
             />
           )}
 
-          {activeView === 'case_detail' && caseDetailId && (
-            <CaseDetailView
-              incidentId={caseDetailId}
-              currentUser={currentUser}
-              onBack={() => {
-                setCaseDetailId(null);
-                setActiveView(canAccessView(currentUser.role, 'my_cases') ? 'my_cases' : getDefaultViewForRole(currentUser.role));
-              }}
-              onChanged={refreshIncidents}
-            />
+          {activeView === 'case_detail' && (
+            caseDetailId ? (
+              <CaseDetailView
+                incidentId={caseDetailId}
+                currentUser={currentUser}
+                onBack={() => {
+                  setCaseDetailId(null);
+                  setActiveView(canAccessView(currentUser.role, 'my_cases') ? 'my_cases' : getDefaultViewForRole(currentUser.role));
+                }}
+                onChanged={refreshIncidents}
+              />
+            ) : (
+              // 'case_detail' always passes canAccessView, so a missing id would otherwise
+              // leave the whole page blank with no guard to recover it.
+              <div className="glass-card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                <h3 style={{ marginBottom: '0.5rem' }}>No case selected</h3>
+                <p style={{ marginBottom: '1.5rem' }}>This case file could not be opened because no incident reference was supplied.</p>
+                <button className="btn btn-secondary" onClick={() => setActiveView(getDefaultViewForRole(currentUser.role))}>
+                  Back to {getViewLabelForRole(getDefaultViewForRole(currentUser.role), currentUser.role)}
+                </button>
+              </div>
+            )
           )}
 
           {activeView === 'approval' && canAccessView(currentUser.role, 'approval') && (
