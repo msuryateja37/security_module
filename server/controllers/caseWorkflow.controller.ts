@@ -38,7 +38,10 @@ export const canReadIncident = (user: UserProfile, incident: SecurityIncident): 
     case 'system_administrator':
       return true;
     case 'security_coordinator':
-      return incident.province === user.province || incident.province === 'National';
+      // Own province, National, or a case explicitly assigned to them (cross-province assignment)
+      return incident.province === user.province ||
+        incident.province === 'National' ||
+        incident.responsiblePerson === user.displayName;
     case 'chief_security_investigator':
       return incident.responsiblePerson === user.displayName || incident.assignedInvestigator === user.displayName;
     default: // employee — own reports only
@@ -52,11 +55,14 @@ export const canReadIncident = (user: UserProfile, incident: SecurityIncident): 
 
 const isCoordinatorForCase = (user: UserProfile, incident: SecurityIncident): boolean => {
   if (user.role !== 'security_coordinator') return false;
-  if (incident.province !== user.province) return false;
+  // A coordinator explicitly assigned by a Director/Deputy Director owns the case even
+  // if it sits in another province (cross-province assignment from the "others" list).
+  const assignedToMe = incident.responsiblePerson === user.displayName;
+  if (incident.province !== user.province && !assignedToMe) return false;
   return (
     !incident.responsiblePerson ||
     incident.responsiblePerson === 'Unassigned' ||
-    incident.responsiblePerson === user.displayName
+    assignedToMe
   );
 };
 
@@ -171,8 +177,15 @@ export const CaseWorkflowController = {
 
       await audit(user, 'READ', id, `Opened case file ${incident.refNo}`);
 
+      // The coordinator's 7-day window starts when they were assigned or self-accepted —
+      // the earliest such timeline event (same derivation as the pre-breach SLA monitor).
+      const coordinatorAssignedAt = events
+        .filter(e => e.eventType === 'COORDINATOR_ASSIGNED' || e.eventType === 'REVIEW_STARTED')
+        .map(e => e.dateCreated)
+        .sort()[0] || null;
+
       ResponseView.sendSuccess(res, {
-        incident: { ...incident, slaInfo: SlaService.calculateSla(incident, slaRules) },
+        incident: { ...incident, slaInfo: SlaService.calculateSla(incident, slaRules, coordinatorAssignedAt) },
         attachments,
         events,
         comments
@@ -746,6 +759,98 @@ export const CaseWorkflowController = {
     }
   },
 
+  /**
+   * Coordinators a Director/Deputy Director may assign an unassigned incident to.
+   * The incident's own province is returned first (leave-aware — a coordinator on
+   * approved leave is excluded, their acting substitute appears instead), then all
+   * other provinces' coordinators as a fallback pool.
+   */
+  async listAssignableCoordinators(req: AuthenticatedRequest, res: Response) {
+    try {
+      const user = req.user!;
+      const id = req.params.id as string;
+      const incident = await IncidentModel.getById(id);
+      if (!incident) {
+        return ResponseView.sendError(res, 'Incident not found', 'Operation failed', 404);
+      }
+      if (!canReadIncident(user, incident)) {
+        return ResponseView.sendError(res, 'Access denied for this incident', 'Forbidden', 403);
+      }
+
+      const lean = (u: UserProfile) => ({
+        username: u.username,
+        displayName: u.displayName,
+        province: u.province,
+        office: u.office
+      });
+
+      const recommended = (await LeaveService.getEffectiveCoordinatorsForProvince(incident.province)).map(lean);
+      const recommendedUsernames = new Set(recommended.map(c => c.username));
+      const others = (await UserModel.getAll())
+        .filter(u => u.role === 'security_coordinator' && !recommendedUsernames.has(u.username))
+        .map(lean)
+        .sort((a, b) => (a.province || '').localeCompare(b.province || '') || a.displayName.localeCompare(b.displayName));
+
+      ResponseView.sendSuccess(res, { province: incident.province, recommended, others }, 'Fetched assignable coordinators successfully');
+    } catch (error) {
+      ResponseView.sendError(res, error as any, 'Failed to fetch assignable coordinators');
+    }
+  },
+
+  /** Director / Deputy Director assigns an unassigned incident to a Security Coordinator. */
+  async assignCoordinator(req: AuthenticatedRequest, res: Response) {
+    try {
+      const user = req.user!;
+      const id = req.params.id as string;
+      const { coordinatorUsername } = req.body || {};
+
+      if (!coordinatorUsername) {
+        return ResponseView.sendError(res, 'coordinatorUsername is required', 'Validation failed', 400);
+      }
+
+      const incident = await IncidentModel.getById(id);
+      if (!incident) {
+        return ResponseView.sendError(res, 'Incident not found', 'Operation failed', 404);
+      }
+      // Coordinator assignment is a pre-review routing action: only an unassigned,
+      // still-Submitted case can be directed to a coordinator this way.
+      const stage = incident.workflowStage || 'Submitted';
+      const unassigned = !incident.responsiblePerson || incident.responsiblePerson === 'Unassigned';
+      if (stage !== 'Submitted' || !unassigned) {
+        return ResponseView.sendError(res, `This incident is already being handled (stage: ${stage}, owner: ${incident.responsiblePerson || 'Unassigned'})`, 'Validation failed', 400);
+      }
+
+      const coordinator = await UserModel.getByUsername(coordinatorUsername);
+      if (!coordinator || coordinator.role !== 'security_coordinator') {
+        return ResponseView.sendError(res, 'Selected user is not an active Security Coordinator', 'Validation failed', 400);
+      }
+
+      const updates: Partial<SecurityIncident> = {
+        workflowStage: 'Under Review',
+        status: 'Under Investigation',
+        responsiblePerson: coordinator.displayName
+      };
+      await IncidentModel.update(id, updates);
+      const crossProvince = coordinator.province !== incident.province ? ` (cross-province assignment from ${coordinator.province})` : '';
+      await recordEvent(id, 'COORDINATOR_ASSIGNED', 'Under Review', user,
+        `${user.displayName} assigned ${coordinator.displayName} to review incident ${incident.refNo}${crossProvince}`);
+      await audit(user, 'UPDATE', id, `Assigned coordinator ${coordinator.displayName} to ${incident.refNo}`);
+
+      await notifyFromTemplate('coordinator_assigned', {
+        refNo: incident.refNo,
+        province: incident.province,
+        assignedBy: user.displayName
+      }, [coordinator.username], caseLink(id));
+
+      await notifyReporterOfProgress(incident, user,
+        `Your incident ${incident.refNo} has been assigned to ${coordinator.displayName} for preliminary review.`);
+
+      ResponseView.sendSuccess(res, { ...incident, ...updates }, 'Coordinator assigned successfully');
+    } catch (error) {
+      ResponseView.sendError(res, error as any, 'Failed to assign coordinator');
+    }
+  },
+
   /** Chief Investigator submits field findings for the director's approval. */
   async submitInvestigation(req: AuthenticatedRequest, res: Response) {
     try {
@@ -901,6 +1006,177 @@ export const CaseWorkflowController = {
       ResponseView.sendSuccess(res, { ...incident, ...updates }, 'Investigation approved');
     } catch (error) {
       ResponseView.sendError(res, error as any, 'Failed to record approval decision');
+    }
+  },
+
+  /**
+   * The responsible coordinator (7-day preliminary window) or the assigned investigator
+   * (14-day investigation window) requests extra working days when their window is at
+   * risk or overdue. The request goes to the Chief Security Director + Deputy Director,
+   * who approve or deny it. On approval the granted days feed every SLA clock so the
+   * breach indicators recover (see SlaService.calculateSla).
+   */
+  async requestExtension(req: AuthenticatedRequest, res: Response) {
+    try {
+      const user = req.user!;
+      const id = req.params.id as string;
+      const { days, reason } = req.body || {};
+
+      const incident = await IncidentModel.getById(id);
+      if (!incident) {
+        return ResponseView.sendError(res, 'Incident not found', 'Operation failed', 404);
+      }
+      if (!canReadIncident(user, incident)) {
+        return ResponseView.sendError(res, 'Access denied for this incident', 'Forbidden', 403);
+      }
+      if (incident.status === 'Closed') {
+        return ResponseView.sendError(res, 'Closed cases are immutable', 'Validation failed', 400);
+      }
+
+      const stage = incident.workflowStage || 'Submitted';
+      const isResponsibleCoordinator =
+        user.role === 'security_coordinator' && incident.responsiblePerson === user.displayName && stage === 'Under Review';
+      const isCaseInvestigator =
+        user.role === 'chief_security_investigator' &&
+        (incident.assignedInvestigator === user.displayName || incident.responsiblePerson === user.displayName) &&
+        stage === 'Investigation';
+      if (!isResponsibleCoordinator && !isCaseInvestigator) {
+        return ResponseView.sendError(res, 'Only the responsible coordinator (during review) or the assigned investigator (during the field investigation) may request an extension', 'Forbidden', 403);
+      }
+
+      const rules = await ConfigService.getSlaRules();
+      const maxDays = rules.maxExtensionDays ?? 2;
+      const reqDays = Math.floor(Number(days));
+      if (!Number.isFinite(reqDays) || reqDays < 1 || reqDays > maxDays) {
+        return ResponseView.sendError(res, `days must be between 1 and ${maxDays}`, 'Validation failed', 400);
+      }
+      if (!reason || !String(reason).trim()) {
+        return ResponseView.sendError(res, 'A reason for the extension is required', 'Validation failed', 400);
+      }
+      if ((incident.extensionStatus || '') === 'Pending') {
+        return ResponseView.sendError(res, 'An extension request is already awaiting a decision on this case', 'Validation failed', 400);
+      }
+
+      // Gate: the requester's window must be at risk or overdue (their "day 6/7").
+      const events = await CaseEventModel.getByIncident(id);
+      const coordinatorAssignedAt = events
+        .filter(e => e.eventType === 'COORDINATOR_ASSIGNED' || e.eventType === 'REVIEW_STARTED')
+        .map(e => e.dateCreated)
+        .sort()[0] || null;
+      const slaInfo = SlaService.calculateSla(incident, rules, coordinatorAssignedAt);
+      let windowStatus: 'On Track' | 'At Risk' | 'Overdue';
+      if (isResponsibleCoordinator) {
+        windowStatus = slaInfo.coordinatorWindow?.status ?? 'On Track';
+      } else {
+        const target = rules.investigationWorkingDays;
+        windowStatus = slaInfo.daysRemaining < 0 ? 'Overdue'
+          : slaInfo.daysRemaining <= Math.ceil(target * (rules.atRiskThresholdPercent / 100)) ? 'At Risk'
+          : 'On Track';
+      }
+      if (windowStatus === 'On Track') {
+        return ResponseView.sendError(res, 'An extension can only be requested once your investigation window is at risk or overdue', 'Validation failed', 400);
+      }
+
+      const requestedAt = new Date().toISOString();
+      const updates: Partial<SecurityIncident> = {
+        extensionStatus: 'Pending',
+        extensionRequestedBy: user.displayName,
+        extensionRequestedByRole: user.role,
+        extensionRequestedAt: requestedAt,
+        extensionRequestReason: String(reason).trim(),
+        extensionRequestedDays: reqDays,
+        // Clear any previous decision so the case file shows only the live request
+        extensionDecidedBy: '',
+        extensionDecidedByRole: '',
+        extensionDecidedAt: '',
+        extensionDecisionNote: ''
+      };
+      await IncidentModel.update(id, updates);
+      await recordEvent(id, 'EXTENSION_REQUESTED', stage, user,
+        `Requested a ${reqDays}-working-day time extension (${user.roleLabel}). Reason: ${String(reason).trim()}`);
+      await audit(user, 'UPDATE', id, `Requested a ${reqDays}-day extension on ${incident.refNo}`);
+
+      const vars = {
+        refNo: incident.refNo,
+        province: incident.province,
+        requestedBy: user.displayName,
+        requesterRole: user.roleLabel,
+        days: reqDays,
+        daysPlural: reqDays === 1 ? '' : 's',
+        reason: String(reason).trim()
+      };
+      await notifyFromTemplateToRole('extension_requested', vars, 'security_director', caseLink(id));
+      await notifyFromTemplateToRole('extension_requested', vars, 'deputy_director', caseLink(id));
+
+      ResponseView.sendSuccess(res, { ...incident, ...updates }, 'Extension request submitted — the Director and Deputy Director have been notified');
+    } catch (error) {
+      ResponseView.sendError(res, error as any, 'Failed to submit the extension request');
+    }
+  },
+
+  /**
+   * The Chief Security Director or Deputy Director approves or denies a pending
+   * extension request, with a message back to the requester. Approval adds the
+   * requested working days to the cumulative grant (extensionDaysGranted), which
+   * lifts the breach on every SLA clock on the next read.
+   */
+  async decideExtension(req: AuthenticatedRequest, res: Response) {
+    try {
+      const user = req.user!;
+      const id = req.params.id as string;
+      const { decision, note } = req.body || {};
+
+      if (!['approve', 'deny'].includes(decision)) {
+        return ResponseView.sendError(res, "decision must be 'approve' or 'deny'", 'Validation failed', 400);
+      }
+      if (user.role !== 'security_director' && user.role !== 'deputy_director') {
+        return ResponseView.sendError(res, 'Only the Chief Security Director or Deputy Director may decide an extension request', 'Forbidden', 403);
+      }
+      if (decision === 'deny' && (!note || !String(note).trim())) {
+        return ResponseView.sendError(res, 'A message is required when denying an extension request', 'Validation failed', 400);
+      }
+
+      const incident = await IncidentModel.getById(id);
+      if (!incident) {
+        return ResponseView.sendError(res, 'Incident not found', 'Operation failed', 404);
+      }
+      if ((incident.extensionStatus || '') !== 'Pending') {
+        return ResponseView.sendError(res, 'There is no pending extension request to decide on this case', 'Validation failed', 400);
+      }
+
+      const decidedAt = new Date().toISOString();
+      const reqDays = Number(incident.extensionRequestedDays) || 0;
+      const trimmedNote = note ? String(note).trim() : '';
+      const approved = decision === 'approve';
+
+      const updates: Partial<SecurityIncident> = {
+        extensionStatus: approved ? 'Approved' : 'Denied',
+        extensionDecidedBy: user.displayName,
+        extensionDecidedByRole: user.role,
+        extensionDecidedAt: decidedAt,
+        extensionDecisionNote: trimmedNote,
+        ...(approved ? { extensionDaysGranted: (Number(incident.extensionDaysGranted) || 0) + reqDays } : {})
+      };
+      await IncidentModel.update(id, updates);
+      await recordEvent(id, approved ? 'EXTENSION_GRANTED' : 'EXTENSION_DENIED', incident.workflowStage || '', user,
+        `${approved ? 'Granted' : 'Denied'} the ${reqDays}-working-day extension requested by ${incident.extensionRequestedBy}.${trimmedNote ? ` Message: ${trimmedNote}` : ''}`);
+      await audit(user, 'UPDATE', id, `${approved ? 'Approved' : 'Denied'} the extension request on ${incident.refNo}`);
+
+      // Notify the requester (stored by display name)
+      const requester = (await UserModel.getAll()).find(u => u.displayName === incident.extensionRequestedBy);
+      if (requester) {
+        await notifyFromTemplate('extension_decided', {
+          refNo: incident.refNo,
+          decidedBy: user.displayName,
+          decision: approved ? 'approved' : 'denied',
+          days: reqDays,
+          noteSuffix: trimmedNote ? ` Message: ${trimmedNote}` : ''
+        }, [requester.username], caseLink(id));
+      }
+
+      ResponseView.sendSuccess(res, { ...incident, ...updates }, `Extension request ${approved ? 'approved' : 'denied'}`);
+    } catch (error) {
+      ResponseView.sendError(res, error as any, 'Failed to record the extension decision');
     }
   }
 };

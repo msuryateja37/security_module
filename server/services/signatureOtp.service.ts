@@ -34,11 +34,19 @@ export const SignatureOtpService = {
     pending.set(username, { pin, expiresAt: Date.now() + PIN_TTL_MS, attempts: 0 });
 
     const subject = 'Your signature confirmation PIN';
-    const body =
-      `Your one-time PIN to confirm your ${purpose} is: ${pin}\n\n` +
-      `This PIN expires in 10 minutes. If you did not initiate a signature, ignore this email.`;
+    const message =
+      `Your one-time PIN to confirm your ${purpose} is:\n\n` +
+      `${pin}\n\n` +
+      `Enter this PIN in the portal to complete your signature.`;
 
-    const emailed = email ? await EmailService.send(email, subject, body) : false;
+    const emailed = email
+      ? await EmailService.send({
+          to: email,
+          subject,
+          message,
+          footnote: 'This PIN expires in 10 minutes. If you did not initiate a signature, please ignore this email and notify your security administrator.'
+        })
+      : false;
 
     // Only expose the PIN when it could not be delivered by email AND we are not
     // running in production — this keeps the flow usable in local development.

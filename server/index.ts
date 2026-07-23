@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { getDbConnection } from './config/db.js';
 import apiRouter from './routes/api.routes.js';
 import { startLeaveScheduler } from './jobs/leave.scheduler.js';
+import { startSlaScheduler } from './jobs/sla.scheduler.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,6 +20,9 @@ getDbConnection()
 
 // Daily leave sweep (expiry, reminders, acting-coordinator activation/reversion)
 startLeaveScheduler();
+
+// Hourly assignment-SLA sweep (breach alerts to national roles + timeline record)
+startSlaScheduler();
 
 // Middleware — the JSON limit accommodates base64 attachment uploads
 // (15 MB binary ≈ 20 MB base64, see server/services/fileStorage.service.ts)

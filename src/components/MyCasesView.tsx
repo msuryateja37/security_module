@@ -1,36 +1,26 @@
 import React, { useMemo, useState } from 'react';
 import type { SecurityIncident } from '../types/security';
 import { getViewLabelForRole } from '../security/roleAccess';
-import { Briefcase, Eye, Search, UserCheck, ArrowUpCircle, X, Send, Sparkles, ShieldAlert, ShieldCheck, Check, Info } from 'lucide-react';
+import { Briefcase, Eye, Search, UserCheck, X, Sparkles, ShieldAlert, ShieldCheck, Check, Info } from 'lucide-react';
 import { useModal } from './NotificationModal';
 import { Pagination } from './Pagination';
 import { triageCase } from '../utils/caseTriage';
-import type { TriageResult } from '../utils/caseTriage';
 import { getCaseStageLabel, getCaseTimeline, getStatusChipColors } from '../utils/statusChips';
 
 interface MyCasesViewProps {
   incidents: SecurityIncident[];
   currentUser: any;
   onUpdateIncident: (incident: SecurityIncident) => void;
-  onEscalateIncident: (
-    incidentId: string,
-    escalation: Pick<SecurityIncident, 'escalationLevel' | 'escalationReason' | 'escalationNotes'>
-  ) => Promise<SecurityIncident>;
   onSelectCase: (incident: SecurityIncident) => void;
 }
 
 // Status filter chips shown in the register filter bar (design handoff §4)
 const STATUS_FILTERS = ['All Cases', 'Submitted', 'Under Review', 'Investigation', 'Escalated', 'Approved'];
 
-export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser, onUpdateIncident, onEscalateIncident, onSelectCase }) => {
+export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser, onUpdateIncident, onSelectCase }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('All Cases');
   const [coordinatorTab, setCoordinatorTab] = useState<'assigned' | 'unassigned'>('assigned');
-  const [escalationCase, setEscalationCase] = useState<SecurityIncident | null>(null);
-  const [escalationLevel, setEscalationLevel] = useState<SecurityIncident['escalationLevel']>('Major');
-  const [escalationReason, setEscalationReason] = useState('');
-  const [escalationNotes, setEscalationNotes] = useState('');
-  const [isEscalating, setIsEscalating] = useState(false);
   const [triageTarget, setTriageTarget] = useState<SecurityIncident | null>(null);
   // Quick-view case drawer (right-side panel per design handoff)
   const [drawerCase, setDrawerCase] = useState<SecurityIncident | null>(null);
@@ -126,53 +116,6 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
         showAlert(`Case ${incident.refNo} has been successfully assigned to your portfolio.`, 'Case Assigned', 'success');
       }
     });
-  };
-
-  const openEscalationForm = (incident: SecurityIncident, suggestedReason = '') => {
-    setEscalationCase(incident);
-    setEscalationLevel(
-      incident.classification === 'Top Secret' || incident.classification === 'Secret'
-        ? 'Critical'
-        : 'Major'
-    );
-    setEscalationReason(suggestedReason);
-    setEscalationNotes('');
-  };
-
-  // Map the triage engine's strongest risk factor onto the escalation form's reason options.
-  const suggestEscalationReason = (triage: TriageResult): string => {
-    const factors = triage.reasons.filter(r => r.kind === 'risk').map(r => r.factor);
-    if (factors.some(f => f.includes('classification'))) return 'Sensitive classification or confidential information exposure';
-    if (factors.includes('Criminal matter')) return 'Potential criminal matter requiring executive visibility';
-    if (factors.some(f => f.includes('injuries') || f.includes('Injuries') || f.includes('High-risk') || f.includes('loss'))) return 'High-risk or major security breach';
-    if (factors.some(f => f.includes('overdue') || f.includes('SLA'))) return 'SLA risk or overdue investigation';
-    return 'Complex investigation requires national support';
-  };
-
-  const handleEscalate = () => {
-    if (!escalationCase || !escalationReason.trim()) {
-      showAlert('Select an escalation reason before submitting.', 'Escalation Required', 'warning');
-      return;
-    }
-
-    setIsEscalating(true);
-    onEscalateIncident(escalationCase.id, {
-      escalationLevel,
-      escalationReason: escalationReason.trim(),
-      escalationNotes: escalationNotes.trim()
-    })
-      .then((updated) => {
-        showAlert(
-          `Case ${updated.refNo} has been escalated to ${updated.escalatedTo || updated.responsiblePerson}.`,
-          'Case Escalated',
-          'success'
-        );
-        setEscalationCase(null);
-      })
-      .catch((err) => {
-        showAlert(err.message || 'Unable to escalate this case.', 'Escalation Failed', 'danger');
-      })
-      .finally(() => setIsEscalating(false));
   };
 
   // Some stored records carry a full ISO timestamp in dateReported — show a clean date.
@@ -286,7 +229,6 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
 
         {myCases.slice((currentPage - 1) * 10, currentPage * 10).map(incident => {
           const isUnassigned = isUnassignedCase(incident);
-          const canEscalate = !isUnassigned && incident.status !== 'Closed' && !incident.isEscalated && ['security_coordinator', 'security_director'].includes(currentUser.role);
           const caseClosed = isClosed(incident);
           const triage = !tracksOwnOnly && !caseClosed ? triageCase(incident) : null;
           const stage = getCaseStageLabel(incident);
@@ -355,15 +297,6 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
                 >
                   <Eye size={15} />
                 </button>
-                {canEscalate && (
-                  <button
-                    className="btn btn-primary"
-                    onClick={(e) => { e.stopPropagation(); openEscalationForm(incident); }}
-                    style={{ padding: '6px 10px', fontSize: '11.5px' }}
-                  >
-                    <ArrowUpCircle size={12} /> Escalate
-                  </button>
-                )}
               </div>
             </div>
           );
@@ -477,90 +410,11 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
         );
       })()}
 
-      {escalationCase && (
-        <div className="drawer-backdrop" onClick={() => setEscalationCase(null)}>
-          <div className="drawer" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '560px' }}>
-            <div className="drawer-header">
-              <div>
-                <h3 style={{ fontSize: '1.2rem', color: 'var(--color-primary)' }}>Escalate Case</h3>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  {escalationCase.refNo} | {escalationCase.classification} | {escalationCase.province}
-                </span>
-              </div>
-              <button
-                onClick={() => setEscalationCase(null)}
-                style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer' }}
-                aria-label="Close escalation form"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="drawer-content">
-              <div className="glass-card" style={{ padding: '1.25rem', marginBottom: '1rem' }}>
-                <div className="form-group">
-                  <label className="form-label">Escalation Level</label>
-                  <select
-                    className="form-input"
-                    value={escalationLevel}
-                    onChange={(e) => setEscalationLevel(e.target.value as SecurityIncident['escalationLevel'])}
-                  >
-                    <option value="Major">Major</option>
-                    <option value="High Risk">High Risk</option>
-                    <option value="Critical">Critical</option>
-                    <option value="National Review">National Review</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Escalation Reason</label>
-                  <select
-                    className="form-input"
-                    value={escalationReason}
-                    onChange={(e) => setEscalationReason(e.target.value)}
-                  >
-                    <option value="">Select reason</option>
-                    <option value="Complex investigation requires national support">Complex investigation requires national support</option>
-                    <option value="High-risk or major security breach">High-risk or major security breach</option>
-                    <option value="SLA risk or overdue investigation">SLA risk or overdue investigation</option>
-                    <option value="Potential criminal matter requiring executive visibility">Potential criminal matter requiring executive visibility</option>
-                    <option value="Sensitive classification or confidential information exposure">Sensitive classification or confidential information exposure</option>
-                  </select>
-                </div>
-
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">Notes for Chief Security Director / National Office</label>
-                  <textarea
-                    rows={5}
-                    className="form-input"
-                    placeholder="Add investigation context, immediate risk, evidence references, or requested support..."
-                    value={escalationNotes}
-                    onChange={(e) => setEscalationNotes(e.target.value)}
-                    style={{ resize: 'vertical' }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="drawer-footer">
-              <button className="btn btn-primary" style={{ flexGrow: 1 }} onClick={handleEscalate} disabled={isEscalating}>
-                <Send size={16} /> {isEscalating ? 'Escalating...' : 'Submit Escalation'}
-              </button>
-              <button className="btn btn-secondary" onClick={() => setEscalationCase(null)} disabled={isEscalating}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {triageTarget && (() => {
         const triage = triageCase(triageTarget);
         const isComplex = triage.verdict === 'Complex/High-Risk';
         const riskReasons = triage.reasons.filter(r => r.kind === 'risk');
         const mitigatingReasons = triage.reasons.filter(r => r.kind === 'mitigating');
-        const canEscalateFromTriage = !isUnassignedCase(triageTarget) && triageTarget.status !== 'Closed'
-          && !triageTarget.isEscalated && ['security_coordinator', 'security_director'].includes(currentUser.role);
         return (
           <div className="drawer-backdrop" onClick={() => setTriageTarget(null)}>
             <div className="drawer" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '620px' }}>
@@ -642,19 +496,6 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
                 >
                   <Eye size={16} /> Open Case File
                 </button>
-                {isComplex && canEscalateFromTriage && (
-                  <button
-                    className="btn btn-primary"
-                    style={{ flexGrow: 1 }}
-                    onClick={() => {
-                      const suggested = suggestEscalationReason(triage);
-                      setTriageTarget(null);
-                      openEscalationForm(triageTarget, suggested);
-                    }}
-                  >
-                    <ArrowUpCircle size={16} /> Escalate as Suggested
-                  </button>
-                )}
               </div>
             </div>
           </div>

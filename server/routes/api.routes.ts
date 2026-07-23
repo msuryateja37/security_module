@@ -81,7 +81,6 @@ router.get('/audit-logs', requirePermission('admin:manage_roles'), async (req: A
 router.get('/dashboard/summary', requirePermission('dashboard:view'), IncidentController.getDashboardSummary);
 router.get('/incidents', requirePermission('dashboard:view'), IncidentController.getAll);
 router.post('/incidents', requirePermission('incident:create'), IncidentController.create);
-router.post('/incidents/:id/escalate', requirePermission('case:escalate'), IncidentController.escalate);
 router.put('/incidents/:id', requirePermission('incident:update'), IncidentController.update);
 
 // End-to-end case workflow (process-flow document: review -> close/escalate ->
@@ -99,8 +98,16 @@ router.post('/incidents/:id/submit-to-dd', requirePermission('case:approve'), Ca
 router.post('/incidents/:id/dd-review', requirePermission('investigation:verify'), CaseWorkflowController.ddReview);
 router.get('/investigators', requirePermission('case:assign_investigator'), CaseWorkflowController.listInvestigators);
 router.post('/incidents/:id/assign-investigator', requirePermission('case:assign_investigator'), CaseWorkflowController.assignInvestigator);
+// Director / Deputy Director route an unassigned incident to a Security Coordinator
+router.get('/incidents/:id/assignable-coordinators', requirePermission('case:assign_coordinator'), CaseWorkflowController.listAssignableCoordinators);
+router.post('/incidents/:id/assign-coordinator', requirePermission('case:assign_coordinator'), CaseWorkflowController.assignCoordinator);
 router.post('/incidents/:id/submit-investigation', requirePermission('investigation:submit'), CaseWorkflowController.submitInvestigation);
 router.post('/incidents/:id/approval-decision', requirePermission('investigation:approve'), CaseWorkflowController.approvalDecision);
+// Investigation time extension: coordinator/investigator requests; Director/Deputy Director decides.
+// Requester role/window is enforced in the controller (gated on dashboard:view like comments/uploads);
+// the decision endpoint uses investigation:verify, which both the Director and Deputy Director hold.
+router.post('/incidents/:id/request-extension', requirePermission('dashboard:view'), CaseWorkflowController.requestExtension);
+router.post('/incidents/:id/extension-decision', requirePermission('investigation:verify'), CaseWorkflowController.decideExtension);
 
 // Performance Statistics
 router.get('/stats', requirePermission('dashboard:view'), StatsController.getAll);

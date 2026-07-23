@@ -28,6 +28,7 @@ import { InvestigationReportView } from './components/InvestigationReportView';
 import { MonthlyQuarterlyReportView } from './components/MonthlyQuarterlyReportView';
 import { TraChecklistView } from './components/TraChecklistView';
 import { MyCasesView } from './components/MyCasesView';
+import { AllIncidentsView } from './components/AllIncidentsView';
 import { CaseDetailView } from './components/CaseDetailView';
 import { ApprovalView } from './components/ApprovalView';
 import { SlaMonitorView } from './components/SlaMonitorView';
@@ -69,7 +70,7 @@ function App() {
       return 'case_detail';
     }
     const hash = window.location.hash.replace('#/', '').replace('#', '') as AppView;
-    const isValidView = hash && ['dashboard', 'submit_reports', 'my_cases', 'register', 'approval', 'sla_monitor', 'reports_archive', 'assistant', 'policy', 'administration', 'profile', 'leaves', 'leave_management'].includes(hash);
+    const isValidView = hash && ['dashboard', 'submit_reports', 'my_cases', 'incidents', 'register', 'approval', 'sla_monitor', 'reports_archive', 'assistant', 'policy', 'administration', 'profile', 'leaves', 'leave_management'].includes(hash);
     if (user) {
       return isValidView && canAccessView(user.role, hash) ? hash : getDefaultViewForRole(user.role);
     }
@@ -100,7 +101,7 @@ function App() {
       }
 
       const hash = window.location.hash.replace('#/', '').replace('#', '') as AppView;
-      const isValidView = ['dashboard', 'submit_reports', 'my_cases', 'register', 'approval', 'sla_monitor', 'reports_archive', 'assistant', 'policy', 'administration', 'profile', 'leaves', 'leave_management'].includes(hash);
+      const isValidView = ['dashboard', 'submit_reports', 'my_cases', 'incidents', 'register', 'approval', 'sla_monitor', 'reports_archive', 'assistant', 'policy', 'administration', 'profile', 'leaves', 'leave_management'].includes(hash);
 
       if (isValidView && currentUser && canAccessView(currentUser.role, hash)) {
         setActiveView(hash);
@@ -223,26 +224,6 @@ function App() {
       'x-user-role': currentUser?.role || ''
     };
     return fetch(url, { ...options, headers });
-  };
-
-  // Parse an API response defensively. When the backend restarts or the dev
-  // proxy drops the connection mid-request, the browser receives an empty
-  // (non-JSON) body and res.json() throws the cryptic "Unexpected end of JSON
-  // input" — translate that into an actionable message instead.
-  const parseApiResponse = async (res: Response): Promise<any> => {
-    const text = await res.text();
-    if (text) {
-      try {
-        return JSON.parse(text);
-      } catch {
-        throw new Error(`The server returned an unexpected response (HTTP ${res.status}). Please try again.`);
-      }
-    }
-    throw new Error(
-      res.ok
-        ? 'The server returned an empty response. Please refresh and check whether the action was applied.'
-        : `Could not reach the server (HTTP ${res.status}). The action may still have been applied — the list will refresh so you can verify.`
-    );
   };
 
   // Load and poll the persisted notification feed
@@ -550,46 +531,6 @@ function App() {
     .catch(err => console.error('Error updating incident:', err));
   };
 
-  const handleEscalateIncident = (
-    incidentId: string,
-    escalation: Pick<SecurityIncident, 'escalationLevel' | 'escalationReason' | 'escalationNotes'>
-  ) => {
-    return authFetch(`/api/incidents/${incidentId}/escalate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(escalation)
-    })
-    .then(parseApiResponse)
-    .catch((err) => {
-      // The escalation may have gone through even when the response was lost
-      // (server restart / dropped proxy connection) — resync before reporting.
-      refreshIncidents();
-      throw err;
-    })
-    .then(json => {
-      if (!json.success) {
-        throw new Error(json.error || json.message || 'Failed to escalate incident');
-      }
-
-      const escalatedIncident = json.data as SecurityIncident & { notificationTargets?: { displayName: string }[] };
-      setIncidents(prev => prev.map(inc => inc.id === incidentId ? escalatedIncident : inc));
-      setNotifications(prev => [
-        {
-          id: `notif-${Date.now()}`,
-          title: 'Incident escalated',
-          message: `${escalatedIncident.refNo} routed to ${escalatedIncident.escalatedTo || escalatedIncident.responsiblePerson}.`,
-          time: 'Just now',
-          read: false
-        },
-        ...prev
-      ]);
-
-      return escalatedIncident;
-    });
-  };
-
   // Returns whether the server accepted the incident so the report form can
   // upload supporting documents against the new case before confirming.
   const handleAddIncident = (newIncident: SecurityIncident): Promise<boolean> => {
@@ -767,6 +708,7 @@ function App() {
       case 'dashboard': return 'Dashboard';
       case 'submit_reports': return 'Submit Security Reports';
       case 'my_cases': return currentUser ? getViewLabelForRole('my_cases', currentUser.role) : 'My Assigned Cases';
+      case 'incidents': return 'All Incidents';
       case 'register': return 'Investigation';
       case 'approval': return 'Approval';
       case 'sla_monitor': return 'SLA Monitor';
@@ -1168,8 +1110,17 @@ function App() {
               incidents={incidents}
               currentUser={currentUser}
               onUpdateIncident={handleUpdateIncident}
-              onEscalateIncident={handleEscalateIncident}
               onSelectCase={(incident) => openCaseFile(incident.id)}
+            />
+          )}
+
+          {activeView === 'incidents' && canAccessView(currentUser.role, 'incidents') && (
+            <AllIncidentsView
+              incidents={incidents}
+              currentUser={currentUser}
+              onOpenCase={(incident) => openCaseFile(incident.id)}
+              authFetch={authFetch}
+              onChanged={refreshIncidents}
             />
           )}
 

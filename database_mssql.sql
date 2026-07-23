@@ -86,6 +86,18 @@ BEGIN
         ddRecommendedAction VARCHAR(20),      -- close | investigate
         ddReviewedBy VARCHAR(255),
         ddReviewedAt VARCHAR(50),
+        -- Investigation time-extension request (coordinator 7-day / investigator 14-day window)
+        extensionStatus VARCHAR(20),          -- '' | Pending | Approved | Denied
+        extensionRequestedBy VARCHAR(255),
+        extensionRequestedByRole VARCHAR(50),
+        extensionRequestedAt VARCHAR(50),
+        extensionRequestReason NVARCHAR(MAX),
+        extensionRequestedDays INT DEFAULT 0,
+        extensionDecidedBy VARCHAR(255),
+        extensionDecidedByRole VARCHAR(50),
+        extensionDecidedAt VARCHAR(50),
+        extensionDecisionNote NVARCHAR(MAX),
+        extensionDaysGranted INT DEFAULT 0,   -- cumulative working days added to the SLA clocks
         isEscalated BIT DEFAULT 0,
         escalationLevel VARCHAR(50),
         escalationReason VARCHAR(255),

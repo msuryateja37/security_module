@@ -44,6 +44,20 @@ export interface CaseWorkflowFields {
   ddRecommendedAction?: 'close' | 'investigate' | string;
   ddReviewedBy?: string;
   ddReviewedAt?: string;
+  // Investigation time-extension request (coordinator's 7-day / investigator's 14-day
+  // window). extensionDaysGranted is cumulative and feeds every SLA clock so an approved
+  // extension clears the breach indicators.
+  extensionStatus?: '' | 'Pending' | 'Approved' | 'Denied' | string;
+  extensionRequestedBy?: string;
+  extensionRequestedByRole?: string;
+  extensionRequestedAt?: string;
+  extensionRequestReason?: string;
+  extensionRequestedDays?: number;
+  extensionDecidedBy?: string;
+  extensionDecidedByRole?: string;
+  extensionDecidedAt?: string;
+  extensionDecisionNote?: string;
+  extensionDaysGranted?: number;
 }
 
 export interface SecurityIncidentDb extends CaseWorkflowFields {
@@ -264,6 +278,10 @@ export const IncidentModel = {
       'closedBy', 'closedAt', 'closureOutcome', 'closureReport',
       'requestedOutcome', 'submittedToDdBy', 'submittedToDdAt',
       'ddRecommendation', 'ddRecommendedAction', 'ddReviewedBy', 'ddReviewedAt',
+      'extensionStatus', 'extensionRequestedBy', 'extensionRequestedByRole',
+      'extensionRequestedAt', 'extensionRequestReason', 'extensionRequestedDays',
+      'extensionDecidedBy', 'extensionDecidedByRole', 'extensionDecidedAt',
+      'extensionDecisionNote', 'extensionDaysGranted',
       'dateCreated', 'dateReported', 'whatHappened', 'whereHappened', 'howHappened',
       'whoResponsible', 'proceduresUsed', 'weaponsUsed', 'damageDone', 'actionTaken',
       'securityMeasuresEffectiveness', 'securityPersonnelReaction', 'otherAspects',

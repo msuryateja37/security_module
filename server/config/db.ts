@@ -216,7 +216,20 @@ const CASE_WORKFLOW_COLUMNS: [name: string, sqliteType: string, mssqlType: strin
   ['ddRecommendation', 'TEXT', 'NVARCHAR(MAX)'],
   ['ddRecommendedAction', 'VARCHAR(20)', 'VARCHAR(20)'],
   ['ddReviewedBy', 'VARCHAR(255)', 'VARCHAR(255)'],
-  ['ddReviewedAt', 'VARCHAR(50)', 'VARCHAR(50)']
+  ['ddReviewedAt', 'VARCHAR(50)', 'VARCHAR(50)'],
+  // Investigation time-extension request (coordinator's 7-day / investigator's 14-day
+  // window). extensionDaysGranted is cumulative and feeds every SLA clock.
+  ['extensionStatus', 'VARCHAR(20)', 'VARCHAR(20)'],
+  ['extensionRequestedBy', 'VARCHAR(255)', 'VARCHAR(255)'],
+  ['extensionRequestedByRole', 'VARCHAR(50)', 'VARCHAR(50)'],
+  ['extensionRequestedAt', 'VARCHAR(50)', 'VARCHAR(50)'],
+  ['extensionRequestReason', 'TEXT', 'NVARCHAR(MAX)'],
+  ['extensionRequestedDays', 'INTEGER DEFAULT 0', 'INT DEFAULT 0'],
+  ['extensionDecidedBy', 'VARCHAR(255)', 'VARCHAR(255)'],
+  ['extensionDecidedByRole', 'VARCHAR(50)', 'VARCHAR(50)'],
+  ['extensionDecidedAt', 'VARCHAR(50)', 'VARCHAR(50)'],
+  ['extensionDecisionNote', 'TEXT', 'NVARCHAR(MAX)'],
+  ['extensionDaysGranted', 'INTEGER DEFAULT 0', 'INT DEFAULT 0']
 ];
 
 // Existing rows created before workflowStage existed read back the column default

@@ -76,6 +76,17 @@ export interface SlaInfo {
   daysElapsed: number;
   /** targetDays − daysElapsed; negative once the investigation deadline has passed. */
   daysRemaining: number;
+  /** Cumulative working days granted via approved time extensions (0 when none). */
+  extensionDaysGranted?: number;
+  /** The responsible coordinator's 7-working-day preliminary window (present only under review). */
+  coordinatorWindow?: {
+    startDate: string;
+    targetDays: number;
+    daysElapsed: number;
+    daysRemaining: number;
+    expectedDate: string;
+    status: 'On Track' | 'At Risk' | 'Overdue';
+  };
 }
 
 export interface SecurityIncident {
@@ -143,6 +154,18 @@ export interface SecurityIncident {
   ddRecommendedAction?: 'close' | 'investigate' | string;
   ddReviewedBy?: string;
   ddReviewedAt?: string;
+  // Investigation time-extension request (coordinator 7-day / investigator 14-day window)
+  extensionStatus?: '' | 'Pending' | 'Approved' | 'Denied' | string;
+  extensionRequestedBy?: string;
+  extensionRequestedByRole?: string;
+  extensionRequestedAt?: string;
+  extensionRequestReason?: string;
+  extensionRequestedDays?: number;
+  extensionDecidedBy?: string;
+  extensionDecidedByRole?: string;
+  extensionDecidedAt?: string;
+  extensionDecisionNote?: string;
+  extensionDaysGranted?: number;
   /** Attached by the server on reads (FR-019). */
   slaInfo?: SlaInfo;
 

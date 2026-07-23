@@ -496,9 +496,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* Quick Action Links matching Dashboard.png layout */}
       <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-        <button 
-          onClick={() => onNavigate(currentUser.role === 'employee' ? 'my_cases' : 'register')}
-          className="btn btn-secondary" 
+        <button
+          onClick={() => onNavigate(
+            currentUser.role === 'employee'
+              ? 'my_cases'
+              : currentUser.role === 'deputy_director'
+                ? 'incidents'
+                : 'register'
+          )}
+          className="btn btn-secondary"
           style={{ padding: '0.75rem 1.5rem', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
         >
           View incidents <ArrowRight size={16} />

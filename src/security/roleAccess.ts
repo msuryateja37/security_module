@@ -11,7 +11,8 @@ import {
   Search,
   Settings,
   BookOpen,
-  Sparkles
+  Sparkles,
+  ShieldAlert
 } from 'lucide-react';
 
 // Role model — client role/responsibility matrix (July 2026).
@@ -33,6 +34,7 @@ export type AppView =
   | 'dashboard'
   | 'submit_reports'
   | 'my_cases'
+  | 'incidents'
   | 'register'
   | 'approval'
   | 'sla_monitor'
@@ -61,6 +63,7 @@ export type Permission =
   | 'case:close'
   | 'case:escalate'
   | 'case:assign_investigator'
+  | 'case:assign_coordinator'
   | 'investigation:submit'
   | 'investigation:verify'
   | 'investigation:approve'
@@ -193,6 +196,7 @@ export const ROLE_PERMISSIONS: Record<SecurityRole, Permission[]> = {
     'incident:create',
     'incident:view_all',
     'incident:update',
+    'case:assign_coordinator',
     'investigation:verify',
     'reports:view_archive',
     'reports:submit_operational',
@@ -207,6 +211,7 @@ export const ROLE_PERMISSIONS: Record<SecurityRole, Permission[]> = {
     'case:close',
     'case:escalate',
     'case:assign_investigator',
+    'case:assign_coordinator',
     'investigation:verify',
     'investigation:approve',
     'reports:view_archive',
@@ -285,6 +290,9 @@ export const LOGIN_ALIASES: Record<string, string> = {
 
 export const NAV_ITEMS: NavItem[] = [
   { view: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
+  // All Incidents — national read-only oversight for the Deputy Director (view all
+  // cases + charts, decide pending time-extension requests; no case-close authority).
+  { view: 'incidents', label: 'All Incidents', icon: ShieldAlert, roles: ['deputy_director'] },
   { view: 'submit_reports', label: 'Submit Reports', icon: FileText, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
   { view: 'my_cases', label: 'My Cases', icon: Briefcase, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'security_director', 'system_administrator'] },
   { view: 'tra_checklist', label: 'TRA Checklist', icon: ClipboardCheck, roles: ['security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
