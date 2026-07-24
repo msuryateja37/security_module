@@ -1,7 +1,11 @@
 import { execute, query } from '../config/db.js';
 import { UserModel } from '../models/user.model.js';
 import { DEFAULT_PREFERENCES } from '../security/roleAccess.js';
-import { EmailService } from './email.service.js';
+import { EmailService, absoluteAppUrl } from './email.service.js';
+
+// Button label for the email call-to-action, chosen from the in-app deep link.
+const actionLabelForLink = (link?: string): string =>
+  link && /\/case\//.test(link) ? 'Open Case File' : 'Open SIMS Portal';
 
 // Persisted in-app notifications + email fan-out (FR-008, NFR-006 ≤2 min delivery).
 // Notifications are written synchronously on the triggering request; email delivery
@@ -40,9 +44,18 @@ export const NotificationService = {
         );
       }
 
-      if (user.email) {
+      if (user.email && prefs.emailNotifications) {
+        const actionUrl = absoluteAppUrl(link);
         // Fire-and-forget — SMTP latency must not block the API response
-        void EmailService.send(user.email, title, `Dear ${user.displayName},\n\n${message}\n\nSIMS — Security Incident Management System\nThis is an automated message; do not reply.`);
+        void EmailService.send({
+          to: user.email,
+          subject: title,
+          recipientName: user.displayName,
+          heading: title,
+          message,
+          actionUrl,
+          actionLabel: actionUrl ? actionLabelForLink(link) : undefined
+        });
       }
     } catch (err) {
       console.error('[NotificationService] notify failed:', err);

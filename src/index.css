@@ -1210,6 +1210,16 @@ select.form-input {
   justify-content: center;
   font-weight: 800;
   font-size: 14px;
+  overflow: hidden;
+}
+
+/* Photo that fills any circular avatar container (top bar, dropdown, profile page) */
+.avatar-fill-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
 }
 
 .profile-info {
@@ -1236,34 +1246,84 @@ select.form-input {
   height: 100%;
 }
 
-.logout-container-bottom {
+/* Bottom user identity card in the sidebar */
+.sidebar-user-container {
   margin-top: auto;
-  padding: 14px 4px 4px;
+  padding: 14px 2px 4px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.logout-btn-capsule {
-  background: rgba(116, 71, 39, 0.12) !important;
-  border: 1px solid rgba(116, 71, 39, 0.5) !important;
-  color: var(--color-mint-300) !important;
-  border-radius: 9px !important;
-  text-align: center !important;
-  justify-content: center !important;
-  font-weight: 700 !important;
-  transform: none !important;
+.sidebar-user-card {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 10px 11px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.16s, border-color 0.16s;
 }
 
-.logout-btn-capsule svg {
-  color: inherit !important;
+.sidebar-user-card:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.18);
 }
 
-.logout-btn-capsule:hover {
-  background: var(--color-accent) !important;
-  color: #ffffff !important;
+.sidebar-user-avatar {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--bg-sidebar);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 15px;
+  overflow: hidden;
+  border: 1.5px solid rgba(255, 255, 255, 0.22);
 }
 
-.logout-btn-capsule:active {
-  transform: scale(0.98) !important;
+.sidebar-user-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.sidebar-user-name {
+  font-weight: 700;
+  font-size: 13.5px;
+  color: #ffffff;
+  text-transform: capitalize;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-user-role {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.72);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-user-province {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.52);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
 }
 
 /* Signature & Date Underline Box */
@@ -2300,6 +2360,79 @@ select.form-input {
   z-index: 1;
 }
 
+.pv-avatar-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+
+.pv-avatar-file-input {
+  display: none;
+}
+
+/* Add/Edit photo affordance — bottom-right of the avatar circle */
+.pv-avatar-photo-btn {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  color: #ffffff;
+  background: var(--color-primary);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  transition: transform 0.12s ease, filter 0.12s ease;
+  z-index: 2;
+}
+
+.pv-avatar-photo-btn:hover:not(:disabled) {
+  transform: scale(1.08);
+  filter: brightness(1.05);
+}
+
+.pv-avatar-photo-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Slightly emphasise the "add" state so a photoless user notices it */
+.pv-avatar-photo-btn--add {
+  animation: pv-avatar-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes pv-avatar-pulse {
+  0%, 100% { box-shadow: 0 2px 6px rgba(0,0,0,0.25); }
+  50% { box-shadow: 0 2px 10px 2px rgba(139, 87, 42, 0.5); }
+}
+
+.pv-avatar-uploading {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  z-index: 2;
+}
+
+.pv-avatar-spinner {
+  animation: pv-spin 0.8s linear infinite;
+}
+
+@keyframes pv-spin {
+  to { transform: rotate(360deg); }
+}
+
 .pv-avatar-meta {
   flex: 1;
   padding-top: 52px;
@@ -2369,6 +2502,28 @@ select.form-input {
 .pv-cancel-btn:hover {
   border-color: var(--color-primary);
   color: var(--color-primary);
+}
+
+.pv-logout-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: transparent;
+  color: #b91c1c;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.82rem;
+  border: 1px solid rgba(185, 28, 28, 0.4);
+  border-radius: var(--radius-md);
+  padding: 0.55rem 1.1rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.pv-logout-btn:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
+  color: #ffffff;
 }
 
 /* Personal Information card */

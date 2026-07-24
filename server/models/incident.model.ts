@@ -44,6 +44,20 @@ export interface CaseWorkflowFields {
   ddRecommendedAction?: 'close' | 'investigate' | string;
   ddReviewedBy?: string;
   ddReviewedAt?: string;
+  // Investigation time-extension request (coordinator's 7-day / investigator's 14-day
+  // window). extensionDaysGranted is cumulative and feeds every SLA clock so an approved
+  // extension clears the breach indicators.
+  extensionStatus?: '' | 'Pending' | 'Approved' | 'Denied' | string;
+  extensionRequestedBy?: string;
+  extensionRequestedByRole?: string;
+  extensionRequestedAt?: string;
+  extensionRequestReason?: string;
+  extensionRequestedDays?: number;
+  extensionDecidedBy?: string;
+  extensionDecidedByRole?: string;
+  extensionDecidedAt?: string;
+  extensionDecisionNote?: string;
+  extensionDaysGranted?: number;
 }
 
 export interface SecurityIncidentDb extends CaseWorkflowFields {
@@ -148,12 +162,26 @@ export interface SecurityIncident extends CaseWorkflowFields {
   recommendations: string;
 }
 
+// incidentType is always exposed as string[]. Records written by older clients (or by
+// direct API calls) can hold a bare string or malformed JSON; returning that scalar
+// breaks every consumer that calls .join()/.filter() on it, so coerce at this boundary.
+const parseIncidentTypes = (raw: string | null | undefined): string[] => {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.map(String);
+    return parsed === null || parsed === '' ? [] : [String(parsed)];
+  } catch {
+    return [String(raw)];
+  }
+};
+
 export const IncidentModel = {
   async getAll(): Promise<SecurityIncident[]> {
     const rows = await query<SecurityIncidentDb>('SELECT * FROM incidents ORDER BY dateTime DESC');
     return rows.map(row => ({
       ...row,
-      incidentType: JSON.parse(row.incidentType || '[]')
+      incidentType: parseIncidentTypes(row.incidentType)
     } as SecurityIncident));
   },
 
@@ -164,7 +192,7 @@ export const IncidentModel = {
 
     return {
       ...row,
-      incidentType: JSON.parse(row.incidentType || '[]')
+      incidentType: parseIncidentTypes(row.incidentType)
     } as SecurityIncident;
   },
 
@@ -184,7 +212,10 @@ export const IncidentModel = {
       [
         incident.id,
         incident.refNo,
-        JSON.stringify(incident.incidentType),
+        // Always persist an array, even if the caller sent a bare string
+        JSON.stringify(Array.isArray(incident.incidentType)
+          ? incident.incidentType
+          : incident.incidentType ? [incident.incidentType] : []),
         incident.otherIncidentTypeDetails || '',
         incident.department,
         incident.contactDetails,
@@ -247,6 +278,10 @@ export const IncidentModel = {
       'closedBy', 'closedAt', 'closureOutcome', 'closureReport',
       'requestedOutcome', 'submittedToDdBy', 'submittedToDdAt',
       'ddRecommendation', 'ddRecommendedAction', 'ddReviewedBy', 'ddReviewedAt',
+      'extensionStatus', 'extensionRequestedBy', 'extensionRequestedByRole',
+      'extensionRequestedAt', 'extensionRequestReason', 'extensionRequestedDays',
+      'extensionDecidedBy', 'extensionDecidedByRole', 'extensionDecidedAt',
+      'extensionDecisionNote', 'extensionDaysGranted',
       'dateCreated', 'dateReported', 'whatHappened', 'whereHappened', 'howHappened',
       'whoResponsible', 'proceduresUsed', 'weaponsUsed', 'damageDone', 'actionTaken',
       'securityMeasuresEffectiveness', 'securityPersonnelReaction', 'otherAspects',

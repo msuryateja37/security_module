@@ -5,6 +5,7 @@ import type { UserProfile } from '../security/roleAccess';
 import { PROVINCES } from '../data/mockData';
 import { Shield, FileText, CheckCircle2, ArrowRight, ArrowLeft, AlertTriangle, Paperclip, X, UploadCloud, Check, Send, Search, UserCheck } from 'lucide-react';
 import { useModal } from './NotificationModal';
+import { generateIncidentRefNo } from '../utils/referenceNumber';
 
 interface ReportIncidentViewProps {
   /** Persists the incident; resolves once the server accepted it so attachments can follow. */
@@ -266,8 +267,7 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
     }
 
     const year = new Date().getFullYear();
-    const randId = Math.floor(1000 + Math.random() * 9000);
-    const refNo = `${formType === 'noc' ? 'NOC/' : ''}SEC/${year}/${randId}`;
+    const refNo = generateIncidentRefNo(province);
     const registerNumber = `REG-${year}-${Math.floor(100 + Math.random() * 900)}`;
 
     const newIncident: SecurityIncident = {
@@ -293,6 +293,7 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
       classification,
       reportedToSapsSsa: reportedToSaps,
       outcomeOfInvestigation: formType === 'noc' ? 'NOC Flash Notification dispatched. National Operations Centre review active.' : 'New report submitted. Preliminary review pending.',
+      responsiblePerson: 'Unassigned',
       status: 'Open',
       natureOfCase,
       workflowStage: 'Submitted',
@@ -590,7 +591,7 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
           <div className="amber-note" style={{ marginBottom: '24px' }}>
             <AlertTriangle size={17} />
             <div className="txt">
-              <strong>Immediate Dispatch Mode:</strong> Submitting this NOC Initial Notification will generate an urgent reference code (<strong>NOC/SEC/{new Date().getFullYear()}/xxxx</strong>) and route a real-time notification to National Operations Centre supervisors.
+              <strong>Immediate Dispatch Mode:</strong> Submitting this NOC Initial Notification will generate an urgent reference code (e.g. <strong>GAU/07-2026/4829</strong>) and route a real-time notification to National Operations Centre supervisors.
             </div>
           </div>
 

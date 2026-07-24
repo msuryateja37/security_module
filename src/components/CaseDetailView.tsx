@@ -4,8 +4,8 @@ import { CLOSURE_OUTCOMES } from '../types/security';
 import type { UserProfile } from '../security/roleAccess';
 import { ROLE_LABELS } from '../security/roleAccess';
 import {
-  ArrowLeft, ArrowUpCircle, CheckCircle2, ClipboardCheck, Clock, CornerDownRight, Download,
-  FileText, Loader2, MessageSquare, Paperclip, Search, Send, ShieldAlert, UploadCloud, UserCheck, Undo2, X
+  ArrowLeft, CalendarClock, CheckCircle2, ClipboardCheck, Clock, CornerDownRight, Download,
+  FileText, Loader2, MessageSquare, Paperclip, Search, Send, ShieldAlert, UploadCloud, UserCheck, Undo2, Users, X
 } from 'lucide-react';
 import { useModal } from './NotificationModal';
 import { useBreadcrumbTail } from './Breadcrumbs';
@@ -13,6 +13,13 @@ import { useBreadcrumbTail } from './Breadcrumbs';
 // The full case file — opened by clicking a case anywhere in the app (#/case/<id>).
 // Shows the incident record, workflow timeline, attachments and the actions the
 // current user's role may take at the case's current workflow stage.
+
+interface AssignableCoordinator {
+  username: string;
+  displayName: string;
+  province: string;
+  office?: string | null;
+}
 
 interface CaseDetailViewProps {
   incidentId: string;
@@ -52,6 +59,9 @@ const EVENT_LABEL: Record<string, string> = {
   PRELIMINARY_FINDINGS: 'Preliminary findings captured',
   ESCALATED: 'Escalated to national office',
   INVESTIGATOR_ASSIGNED: 'Investigator assigned',
+  EXTENSION_REQUESTED: 'Time extension requested',
+  EXTENSION_GRANTED: 'Time extension granted',
+  EXTENSION_DENIED: 'Time extension denied',
   FINDINGS_SUBMITTED: 'Findings submitted for review',
   SUBMITTED_TO_DD: 'Submitted to the Deputy Director',
   DD_REVIEWED: 'Deputy Director recommendation recorded',
@@ -60,14 +70,6 @@ const EVENT_LABEL: Record<string, string> = {
   CLOSED: 'Case closed',
   ATTACHMENT_ADDED: 'Document uploaded'
 };
-
-const ESCALATION_REASONS = [
-  'Complex investigation requires national support',
-  'High-risk or major security breach',
-  'SLA risk or overdue investigation',
-  'Potential criminal matter requiring executive visibility',
-  'Sensitive classification or confidential information exposure'
-];
 
 const ACCEPTED_FILE_TYPES = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp,.bmp,.txt,.csv,.rtf,.msg,.eml,.zip,.mp4,.mov,.mp3,.wav';
 
@@ -109,10 +111,6 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
   const [showCloseForm, setShowCloseForm] = useState(false);
   const [closureOutcome, setClosureOutcome] = useState<string>('Closed');
   const [closureReport, setClosureReport] = useState('');
-  const [showEscalateForm, setShowEscalateForm] = useState(false);
-  const [escalationLevel, setEscalationLevel] = useState('Major');
-  const [escalationReason, setEscalationReason] = useState('');
-  const [escalationNotes, setEscalationNotes] = useState('');
   const [showReturnForm, setShowReturnForm] = useState(false);
   const [decisionNotes, setDecisionNotes] = useState('');
   const [isUploading, setIsUploading] = useState(false);
@@ -126,6 +124,21 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
   const [replyToId, setReplyToId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
   const [isPostingComment, setIsPostingComment] = useState(false);
+
+  // Director / Deputy Director: assign an unassigned incident to a coordinator
+  const [showAssignCoordForm, setShowAssignCoordForm] = useState(false);
+  const [assignableCoords, setAssignableCoords] = useState<{
+    recommended: AssignableCoordinator[];
+    others: AssignableCoordinator[];
+  } | null>(null);
+  const [loadingCoords, setLoadingCoords] = useState(false);
+  const [selectedCoordinator, setSelectedCoordinator] = useState('');
+
+  // Investigation time-extension request / decision
+  const [showExtensionForm, setShowExtensionForm] = useState(false);
+  const [extensionDays, setExtensionDays] = useState(1);
+  const [extensionReason, setExtensionReason] = useState('');
+  const [extensionDecisionNote, setExtensionDecisionNote] = useState('');
 
   const authHeaders: Record<string, string> = useMemo(() => ({
     'x-username': currentUser.username,
@@ -159,9 +172,11 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
 
   const isDirector = currentUser.role === 'security_director';
   const isDeputyDirector = currentUser.role === 'deputy_director';
+  // A coordinator explicitly assigned by a Director/Deputy Director owns the case even
+  // if it sits in another province (mirrors the server predicate).
   const isCoordinatorForCase = !!incident &&
     currentUser.role === 'security_coordinator' &&
-    incident.province === currentUser.province &&
+    (incident.province === currentUser.province || incident.responsiblePerson === currentUser.displayName) &&
     (!incident.responsiblePerson || incident.responsiblePerson === 'Unassigned' || incident.responsiblePerson === currentUser.displayName);
   // Accepting a case (or "Assign to Me") sets the coordinator as responsiblePerson;
   // until then the coordinator may only accept — no findings, escalation or closure.
@@ -173,6 +188,38 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
     (incident.ownerId === currentUser.username || incident.contactDetails === currentUser.email || incident.reportedBy === currentUser.displayName);
 
   const canUpload = !isClosed && (isDirector || isCoordinatorForCase || isAssignedInvestigator || isReporter);
+
+  // Director / Deputy Director may route an unassigned, still-Submitted incident to a coordinator
+  const canAssignCoordinator = !!incident &&
+    (isDirector || isDeputyDirector) &&
+    (incident.workflowStage || 'Submitted') === 'Submitted' &&
+    (!incident.responsiblePerson || incident.responsiblePerson === 'Unassigned');
+
+  // Investigation time extension. The requester's window must be at risk or overdue:
+  // the coordinator's 7-day window (Under Review) or the investigator's 14-day clock
+  // (Investigation). The server re-checks this gate.
+  const sla = incident?.slaInfo;
+  const extensionStatus = incident?.extensionStatus || '';
+  const extensionPending = extensionStatus === 'Pending';
+  const coordWindowStatus = sla?.coordinatorWindow?.status;
+  const investigatorWindowAtRisk = !!sla && (sla.daysRemaining < 0 || sla.daysRemaining <= Math.ceil((sla.targetDays || 14) * 0.25));
+  const myWindowNeedsExtension = !isClosed && !extensionPending && (
+    (coordinatorHasAccepted && stage === 'Under Review' && (coordWindowStatus === 'At Risk' || coordWindowStatus === 'Overdue')) ||
+    (isAssignedInvestigator && stage === 'Investigation' && investigatorWindowAtRisk)
+  );
+  const canDecideExtension = !isClosed && extensionPending && (isDirector || isDeputyDirector);
+
+  // Load the recommended/other coordinator lists when the assign drawer opens
+  useEffect(() => {
+    if (!showAssignCoordForm || !incident) return;
+    setLoadingCoords(true);
+    setAssignableCoords(null);
+    fetch(`/api/incidents/${encodeURIComponent(incidentId)}/assignable-coordinators`, { headers: authHeaders })
+      .then(res => res.json())
+      .then(json => { if (json.success) setAssignableCoords({ recommended: json.data.recommended, others: json.data.others }); })
+      .catch(() => { /* list stays empty; the drawer shows the empty state */ })
+      .finally(() => setLoadingCoords(false));
+  }, [showAssignCoordForm, incident, incidentId, authHeaders]);
 
   // Load the assignment dropdown only when the director can actually assign
   useEffect(() => {
@@ -438,6 +485,20 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
                     }}
                   />
                 </div>
+                {incident.slaInfo.coordinatorWindow && (
+                  <span>
+                    Coordinator window: Day <strong>{incident.slaInfo.coordinatorWindow.daysElapsed}</strong> of {incident.slaInfo.coordinatorWindow.targetDays}
+                    {' '}
+                    {incident.slaInfo.coordinatorWindow.daysRemaining >= 0
+                      ? `(${incident.slaInfo.coordinatorWindow.daysRemaining} working day${incident.slaInfo.coordinatorWindow.daysRemaining === 1 ? '' : 's'} left)`
+                      : `(overdue by ${-incident.slaInfo.coordinatorWindow.daysRemaining} working day${incident.slaInfo.coordinatorWindow.daysRemaining === -1 ? '' : 's'})`}
+                  </span>
+                )}
+                {!!incident.slaInfo.extensionDaysGranted && incident.slaInfo.extensionDaysGranted > 0 && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: '#15803d' }}>
+                    <CalendarClock size={13} /> Includes a {incident.slaInfo.extensionDaysGranted}-working-day extension
+                  </span>
+                )}
               </>
             ))}
           </div>
@@ -489,7 +550,7 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
           )}
 
           {/* Findings & decisions */}
-          {(incident.preliminaryFindings || incident.investigationFindings || incident.returnReason || incident.approvalNotes || incident.closureReport || incident.escalationReason) && (
+          {(incident.preliminaryFindings || incident.investigationFindings || incident.returnReason || incident.approvalNotes || incident.closureReport || incident.escalationReason || extensionStatus === 'Approved' || extensionStatus === 'Denied') && (
             <div className="glass-card" style={{ padding: '1.5rem' }}>
               <h3 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <ClipboardCheck size={18} /> Investigation Record
@@ -519,6 +580,18 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
                   <div style={{ borderLeft: '3px solid #b91c1c', paddingLeft: '0.75rem' }}>
                     <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Returned by Director — revision required</div>
                     <div style={{ fontSize: '0.85rem', whiteSpace: 'pre-wrap' }}>{incident.returnReason}</div>
+                  </div>
+                )}
+                {(extensionStatus === 'Approved' || extensionStatus === 'Denied') && (
+                  <div style={{ borderLeft: `3px solid ${extensionStatus === 'Approved' ? '#15803d' : '#b91c1c'}`, paddingLeft: '0.75rem' }}>
+                    <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                      Time Extension {extensionStatus} ({incident.extensionRequestedDays} day{incident.extensionRequestedDays === 1 ? '' : 's'}, requested by {incident.extensionRequestedBy}
+                      {incident.extensionDecidedBy ? ` · decided by ${incident.extensionDecidedBy}` : ''})
+                    </div>
+                    <div style={{ fontSize: '0.85rem', whiteSpace: 'pre-wrap' }}>
+                      {incident.extensionRequestReason ? `Reason: ${incident.extensionRequestReason}` : ''}
+                      {incident.extensionDecisionNote ? `${incident.extensionRequestReason ? '\n' : ''}Message: ${incident.extensionDecisionNote}` : ''}
+                    </div>
                   </div>
                 )}
                 {incident.approvalNotes && (
@@ -727,10 +800,145 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
         {/* RIGHT column: actions + timeline */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', minWidth: 0 }}>
           {/* ROLE ACTION PANEL */}
-          {!isClosed && (isCoordinatorForCase || isDirector || isAssignedInvestigator || (isDeputyDirector && stage === 'Pending DD Review')) && (
+          {!isClosed && (isCoordinatorForCase || isDirector || isAssignedInvestigator || canAssignCoordinator || canDecideExtension || (isDeputyDirector && stage === 'Pending DD Review')) && (
             <div className="glass-card" style={{ padding: '1.25rem' }}>
               <h3 style={{ marginBottom: '1rem', fontSize: '0.95rem' }}>Case Actions</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+
+                {/* Director / Deputy Director: decide a pending time-extension request */}
+                {canDecideExtension && (
+                  <div style={{ background: 'rgba(217, 119, 6, 0.08)', border: '1px solid rgba(217, 119, 6, 0.3)', borderRadius: 'var(--radius-sm)', padding: '0.75rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, fontSize: '0.85rem', marginBottom: '0.35rem' }}>
+                      <CalendarClock size={15} /> Time Extension Requested
+                    </div>
+                    <div style={{ fontSize: '0.78rem', marginBottom: '0.5rem' }}>
+                      <strong>{incident.extensionRequestedBy}</strong>
+                      {incident.extensionRequestedByRole ? ` (${ROLE_LABELS[incident.extensionRequestedByRole as keyof typeof ROLE_LABELS] || incident.extensionRequestedByRole})` : ''} requested{' '}
+                      <strong>{incident.extensionRequestedDays} working day{incident.extensionRequestedDays === 1 ? '' : 's'}</strong>.
+                      {incident.extensionRequestReason && (
+                        <div style={{ marginTop: '0.3rem', whiteSpace: 'pre-wrap', color: 'var(--text-secondary)' }}>
+                          Reason: {incident.extensionRequestReason}
+                        </div>
+                      )}
+                    </div>
+                    <label className="form-label" style={{ fontSize: '0.75rem' }}>Message to the requester</label>
+                    <textarea
+                      rows={2}
+                      className="form-input"
+                      placeholder="Optional when approving; required when denying."
+                      value={extensionDecisionNote}
+                      onChange={(e) => setExtensionDecisionNote(e.target.value)}
+                    />
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                      <button
+                        className="btn btn-success"
+                        style={{ flexGrow: 1 }}
+                        disabled={busyAction !== null}
+                        onClick={() =>
+                          showConfirm({
+                            title: 'Approve Extension',
+                            message: `Grant ${incident.extensionRequestedDays} working day${incident.extensionRequestedDays === 1 ? '' : 's'} to ${incident.extensionRequestedBy} on ${incident.refNo}? The SLA deadline will be extended accordingly.`,
+                            confirmText: 'Approve Extension',
+                            onConfirm: async () => {
+                              const ok = await runAction('ext-decide', `/api/incidents/${incidentId}/extension-decision`, 'POST',
+                                { decision: 'approve', note: extensionDecisionNote.trim() }, 'Extension approved — the requester has been notified.');
+                              if (ok) setExtensionDecisionNote('');
+                            }
+                          })
+                        }
+                      >
+                        {busyContent('ext-decide', <CheckCircle2 size={15} />, 'Approve', 'Saving...')}
+                      </button>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ flexGrow: 1 }}
+                        disabled={busyAction !== null || !extensionDecisionNote.trim()}
+                        title={extensionDecisionNote.trim() ? undefined : 'A message is required when denying'}
+                        onClick={() =>
+                          showConfirm({
+                            title: 'Deny Extension',
+                            message: `Deny the extension request from ${incident.extensionRequestedBy} on ${incident.refNo}?`,
+                            confirmText: 'Deny Extension',
+                            onConfirm: async () => {
+                              const ok = await runAction('ext-decide', `/api/incidents/${incidentId}/extension-decision`, 'POST',
+                                { decision: 'deny', note: extensionDecisionNote.trim() }, 'Extension denied — the requester has been notified.');
+                              if (ok) setExtensionDecisionNote('');
+                            }
+                          })
+                        }
+                      >
+                        {busyContent('ext-decide', <Undo2 size={15} />, 'Deny', 'Saving...')}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Director / Deputy Director: assign this unassigned incident to a coordinator */}
+                {canAssignCoordinator && (
+                  <div>
+                    <button
+                      className="btn btn-primary"
+                      style={{ width: '100%' }}
+                      disabled={busyAction !== null}
+                      onClick={() => { setSelectedCoordinator(''); setShowAssignCoordForm(true); }}
+                    >
+                      <Users size={15} /> Assign to Coordinator
+                    </button>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>
+                      This incident has not yet been assigned to a coordinator.
+                    </div>
+                  </div>
+                )}
+
+                {/* Coordinator / investigator: pending extension request they raised */}
+                {extensionPending && (coordinatorHasAccepted || isAssignedInvestigator) && (
+                  <div style={{ background: 'rgba(217, 119, 6, 0.08)', border: '1px solid rgba(217, 119, 6, 0.3)', borderRadius: 'var(--radius-sm)', padding: '0.6rem 0.75rem', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <CalendarClock size={15} /> Extension requested ({incident.extensionRequestedDays} day{incident.extensionRequestedDays === 1 ? '' : 's'}) — awaiting the Director / Deputy Director's decision.
+                  </div>
+                )}
+
+                {/* Coordinator / investigator: request a time extension (window at risk/overdue) */}
+                {myWindowNeedsExtension && !showExtensionForm && (
+                  <button
+                    className="btn btn-secondary"
+                    disabled={busyAction !== null}
+                    onClick={() => { setExtensionDays(1); setExtensionReason(''); setShowExtensionForm(true); }}
+                  >
+                    <CalendarClock size={15} /> Request Time Extension
+                  </button>
+                )}
+                {myWindowNeedsExtension && showExtensionForm && (
+                  <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', padding: '0.75rem' }}>
+                    <label className="form-label" style={{ fontSize: '0.75rem' }}>Request Time Extension</label>
+                    <select className="form-input" value={extensionDays} onChange={(e) => setExtensionDays(Number(e.target.value))}>
+                      <option value={1}>1 working day</option>
+                      <option value={2}>2 working days</option>
+                    </select>
+                    <textarea
+                      rows={3}
+                      className="form-input"
+                      style={{ marginTop: '0.5rem' }}
+                      placeholder="Why do you need more time to complete the investigation?"
+                      value={extensionReason}
+                      onChange={(e) => setExtensionReason(e.target.value)}
+                    />
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                      <button
+                        className="btn btn-primary"
+                        style={{ flexGrow: 1 }}
+                        disabled={busyAction !== null || !extensionReason.trim()}
+                        onClick={async () => {
+                          const ok = await runAction('ext-request', `/api/incidents/${incidentId}/request-extension`, 'POST',
+                            { days: extensionDays, reason: extensionReason.trim() }, 'Extension request sent — the Director and Deputy Director have been notified.');
+                          if (ok) { setShowExtensionForm(false); setExtensionReason(''); }
+                        }}
+                      >
+                        {busyContent('ext-request', <Send size={15} />, 'Submit Request', 'Submitting...')}
+                      </button>
+                      <button className="btn btn-secondary" onClick={() => setShowExtensionForm(false)}>Cancel</button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Coordinator: accept & review */}
                 {isCoordinatorForCase && stage === 'Submitted' && (
@@ -812,13 +1020,6 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
                 ) && (
                   <button className="btn btn-success" disabled={busyAction !== null} onClick={() => setShowCloseForm(true)}>
                     <CheckCircle2 size={15} /> {stage === 'Approved' ? 'Close Case (Approved)' : 'Close Case'}
-                  </button>
-                )}
-
-                {/* Coordinator: escalate big case */}
-                {coordinatorHasAccepted && ['Submitted', 'Under Review'].includes(stage) && !incident.isEscalated && (
-                  <button className="btn btn-primary" disabled={busyAction !== null} onClick={() => setShowEscalateForm(true)}>
-                    <ArrowUpCircle size={15} /> Escalate to Chief Security Director
                   </button>
                 )}
 
@@ -1102,62 +1303,76 @@ export const CaseDetailView: React.FC<CaseDetailViewProps> = ({ incidentId, curr
         </div>
       )}
 
-      {/* Escalation drawer */}
-      {showEscalateForm && (
-        <div className="drawer-backdrop" onClick={() => setShowEscalateForm(false)}>
+      {/* Assign-coordinator drawer (Director / Deputy Director) */}
+      {showAssignCoordForm && (
+        <div className="drawer-backdrop" onClick={() => setShowAssignCoordForm(false)}>
           <div className="drawer" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px' }}>
             <div className="drawer-header">
               <div>
-                <h3 style={{ fontSize: '1.15rem', color: 'hsl(var(--color-primary))' }}>Escalate to Chief Security Director</h3>
-                <span style={{ fontSize: '0.78rem', color: 'hsl(var(--text-muted))' }}>{incident.refNo} · {incident.classification}</span>
+                <h3 style={{ fontSize: '1.15rem', color: 'hsl(var(--color-primary))' }}>Assign to Coordinator</h3>
+                <span style={{ fontSize: '0.78rem', color: 'hsl(var(--text-muted))' }}>{incident.refNo} · {incident.province}</span>
               </div>
-              <button onClick={() => setShowEscalateForm(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'hsl(var(--text-primary))' }} aria-label="Close">
+              <button onClick={() => setShowAssignCoordForm(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'hsl(var(--text-primary))' }} aria-label="Close">
                 <X size={20} />
               </button>
             </div>
             <div className="drawer-content">
-              <div className="form-group">
-                <label className="form-label">Escalation Level</label>
-                <select className="form-input" value={escalationLevel} onChange={(e) => setEscalationLevel(e.target.value)}>
-                  <option value="Major">Major</option>
-                  <option value="High Risk">High Risk</option>
-                  <option value="Critical">Critical</option>
-                  <option value="National Review">National Review</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Escalation Reason *</label>
-                <select className="form-input" value={escalationReason} onChange={(e) => setEscalationReason(e.target.value)}>
-                  <option value="">Select reason</option>
-                  {ESCALATION_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Notes for the Chief Security Director</label>
-                <textarea
-                  rows={4}
-                  className="form-input"
-                  placeholder="Investigation context, immediate risk, evidence references or requested support..."
-                  value={escalationNotes}
-                  onChange={(e) => setEscalationNotes(e.target.value)}
-                />
-              </div>
+              {loadingCoords && (
+                <div style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-secondary)' }}>
+                  <Loader2 size={22} className="spin" /> <div style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>Loading coordinators...</div>
+                </div>
+              )}
+              {!loadingCoords && assignableCoords && (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">Recommended — {incident.province}</label>
+                    {assignableCoords.recommended.length === 0 ? (
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', padding: '0.4rem 0' }}>
+                        No available coordinator in {incident.province} (all on leave or none configured). Choose from another province below.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                        {assignableCoords.recommended.map(c => (
+                          <label key={c.username} className={`chip-select-row ${selectedCoordinator === c.username ? 'active' : ''}`}
+                            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.7rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', background: selectedCoordinator === c.username ? 'rgba(59,130,246,0.08)' : 'transparent' }}>
+                            <input type="radio" name="assign-coord" value={c.username} checked={selectedCoordinator === c.username} onChange={() => setSelectedCoordinator(c.username)} />
+                            <span style={{ fontSize: '0.85rem' }}>{c.displayName}{c.office ? <span style={{ color: 'var(--text-muted)' }}> — {c.office}</span> : null}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {assignableCoords.others.length > 0 && (
+                    <div className="form-group">
+                      <label className="form-label">Other provinces</label>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                        {assignableCoords.others.map(c => (
+                          <label key={c.username} className={`chip-select-row ${selectedCoordinator === c.username ? 'active' : ''}`}
+                            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.7rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', background: selectedCoordinator === c.username ? 'rgba(59,130,246,0.08)' : 'transparent' }}>
+                            <input type="radio" name="assign-coord" value={c.username} checked={selectedCoordinator === c.username} onChange={() => setSelectedCoordinator(c.username)} />
+                            <span style={{ fontSize: '0.85rem' }}>{c.displayName} <span style={{ color: 'var(--text-muted)' }}>· {c.province}{c.office ? ` — ${c.office}` : ''}</span></span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
             <div className="drawer-footer">
               <button
                 className="btn btn-primary"
                 style={{ flexGrow: 1 }}
-                disabled={busyAction !== null || !escalationReason}
+                disabled={busyAction !== null || !selectedCoordinator}
                 onClick={async () => {
-                  const ok = await runAction('escalate', `/api/incidents/${incidentId}/escalate`, 'POST',
-                    { escalationLevel, escalationReason, escalationNotes: escalationNotes.trim() },
-                    'Case escalated — the Chief Security Director has been notified.');
-                  if (ok) setShowEscalateForm(false);
+                  const ok = await runAction('assign-coord', `/api/incidents/${incidentId}/assign-coordinator`, 'POST',
+                    { coordinatorUsername: selectedCoordinator }, 'Coordinator assigned — they have been notified.');
+                  if (ok) setShowAssignCoordForm(false);
                 }}
               >
-                {busyContent('escalate', <ArrowUpCircle size={16} />, 'Submit Escalation', 'Escalating...')}
+                {busyContent('assign-coord', <Send size={16} />, 'Assign Coordinator', 'Assigning...')}
               </button>
-              <button className="btn btn-secondary" onClick={() => setShowEscalateForm(false)}>Cancel</button>
+              <button className="btn btn-secondary" onClick={() => setShowAssignCoordForm(false)}>Cancel</button>
             </div>
           </div>
         </div>

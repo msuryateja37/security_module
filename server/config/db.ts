@@ -119,6 +119,7 @@ async function ensureUsersAndOwnershipMssql(pool: mssql.ConnectionPool) {
     ['jobTitle', 'VARCHAR(255)'],
     ['phoneNumber', 'VARCHAR(50)'],
     ['directorate', 'VARCHAR(255)'],
+    ['avatarUrl', 'VARCHAR(500)'],
     ['preferences', 'NVARCHAR(MAX)'],
     ['passwordHash', 'VARCHAR(255)'],
     ['passwordChangedAt', 'VARCHAR(50)'],
@@ -167,6 +168,12 @@ async function ensureUsersAndOwnershipMssql(pool: mssql.ConnectionPool) {
     await pool.request().query(`IF COL_LENGTH('${table}', 'ownerId') IS NULL ALTER TABLE ${table} ADD ownerId VARCHAR(100);`);
   }
 
+  // TRA two-step sign-off: coordinator/assessor submits ('pending_manager'),
+  // a manager counter-signs to finalise ('signed'). Legacy rows predate the
+  // workflow, so treat any NULL status as already 'signed'.
+  await pool.request().query(`IF COL_LENGTH('tra_audits', 'status') IS NULL ALTER TABLE tra_audits ADD status VARCHAR(30) DEFAULT 'signed';`);
+  await pool.request().query(`UPDATE tra_audits SET status = 'signed' WHERE status IS NULL;`);
+
   await backfillOwnership(sql => pool.request().query(sql).then(() => undefined));
 }
 
@@ -209,7 +216,20 @@ const CASE_WORKFLOW_COLUMNS: [name: string, sqliteType: string, mssqlType: strin
   ['ddRecommendation', 'TEXT', 'NVARCHAR(MAX)'],
   ['ddRecommendedAction', 'VARCHAR(20)', 'VARCHAR(20)'],
   ['ddReviewedBy', 'VARCHAR(255)', 'VARCHAR(255)'],
-  ['ddReviewedAt', 'VARCHAR(50)', 'VARCHAR(50)']
+  ['ddReviewedAt', 'VARCHAR(50)', 'VARCHAR(50)'],
+  // Investigation time-extension request (coordinator's 7-day / investigator's 14-day
+  // window). extensionDaysGranted is cumulative and feeds every SLA clock.
+  ['extensionStatus', 'VARCHAR(20)', 'VARCHAR(20)'],
+  ['extensionRequestedBy', 'VARCHAR(255)', 'VARCHAR(255)'],
+  ['extensionRequestedByRole', 'VARCHAR(50)', 'VARCHAR(50)'],
+  ['extensionRequestedAt', 'VARCHAR(50)', 'VARCHAR(50)'],
+  ['extensionRequestReason', 'TEXT', 'NVARCHAR(MAX)'],
+  ['extensionRequestedDays', 'INTEGER DEFAULT 0', 'INT DEFAULT 0'],
+  ['extensionDecidedBy', 'VARCHAR(255)', 'VARCHAR(255)'],
+  ['extensionDecidedByRole', 'VARCHAR(50)', 'VARCHAR(50)'],
+  ['extensionDecidedAt', 'VARCHAR(50)', 'VARCHAR(50)'],
+  ['extensionDecisionNote', 'TEXT', 'NVARCHAR(MAX)'],
+  ['extensionDaysGranted', 'INTEGER DEFAULT 0', 'INT DEFAULT 0']
 ];
 
 // Existing rows created before workflowStage existed read back the column default
@@ -601,7 +621,7 @@ export async function ensureEmployeeIncidentsMssql(pool: mssql.ConnectionPool) {
   const seedIncidents = [
     {
       id: 'emp-inc-1',
-      refNo: 'DALRRD-OHS-K4F2',
+      refNo: 'ECP/07-2026/2001',
       incidentType: '["Theft"]',
       department: 'ICT Services',
       contactDetails: 'employee2@dlrrd.gov.za',
@@ -612,7 +632,7 @@ export async function ensureEmployeeIncidentsMssql(pool: mssql.ConnectionPool) {
       natureOfLoss: 'HP laptop stolen from desk',
       injuriesFatalities: 'None',
       reportedBy: 'Employee User 2',
-      registerNumber: 'DALRRD-OHS-K4F2',
+      registerNumber: 'ECP/07-2026/2001',
       classification: 'Restricted',
       reportedToSapsSsa: 'No',
       outcomeOfInvestigation: 'Pending review',
@@ -625,7 +645,7 @@ export async function ensureEmployeeIncidentsMssql(pool: mssql.ConnectionPool) {
     },
     {
       id: 'emp-inc-2',
-      refNo: 'DALRRD-OHS-R5T8',
+      refNo: 'ECP/07-2026/2002',
       incidentType: '["Trespassing"]',
       department: 'Corporate Services',
       contactDetails: 'employee2@dlrrd.gov.za',
@@ -636,7 +656,7 @@ export async function ensureEmployeeIncidentsMssql(pool: mssql.ConnectionPool) {
       natureOfLoss: 'Unauthorised visitor breached barrier gate',
       injuriesFatalities: 'None',
       reportedBy: 'Employee User 2',
-      registerNumber: 'DALRRD-OHS-R5T8',
+      registerNumber: 'ECP/07-2026/2002',
       classification: 'Restricted',
       reportedToSapsSsa: 'No',
       outcomeOfInvestigation: 'Pending review',
@@ -649,7 +669,7 @@ export async function ensureEmployeeIncidentsMssql(pool: mssql.ConnectionPool) {
     },
     {
       id: 'emp-inc-3',
-      refNo: 'DALRRD-OHS-C7E9',
+      refNo: 'ECP/07-2026/2003',
       incidentType: '["Theft"]',
       department: 'Finance Directorate',
       contactDetails: 'employee2@dlrrd.gov.za',
@@ -660,7 +680,7 @@ export async function ensureEmployeeIncidentsMssql(pool: mssql.ConnectionPool) {
       natureOfLoss: 'Finance document box missing',
       injuriesFatalities: 'None',
       reportedBy: 'Employee User 2',
-      registerNumber: 'DALRRD-OHS-C7E9',
+      registerNumber: 'ECP/07-2026/2003',
       classification: 'Confidential',
       reportedToSapsSsa: 'No',
       outcomeOfInvestigation: 'Pending review',
@@ -673,7 +693,7 @@ export async function ensureEmployeeIncidentsMssql(pool: mssql.ConnectionPool) {
     },
     {
       id: 'emp-inc-4',
-      refNo: 'DALRRD-OHS-X2Z4',
+      refNo: 'ECP/07-2026/2004',
       incidentType: '["Loss of information"]',
       department: 'Information Security',
       contactDetails: 'employee2@dlrrd.gov.za',
@@ -684,7 +704,7 @@ export async function ensureEmployeeIncidentsMssql(pool: mssql.ConnectionPool) {
       natureOfLoss: 'Registry logs document photographed',
       injuriesFatalities: 'None',
       reportedBy: 'Employee User 2',
-      registerNumber: 'DALRRD-OHS-X2Z4',
+      registerNumber: 'ECP/07-2026/2004',
       classification: 'Confidential',
       reportedToSapsSsa: 'No',
       outcomeOfInvestigation: 'Pending review',
@@ -697,7 +717,7 @@ export async function ensureEmployeeIncidentsMssql(pool: mssql.ConnectionPool) {
     },
     {
       id: 'emp-inc-5',
-      refNo: 'DALRRD-OHS-X2Z5',
+      refNo: 'ECP/07-2026/2005',
       incidentType: '["Robbery"]',
       department: 'Supply Chain Management',
       contactDetails: 'employee2@dlrrd.gov.za',
@@ -708,7 +728,7 @@ export async function ensureEmployeeIncidentsMssql(pool: mssql.ConnectionPool) {
       natureOfLoss: 'Inventory cart hijacked on arrival',
       injuriesFatalities: 'Guards threatened at gunpoint',
       reportedBy: 'Employee User 2',
-      registerNumber: 'DALRRD-OHS-X2Z5',
+      registerNumber: 'ECP/07-2026/2005',
       classification: 'Confidential',
       reportedToSapsSsa: 'Yes',
       outcomeOfInvestigation: 'Under investigation',
@@ -721,7 +741,7 @@ export async function ensureEmployeeIncidentsMssql(pool: mssql.ConnectionPool) {
     },
     {
       id: 'emp-inc-6',
-      refNo: 'DALRRD-OHS-X2Z6',
+      refNo: 'ECP/07-2026/2006',
       incidentType: '["Theft"]',
       department: 'General Support',
       contactDetails: 'employee2@dlrrd.gov.za',
@@ -732,7 +752,7 @@ export async function ensureEmployeeIncidentsMssql(pool: mssql.ConnectionPool) {
       natureOfLoss: 'State vehicle spare wheel stolen',
       injuriesFatalities: 'None',
       reportedBy: 'Employee User 2',
-      registerNumber: 'DALRRD-OHS-X2Z6',
+      registerNumber: 'ECP/07-2026/2006',
       classification: 'Restricted',
       reportedToSapsSsa: 'No',
       outcomeOfInvestigation: 'Under investigation',
@@ -745,7 +765,7 @@ export async function ensureEmployeeIncidentsMssql(pool: mssql.ConnectionPool) {
     },
     {
       id: 'emp-inc-7',
-      refNo: 'DALRRD-OHS-X2Z7',
+      refNo: 'ECP/07-2026/2007',
       incidentType: '["Theft"]',
       department: 'Registry Services',
       contactDetails: 'employee2@dlrrd.gov.za',
@@ -756,7 +776,7 @@ export async function ensureEmployeeIncidentsMssql(pool: mssql.ConnectionPool) {
       natureOfLoss: 'Lost office access credentials card',
       injuriesFatalities: 'None',
       reportedBy: 'Employee User 2',
-      registerNumber: 'DALRRD-OHS-X2Z7',
+      registerNumber: 'ECP/07-2026/2007',
       classification: 'Restricted',
       reportedToSapsSsa: 'No',
       outcomeOfInvestigation: 'Card disabled. Replacement card issued.',
@@ -821,7 +841,7 @@ function getIncidentSeed() {
   return [
     {
       id: 'inc-1',
-      refNo: 'SEC/2026/001',
+      refNo: 'GAU/05-2026/1001',
       incidentType: JSON.stringify(['Theft', 'Malicious damage to property']),
       otherIncidentTypeDetails: '',
       department: 'Chief Directorate: Land Reform',
@@ -860,7 +880,7 @@ function getIncidentSeed() {
     },
     {
       id: 'inc-2',
-      refNo: 'SEC/2026/002',
+      refNo: 'NWP/05-2026/1002',
       incidentType: JSON.stringify(['Armed Robbery', 'Hostage situation']),
       otherIncidentTypeDetails: '',
       department: 'Provincial Shared Services Centre (PSSC)',
@@ -899,7 +919,7 @@ function getIncidentSeed() {
     },
     {
       id: 'inc-3',
-      refNo: 'SEC/2026/003',
+      refNo: 'GAU/05-2026/1003',
       incidentType: JSON.stringify(['Loss of information']),
       otherIncidentTypeDetails: '',
       department: 'Directorate: Information Security',

@@ -28,6 +28,7 @@ import { InvestigationReportView } from './components/InvestigationReportView';
 import { MonthlyQuarterlyReportView } from './components/MonthlyQuarterlyReportView';
 import { TraChecklistView } from './components/TraChecklistView';
 import { MyCasesView } from './components/MyCasesView';
+import { AllIncidentsView } from './components/AllIncidentsView';
 import { CaseDetailView } from './components/CaseDetailView';
 import { ApprovalView } from './components/ApprovalView';
 import { SlaMonitorView } from './components/SlaMonitorView';
@@ -38,6 +39,7 @@ import { AssistantView } from './components/AssistantView';
 import type { ChatMessage } from './components/AssistantView';
 import { LoginView } from './components/LoginView';
 import { ProfileView } from './components/ProfileView';
+import { Avatar } from './components/Avatar';
 import { LeavesView } from './components/LeavesView';
 import { LeaveManagementView } from './components/LeaveManagementView';
 import { relativeTime } from './utils/workdays';
@@ -45,9 +47,6 @@ import { Breadcrumbs, BreadcrumbTailProvider } from './components/Breadcrumbs';
 import type { Crumb } from './components/Breadcrumbs';
 import type { AppNotification } from './types/leave';
 import {
-  Settings,
-  LogOut,
-  Search,
   Bell,
   Menu,
   X,
@@ -71,7 +70,7 @@ function App() {
       return 'case_detail';
     }
     const hash = window.location.hash.replace('#/', '').replace('#', '') as AppView;
-    const isValidView = hash && ['dashboard', 'submit_reports', 'my_cases', 'register', 'approval', 'sla_monitor', 'reports_archive', 'assistant', 'policy', 'administration', 'profile', 'leaves', 'leave_management'].includes(hash);
+    const isValidView = hash && ['dashboard', 'submit_reports', 'my_cases', 'incidents', 'register', 'approval', 'sla_monitor', 'reports_archive', 'assistant', 'policy', 'administration', 'profile', 'leaves', 'leave_management'].includes(hash);
     if (user) {
       return isValidView && canAccessView(user.role, hash) ? hash : getDefaultViewForRole(user.role);
     }
@@ -102,7 +101,7 @@ function App() {
       }
 
       const hash = window.location.hash.replace('#/', '').replace('#', '') as AppView;
-      const isValidView = ['dashboard', 'submit_reports', 'my_cases', 'register', 'approval', 'sla_monitor', 'reports_archive', 'assistant', 'policy', 'administration', 'profile', 'leaves', 'leave_management'].includes(hash);
+      const isValidView = ['dashboard', 'submit_reports', 'my_cases', 'incidents', 'register', 'approval', 'sla_monitor', 'reports_archive', 'assistant', 'policy', 'administration', 'profile', 'leaves', 'leave_management'].includes(hash);
 
       if (isValidView && currentUser && canAccessView(currentUser.role, hash)) {
         setActiveView(hash);
@@ -169,10 +168,6 @@ function App() {
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
 
   // Search, Notifications, Profile, and Settings states
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<any>(null);
-  const [showSearchResults, setShowSearchResults] = useState(false);
-
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileCard, setShowProfileCard] = useState(false);
   const [showSettingsDrawer, setShowSettingsDrawer] = useState(false);
@@ -182,7 +177,7 @@ function App() {
   // Close topbar dropdowns when clicking anywhere outside them.
   // Trigger elements are excluded so their own onClick toggles keep working.
   useEffect(() => {
-    if (!showProfileCard && !showNotifications && !showSearchResults) return;
+    if (!showProfileCard && !showNotifications) return;
 
     const handlePointerDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -192,20 +187,16 @@ function App() {
       if (showNotifications && !target.closest('.topbar-notif-btn') && !target.closest('.notifications-dropdown')) {
         setShowNotifications(false);
       }
-      if (showSearchResults && !target.closest('.topbar-search-container') && !target.closest('.search-results-dropdown')) {
-        setShowSearchResults(false);
-      }
     };
 
     document.addEventListener('mousedown', handlePointerDown);
     return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [showProfileCard, showNotifications, showSearchResults]);
+  }, [showProfileCard, showNotifications]);
 
   // Close topbar dropdowns when navigating to a different screen
   useEffect(() => {
     setShowProfileCard(false);
     setShowNotifications(false);
-    setShowSearchResults(false);
   }, [activeView]);
 
   // Draft prepared by the SIMS Assistant, waiting for user review in the incident form
@@ -219,6 +210,13 @@ function App() {
   // decisions, acting-coordinator activations etc. appear without a reload.
   const [notifications, setNotifications] = useState<{ id: string; title: string; message: string; time: string; read: boolean; link?: string | null }[]>([]);
 
+  // The current user's profile photo, loaded once here and shared everywhere it
+  // is shown (top bar, profile dropdown, Profile page). The image is served by an
+  // authenticated endpoint, so an <img src> can't fetch it directly — we pull the
+  // bytes as a blob and expose an object URL. Re-runs whenever the stored avatar
+  // path changes (including right after an upload), so every avatar stays in sync.
+  const [avatarObjectUrl, setAvatarObjectUrl] = useState<string | null>(null);
+
   const authFetch = (url: string, options: RequestInit = {}) => {
     const headers = {
       ...(options.headers || {}),
@@ -226,26 +224,6 @@ function App() {
       'x-user-role': currentUser?.role || ''
     };
     return fetch(url, { ...options, headers });
-  };
-
-  // Parse an API response defensively. When the backend restarts or the dev
-  // proxy drops the connection mid-request, the browser receives an empty
-  // (non-JSON) body and res.json() throws the cryptic "Unexpected end of JSON
-  // input" — translate that into an actionable message instead.
-  const parseApiResponse = async (res: Response): Promise<any> => {
-    const text = await res.text();
-    if (text) {
-      try {
-        return JSON.parse(text);
-      } catch {
-        throw new Error(`The server returned an unexpected response (HTTP ${res.status}). Please try again.`);
-      }
-    }
-    throw new Error(
-      res.ok
-        ? 'The server returned an empty response. Please refresh and check whether the action was applied.'
-        : `Could not reach the server (HTTP ${res.status}). The action may still have been applied — the list will refresh so you can verify.`
-    );
   };
 
   // Load and poll the persisted notification feed
@@ -279,6 +257,33 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser]);
 
+  // Load the current user's profile photo whenever the stored path changes.
+  useEffect(() => {
+    if (!currentUser?.avatarUrl) {
+      setAvatarObjectUrl(null);
+      return;
+    }
+    let objectUrl: string | null = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authFetch('/api/auth/avatar');
+        if (!res.ok || cancelled) return;
+        const blob = await res.blob();
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setAvatarObjectUrl(objectUrl);
+      } catch {
+        /* keep the initial-letter fallback */
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.avatarUrl, currentUser?.username]);
+
   const handleMarkAllNotificationsRead = () => {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     authFetch('/api/notifications/read-all', { method: 'PUT' })
@@ -297,26 +302,6 @@ function App() {
     }
   };
 
-  const handleSearch = (q: string) => {
-    setSearchQuery(q);
-    if (!q.trim()) {
-      setSearchResults(null);
-      setShowSearchResults(false);
-      return;
-    }
-    
-    authFetch(`/api/search?q=${encodeURIComponent(q)}`)
-      .then(res => res.json())
-      .then(json => {
-        if (json.success) {
-          setSearchResults(json.data);
-          setShowSearchResults(true);
-        }
-      })
-      .catch(err => {
-        console.error('Search failed:', err);
-      });
-  };
 
   // Initial Load & LocalStorage-to-Database Migration
   useEffect(() => {
@@ -546,46 +531,6 @@ function App() {
     .catch(err => console.error('Error updating incident:', err));
   };
 
-  const handleEscalateIncident = (
-    incidentId: string,
-    escalation: Pick<SecurityIncident, 'escalationLevel' | 'escalationReason' | 'escalationNotes'>
-  ) => {
-    return authFetch(`/api/incidents/${incidentId}/escalate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(escalation)
-    })
-    .then(parseApiResponse)
-    .catch((err) => {
-      // The escalation may have gone through even when the response was lost
-      // (server restart / dropped proxy connection) — resync before reporting.
-      refreshIncidents();
-      throw err;
-    })
-    .then(json => {
-      if (!json.success) {
-        throw new Error(json.error || json.message || 'Failed to escalate incident');
-      }
-
-      const escalatedIncident = json.data as SecurityIncident & { notificationTargets?: { displayName: string }[] };
-      setIncidents(prev => prev.map(inc => inc.id === incidentId ? escalatedIncident : inc));
-      setNotifications(prev => [
-        {
-          id: `notif-${Date.now()}`,
-          title: 'Incident escalated',
-          message: `${escalatedIncident.refNo} routed to ${escalatedIncident.escalatedTo || escalatedIncident.responsiblePerson}.`,
-          time: 'Just now',
-          read: false
-        },
-        ...prev
-      ]);
-
-      return escalatedIncident;
-    });
-  };
-
   // Returns whether the server accepted the incident so the report form can
   // upload supporting documents against the new case before confirming.
   const handleAddIncident = (newIncident: SecurityIncident): Promise<boolean> => {
@@ -716,6 +661,9 @@ function App() {
   };
 
   const handleAddTraAudit = (report: TraAudit) => {
+    // Optimistically update state so the record is immediately visible as In Progress in Signed Records
+    setTraAudits(prev => [report, ...prev.filter(r => r.id !== report.id)]);
+
     authFetch('/api/tra-audits', {
       method: 'POST',
       headers: {
@@ -725,9 +673,34 @@ function App() {
     })
     .then(res => res.json())
     .then(json => {
-      if (json.success) setTraAudits(prev => [report, ...prev]);
+      if (json.success) {
+        // Trust the server-persisted record (carries ownerId + status), and fall
+        // back to the optimistic one if the payload is ever missing.
+        const saved: TraAudit = json.data && json.data.id ? json.data : report;
+        setTraAudits(prev => [saved, ...prev.filter(r => r.id !== saved.id)]);
+      } else {
+        showAlert(json.error || json.message || 'The TRA checklist could not be saved. Please try again.', 'Save Failed', 'danger');
+        refreshTraAudits();
+      }
     })
-    .catch(err => console.error('Error adding TRA audit:', err));
+    .catch(err => {
+      console.error('Error adding TRA audit:', err);
+      showAlert('Could not reach the server to save the TRA checklist. Please try again.', 'Save Failed', 'danger');
+      refreshTraAudits();
+    });
+  };
+
+  // Replace a TRA record in place (e.g. after a manager counter-signs it).
+  const handleUpdateTraAudit = (updated: TraAudit) => {
+    setTraAudits(prev => prev.map(r => (r.id === updated.id ? updated : r)));
+  };
+
+  // Reload TRA audits from the server (keeps the Signed Records list authoritative).
+  const refreshTraAudits = () => {
+    authFetch('/api/tra-audits')
+      .then(res => res.json())
+      .then(json => { if (json.success) setTraAudits(json.data); })
+      .catch(err => console.error('Error refreshing TRA audits:', err));
   };
 
   const getTopbarTitle = () => {
@@ -735,6 +708,7 @@ function App() {
       case 'dashboard': return 'Dashboard';
       case 'submit_reports': return 'Submit Security Reports';
       case 'my_cases': return currentUser ? getViewLabelForRole('my_cases', currentUser.role) : 'My Assigned Cases';
+      case 'incidents': return 'All Incidents';
       case 'register': return 'Investigation';
       case 'approval': return 'Approval';
       case 'sla_monitor': return 'SLA Monitor';
@@ -763,10 +737,14 @@ function App() {
     }
 
     if (activeView === 'case_detail') {
+      // The fallback must also be access-checked — roles without 'my_cases' (e.g. Deputy
+      // Director) would otherwise be sent to a view that renders nothing.
       const origin: AppView =
         caseOrigin && caseOrigin !== 'case_detail' && canAccessView(currentUser.role, caseOrigin)
           ? caseOrigin
-          : 'my_cases';
+          : canAccessView(currentUser.role, 'my_cases')
+            ? 'my_cases'
+            : getDefaultViewForRole(currentUser.role);
       return [
         home,
         {
@@ -864,21 +842,22 @@ function App() {
           </ul>
         </div>
 
-        {/* Translucent bottom area containing Logout */}
-        <div className="logout-container-bottom" style={{ marginBottom: '0.5rem' }}>
-          <button 
-            onClick={() => {
-              localStorage.removeItem('dlrrd_logged_in_user');
-              setCurrentUser(null);
-              setActiveView('dashboard');
-              setSubmitReportSubView('incident');
-              setAssistantMessages([]);
-              setAssistantDraft(null);
-            }}
-            className="nav-link logout-btn-capsule"
+        {/* Bottom user identity card — click to open profile */}
+        <div className="sidebar-user-container">
+          <button
+            type="button"
+            className="sidebar-user-card"
+            onClick={() => setActiveView('profile')}
+            title="View profile"
           >
-            <LogOut size={18} />
-            <span className="nav-text">Logout</span>
+            <span className="sidebar-user-avatar">
+              <Avatar src={avatarObjectUrl} name={currentUser.displayName} />
+            </span>
+            <span className="sidebar-user-meta">
+              <span className="sidebar-user-name">{currentUser.displayName}</span>
+              <span className="sidebar-user-role">{currentUser.roleLabel}</span>
+              <span className="sidebar-user-province">{currentUser.province}</span>
+            </span>
           </button>
         </div>
       </nav>
@@ -899,27 +878,11 @@ function App() {
             <h2 className="topbar-title">{getTopbarTitle()}</h2>
           </div>
           <div className="topbar-right">
-            <div className="topbar-search-container">
-              <Search className="topbar-search-icon" size={16} />
-              <input 
-                type="text" 
-                className="topbar-search-input" 
-                placeholder="Search database (incidents, BTO, TRA)..." 
-                value={searchQuery}
-                onChange={(e) => handleSearch(e.target.value)}
-              />
-            </div>
-            
-            <button className="topbar-btn" onClick={() => setShowSettingsDrawer(true)} title="System Settings">
-              <Settings size={18} />
-            </button>
-            
             <button
               className="topbar-btn topbar-notif-btn"
               onClick={() => {
                 setShowNotifications(!showNotifications);
                 setShowProfileCard(false);
-                setShowSearchResults(false);
               }}
               title="Notifications"
               style={{ position: 'relative' }}
@@ -937,12 +900,11 @@ function App() {
               onClick={() => {
                 setShowProfileCard(!showProfileCard);
                 setShowNotifications(false);
-                setShowSearchResults(false);
               }}
               style={{ cursor: 'pointer', userSelect: 'none' }}
             >
               <div className="profile-avatar">
-                {currentUser.displayName.charAt(0).toUpperCase()}
+                <Avatar src={avatarObjectUrl} name={currentUser.displayName} />
               </div>
               <div className="profile-info">
                 <span className="profile-name" style={{ textTransform: 'capitalize' }}>
@@ -953,93 +915,6 @@ function App() {
             </div>
           </div>
 
-          {/* Search Dropdown Overlay */}
-          {showSearchResults && searchResults && (
-            <div className="search-results-dropdown">
-              <div className="search-results-header">
-                <span>Search Results for "{searchQuery}"</span>
-                <button onClick={() => setShowSearchResults(false)} className="search-close-btn">&times;</button>
-              </div>
-              <div className="search-results-body">
-                {searchResults.incidents && searchResults.incidents.length > 0 && (
-                  <div className="search-section">
-                    <h4>Incidents ({searchResults.incidents.length})</h4>
-                    <ul>
-                      {searchResults.incidents.map((inc: any) => (
-                        <li key={inc.id} onClick={() => {
-                          navigateToView('register');
-                          setShowSearchResults(false);
-                        }}>
-                          <div className="search-item-title">{inc.refNo} - {inc.place}</div>
-                          <div className="search-item-desc">{inc.natureOfLoss}</div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {searchResults.btoReports && searchResults.btoReports.length > 0 && (
-                  <div className="search-section">
-                    <h4>Back to Office Reports ({searchResults.btoReports.length})</h4>
-                    <ul>
-                      {searchResults.btoReports.map((rep: any) => (
-                        <li key={rep.id} onClick={() => {
-                          navigateToView('reports_archive');
-                          setShowSearchResults(false);
-                        }}>
-                          <div className="search-item-title">{rep.eventName} - {rep.officialName}</div>
-                          <div className="search-item-desc">{rep.venue} ({rep.date})</div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {searchResults.investigationReports && searchResults.investigationReports.length > 0 && (
-                  <div className="search-section">
-                    <h4>Investigation Reports ({searchResults.investigationReports.length})</h4>
-                    <ul>
-                      {searchResults.investigationReports.map((rep: any) => (
-                        <li key={rep.id} onClick={() => {
-                          navigateToView('reports_archive');
-                          setShowSearchResults(false);
-                        }}>
-                          <div className="search-item-title">{rep.subject}</div>
-                          <div className="search-item-desc">Officer: {rep.officerName} | Rank: {rep.rank}</div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {searchResults.traAudits && searchResults.traAudits.length > 0 && (
-                  <div className="search-section">
-                    <h4>TRA Checklist Audits ({searchResults.traAudits.length})</h4>
-                    <ul>
-                      {searchResults.traAudits.map((rep: any) => (
-                        <li key={rep.id} onClick={() => {
-                          navigateToView('reports_archive');
-                          setShowSearchResults(false);
-                        }}>
-                          <div className="search-item-title">{rep.officeName}</div>
-                          <div className="search-item-desc">Assessor: {rep.assessorName} | Location: {rep.officeLocation}</div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {(!searchResults.incidents || searchResults.incidents.length === 0) &&
-                 (!searchResults.btoReports || searchResults.btoReports.length === 0) &&
-                 (!searchResults.investigationReports || searchResults.investigationReports.length === 0) &&
-                 (!searchResults.traAudits || searchResults.traAudits.length === 0) && (
-                  <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                    No matching records found.
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
           {/* Notifications Dropdown Overlay */}
           {showNotifications && (
@@ -1081,7 +956,7 @@ function App() {
           {showProfileCard && (
             <div className="profile-dropdown-card">
               <div className="profile-dropdown-header">
-                <div className="profile-avatar large">{currentUser.displayName.charAt(0).toUpperCase()}</div>
+                <div className="profile-avatar large"><Avatar src={avatarObjectUrl} name={currentUser.displayName} /></div>
                 <div className="profile-dropdown-info">
                   <h4 style={{ textTransform: 'capitalize', margin: 0 }}>{currentUser.displayName}</h4>
                   <p style={{ margin: '0.1rem 0 0 0' }}>{currentUser.roleLabel}</p>
@@ -1210,9 +1085,11 @@ function App() {
                 />
               )}
               {submitReportSubView === 'tra' && canAccessReportTab(currentUser.role, 'tra') && (
-                <TraChecklistView 
+                <TraChecklistView
                   reports={traAudits}
                   onSubmitReport={handleAddTraAudit}
+                  onUpdateReport={handleUpdateTraAudit}
+                  authFetch={authFetch}
                   currentUser={currentUser}
                 />
               )}
@@ -1233,21 +1110,42 @@ function App() {
               incidents={incidents}
               currentUser={currentUser}
               onUpdateIncident={handleUpdateIncident}
-              onEscalateIncident={handleEscalateIncident}
               onSelectCase={(incident) => openCaseFile(incident.id)}
             />
           )}
 
-          {activeView === 'case_detail' && caseDetailId && (
-            <CaseDetailView
-              incidentId={caseDetailId}
+          {activeView === 'incidents' && canAccessView(currentUser.role, 'incidents') && (
+            <AllIncidentsView
+              incidents={incidents}
               currentUser={currentUser}
-              onBack={() => {
-                setCaseDetailId(null);
-                setActiveView(canAccessView(currentUser.role, 'my_cases') ? 'my_cases' : getDefaultViewForRole(currentUser.role));
-              }}
+              onOpenCase={(incident) => openCaseFile(incident.id)}
+              authFetch={authFetch}
               onChanged={refreshIncidents}
             />
+          )}
+
+          {activeView === 'case_detail' && (
+            caseDetailId ? (
+              <CaseDetailView
+                incidentId={caseDetailId}
+                currentUser={currentUser}
+                onBack={() => {
+                  setCaseDetailId(null);
+                  setActiveView(canAccessView(currentUser.role, 'my_cases') ? 'my_cases' : getDefaultViewForRole(currentUser.role));
+                }}
+                onChanged={refreshIncidents}
+              />
+            ) : (
+              // 'case_detail' always passes canAccessView, so a missing id would otherwise
+              // leave the whole page blank with no guard to recover it.
+              <div className="glass-card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                <h3 style={{ marginBottom: '0.5rem' }}>No case selected</h3>
+                <p style={{ marginBottom: '1.5rem' }}>This case file could not be opened because no incident reference was supplied.</p>
+                <button className="btn btn-secondary" onClick={() => setActiveView(getDefaultViewForRole(currentUser.role))}>
+                  Back to {getViewLabelForRole(getDefaultViewForRole(currentUser.role), currentUser.role)}
+                </button>
+              </div>
+            )
           )}
 
           {activeView === 'approval' && canAccessView(currentUser.role, 'approval') && (
@@ -1281,9 +1179,11 @@ function App() {
           )}
 
           {activeView === 'tra_checklist' && canAccessView(currentUser.role, 'tra_checklist') && (
-            <TraChecklistView 
+            <TraChecklistView
               reports={traAudits}
               onSubmitReport={handleAddTraAudit}
+              onUpdateReport={handleUpdateTraAudit}
+              authFetch={authFetch}
               currentUser={currentUser}
             />
           )}
@@ -1336,9 +1236,18 @@ function App() {
             <ProfileView
               currentUser={currentUser}
               initialTab={profileInitialTab}
+              avatarObjectUrl={avatarObjectUrl}
               onUserUpdated={(user) => {
                 setCurrentUser(user);
                 localStorage.setItem('dlrrd_logged_in_user', JSON.stringify(user));
+              }}
+              onLogout={() => {
+                localStorage.removeItem('dlrrd_logged_in_user');
+                setCurrentUser(null);
+                setActiveView('dashboard');
+                setSubmitReportSubView('incident');
+                setAssistantMessages([]);
+                setAssistantDraft(null);
               }}
             />
           )}

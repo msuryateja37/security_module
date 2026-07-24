@@ -14,6 +14,7 @@ import {
   Zap,
 } from 'lucide-react';
 import type { UserProfile } from '../security/roleAccess';
+import { Pagination } from './Pagination';
 
 interface CoordinatorStats {
   province: string;
@@ -212,6 +213,7 @@ export const CoordinatorDashboardView: React.FC<CoordinatorDashboardViewProps> =
   const [stats, setStats] = useState<CoordinatorStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
   const hasFetched = useRef(false);
 
   const loadStats = useCallback(async () => {
@@ -424,50 +426,55 @@ export const CoordinatorDashboardView: React.FC<CoordinatorDashboardViewProps> =
               </tr>
             </thead>
             <tbody>
-              {stats.recentIncidents.length === 0 ? (
+              {stats.recentIncidents.length === 0 && (
                 <tr>
                   <td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
                     No recent incidents for {province}.
                   </td>
                 </tr>
-              ) : (
-                stats.recentIncidents.slice(0, 10).map(inc => (
-                  <tr
-                    key={inc.id}
-                    className="coord-table-row"
-                    onClick={() => onNavigate(`case:${inc.id}`)}
-                  >
-                    <td onClick={e => e.stopPropagation()}>
-                      <input type="checkbox" />
-                    </td>
-                    <td style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                      {inc.refNo}
-                    </td>
-                    <td style={{ fontSize: '0.82rem' }}>{inc.reportedBy}</td>
-                    <td style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--color-primary)' }}>
-                      {inc.place}
-                    </td>
-                    <td>
-                      <span className="coord-badge coord-badge--type">
-                        {inc.incidentType}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={getSeverityClass(inc.classification)}>
-                        {getSeverityLabel(inc.classification)}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={getStatusClass(inc.status)}>
-                        {inc.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))
               )}
+              {(stats.recentIncidents || []).slice((currentPage - 1) * 10, currentPage * 10).map(inc => (
+                <tr
+                  key={inc.id}
+                  className="coord-table-row"
+                  onClick={() => onNavigate(`case:${inc.id}`)}
+                >
+                  <td onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" />
+                  </td>
+                  <td style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                    {inc.refNo}
+                  </td>
+                  <td style={{ fontSize: '0.82rem' }}>{inc.reportedBy}</td>
+                  <td style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--color-primary)' }}>
+                    {inc.place}
+                  </td>
+                  <td>
+                    <span className="coord-badge coord-badge--type">
+                      {inc.incidentType}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={getSeverityClass(inc.classification)}>
+                      {getSeverityLabel(inc.classification)}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={getStatusClass(inc.status)}>
+                      {inc.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
+        <Pagination
+          currentPage={currentPage}
+          totalItems={(stats.recentIncidents || []).length}
+          itemsPerPage={10}
+          onPageChange={setCurrentPage}
+        />
       </div>
     </div>
   );

@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS users (
     jobTitle VARCHAR(255),       -- designation as used on official forms
     phoneNumber VARCHAR(50),     -- work contact number
     directorate VARCHAR(255),    -- organisational unit (defaults to CD: SFMS)
+    avatarUrl VARCHAR(500),      -- storage path of the profile photo (served via /api/auth/avatar)
     preferences TEXT,            -- JSON-serialized UserPreferences (notification settings)
     passwordHash VARCHAR(255),   -- scrypt salt:hash of the portal credential (AD SSO replaces this in production)
     passwordChangedAt VARCHAR(50),
@@ -178,7 +179,8 @@ CREATE TABLE IF NOT EXISTS tra_audits (
     managerSignature TEXT NOT NULL,
     checklistValues TEXT NOT NULL, -- JSON-serialized map of ChecklistValues
     dateCreated VARCHAR(50) NOT NULL,
-    ownerId VARCHAR(100) -- users.username of the record creator
+    ownerId VARCHAR(100), -- users.username of the record creator
+    status VARCHAR(30) DEFAULT 'signed' -- 'pending_manager' until manager counter-signs, then 'signed'
 );
 
 -- 8. Coordinator Leave Days Table

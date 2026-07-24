@@ -31,6 +31,7 @@ export type Permission =
   | 'case:close'
   | 'case:escalate'
   | 'case:assign_investigator'
+  | 'case:assign_coordinator'
   | 'investigation:submit'
   | 'investigation:verify'
   | 'investigation:approve'
@@ -82,6 +83,8 @@ export interface UserProfile {
   phoneNumber?: string;
   /** Organisational unit; defaults to CD: Security and Facilities Management Services. */
   directorate?: string;
+  /** Storage path of the user's profile photo (blob/local); the image is served via /api/auth/avatar. */
+  avatarUrl?: string | null;
   lastLoginAt?: string | null;
   passwordChangedAt?: string | null;
   preferences?: UserPreferences;
@@ -163,6 +166,7 @@ export const ROLE_PERMISSIONS: Record<SecurityRole, Permission[]> = {
     'incident:create',
     'incident:view_all',
     'incident:update',
+    'case:assign_coordinator',
     'investigation:verify',
     'reports:view_archive',
     'reports:submit_operational',
@@ -177,6 +181,7 @@ export const ROLE_PERMISSIONS: Record<SecurityRole, Permission[]> = {
     'case:close',
     'case:escalate',
     'case:assign_investigator',
+    'case:assign_coordinator',
     'investigation:verify',
     'investigation:approve',
     'reports:view_archive',

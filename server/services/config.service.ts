@@ -19,6 +19,16 @@ export interface SlaRules {
   breachToSsaHours: number;
   /** Security-policy deadline: internal investigation completed (working days). */
   investigationWorkingDays: number;
+  /** Hours a Submitted incident may stay unassigned before the assignment SLA breaches. */
+  assignmentSlaHours?: number;
+  /** Hours after report at which the national roles are pre-warned that a Submitted incident is still unassigned (before the assignment breach). */
+  assignmentWarningHours?: number;
+  /** Days a coordinator has to complete the preliminary investigation after being assigned a case. */
+  coordinatorInvestigationDays?: number;
+  /** Days after assignment at which the directors are pre-warned of a possible breach when the coordinator has captured no findings or documents yet. */
+  coordinatorWarningDays?: number;
+  /** Maximum working days that may be granted per investigation time-extension request. */
+  maxExtensionDays?: number;
 }
 
 export interface EscalationRules {
@@ -72,7 +82,12 @@ export const CONFIG_DEFAULTS: SystemConfig = {
     atRiskThresholdPercent: 25,
     fullReportDays: 14,
     breachToSsaHours: 48,
-    investigationWorkingDays: 14
+    investigationWorkingDays: 14,
+    assignmentSlaHours: 24,
+    assignmentWarningHours: 18,
+    coordinatorInvestigationDays: 7,
+    coordinatorWarningDays: 6,
+    maxExtensionDays: 2
   },
   escalation_rules: {
     levels: ['Major', 'High Risk', 'Critical', 'National Review'],
@@ -102,6 +117,38 @@ export const CONFIG_DEFAULTS: SystemConfig = {
     case_assigned: {
       title: 'Case {{refNo}} assigned to you',
       message: '{{assignedBy}} assigned case {{refNo}} ({{province}}) to you for field investigation. {{instructions}}'
+    },
+    coordinator_assigned: {
+      title: 'Incident {{refNo}} assigned to you',
+      message: '{{assignedBy}} assigned incident {{refNo}} ({{province}}) to you for preliminary review. Please accept the case and begin your assessment.'
+    },
+    assignment_sla_breach: {
+      title: 'SLA breach — {{refNo}} unassigned after {{hours}}h',
+      message: 'Incident {{refNo}} ({{province}}, {{classification}}) was reported on {{reportedAt}} and has not been assigned to a coordinator within {{hours}} hours. The assignment SLA has breached. Open the case to assign a coordinator.'
+    },
+    // Pre-breach warning to the Chief Security Director + Deputy Director while a
+    // Submitted incident is still unassigned and approaching its assignment deadline.
+    assignment_sla_warning: {
+      title: 'Assignment SLA warning — {{refNo}} still unassigned',
+      message: 'Incident {{refNo}} ({{province}}, {{classification}}) was reported on {{reportedAt}} and is still not assigned to a coordinator. The {{slaHours}}h assignment SLA breaches in about {{hoursToBreach}}h. Please open the case and assign a coordinator before it breaches.'
+    },
+    // Pre-breach warning to the Chief Security Director + Deputy Director when a
+    // coordinator has captured no preliminary findings/documents by the warning day
+    coordinator_prebreach_warning: {
+      title: 'Possible SLA breach — {{refNo}} has no findings yet',
+      message: '{{coordinator}} was assigned incident {{refNo}} ({{province}}) on {{assignedAt}} and, {{elapsedDays}} days later, has not captured any preliminary findings or uploaded any documents to the case file. The {{investigationDays}}-day preliminary-investigation deadline is approaching — there is a risk of an SLA breach. Please follow up with the coordinator.'
+    },
+    // Investigation time-extension request (coordinator's 7-day / investigator's 14-day
+    // window is at risk or overdue) — sent to the Chief Security Director + Deputy Director,
+    // who approve or deny with a message back to the requester.
+    extension_requested: {
+      title: 'Extension requested — {{refNo}} ({{days}} day{{daysPlural}})',
+      message: '{{requestedBy}} ({{requesterRole}}) requested a {{days}}-working-day extension on case {{refNo}} ({{province}}). Reason: {{reason}}. Open the case file to approve or deny the request.'
+    },
+    // Decision on an extension request — sent to the coordinator/investigator who asked.
+    extension_decided: {
+      title: 'Extension {{decision}} — {{refNo}}',
+      message: '{{decidedBy}} {{decision}} your {{days}}-working-day extension request on case {{refNo}}.{{noteSuffix}}'
     },
     investigation_submitted: {
       title: 'Investigation for {{refNo}} awaiting approval',

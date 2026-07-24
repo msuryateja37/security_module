@@ -13,6 +13,7 @@ import { NotificationController } from '../controllers/notification.controller.j
 import { authenticateUser, requirePermission, AuthenticatedRequest } from '../security/auth.middleware.js';
 import { AuditService } from '../security/audit.service.js';
 import { ResponseView } from '../views/response.view.js';
+import { parsePagination } from '../utils/pagination.js';
 
 const router = express.Router();
 
@@ -26,6 +27,9 @@ router.post('/auth/refresh-token', AuthController.refreshToken);
 router.get('/auth/profile', requirePermission('dashboard:view'), AuthController.profile);
 // Self-service profile management (contact details, notification preferences, portal credential, own audit trail)
 router.put('/auth/profile', requirePermission('dashboard:view'), AuthController.updateProfile);
+// Self-service profile photo (any authenticated role) — upload/replace and retrieve own avatar
+router.put('/auth/avatar', requirePermission('dashboard:view'), AuthController.updateAvatar);
+router.get('/auth/avatar', requirePermission('dashboard:view'), AuthController.getAvatar);
 router.put('/auth/preferences', requirePermission('dashboard:view'), AuthController.updatePreferences);
 router.post('/auth/change-password', requirePermission('dashboard:view'), AuthController.changePassword);
 router.get('/auth/my-activity', requirePermission('dashboard:view'), AuthController.myActivity);
@@ -37,6 +41,9 @@ router.get('/users', requirePermission('admin:manage_roles'), AuthController.use
 router.post('/users', requirePermission('admin:manage_roles'), AdminController.createUser);
 router.put('/users/:username/details', requirePermission('admin:manage_roles'), AdminController.updateUser);
 router.put('/users/:username/active', requirePermission('admin:manage_roles'), AdminController.setUserActive);
+// Admin management of another account's profile photo (view/replace) on the user profile page
+router.get('/users/:username/avatar', requirePermission('admin:manage_roles'), AuthController.getUserAvatar);
+router.put('/users/:username/avatar', requirePermission('admin:manage_roles'), AuthController.updateUserAvatar);
 // Temporary Security Coordinator management (Chief Security Director only — leave cover, matrix item 2)
 router.post('/users/:username/temp-coordinator', requirePermission('admin:manage_roles'), AuthController.assignTempCoordinator);
 router.delete('/users/:username/temp-coordinator', requirePermission('admin:manage_roles'), AuthController.revokeTempCoordinator);
@@ -52,6 +59,17 @@ router.get('/admin/system-health', requirePermission('admin:system_config'), Adm
 // Audit Trail Logs (Compliance Monitoring)
 router.get('/audit-logs', requirePermission('admin:manage_roles'), async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const pageParams = parsePagination(req.query);
+    if (pageParams) {
+      const search = typeof req.query.search === 'string' ? req.query.search : '';
+      const { data, total } = await AuditService.getPaginated({ ...pageParams, search });
+      const totalPages = Math.max(1, Math.ceil(total / pageParams.pageSize));
+      return ResponseView.sendPaginated(
+        res,
+        { data, page: Math.min(pageParams.page, totalPages), pageSize: pageParams.pageSize, total, totalPages },
+        'Fetched audit logs page successfully'
+      );
+    }
     const logs = await AuditService.getRecentLogs(100);
     ResponseView.sendSuccess(res, logs, 'Fetched audit logs successfully');
   } catch (err) {
@@ -63,7 +81,6 @@ router.get('/audit-logs', requirePermission('admin:manage_roles'), async (req: A
 router.get('/dashboard/summary', requirePermission('dashboard:view'), IncidentController.getDashboardSummary);
 router.get('/incidents', requirePermission('dashboard:view'), IncidentController.getAll);
 router.post('/incidents', requirePermission('incident:create'), IncidentController.create);
-router.post('/incidents/:id/escalate', requirePermission('case:escalate'), IncidentController.escalate);
 router.put('/incidents/:id', requirePermission('incident:update'), IncidentController.update);
 
 // End-to-end case workflow (process-flow document: review -> close/escalate ->
@@ -81,8 +98,16 @@ router.post('/incidents/:id/submit-to-dd', requirePermission('case:approve'), Ca
 router.post('/incidents/:id/dd-review', requirePermission('investigation:verify'), CaseWorkflowController.ddReview);
 router.get('/investigators', requirePermission('case:assign_investigator'), CaseWorkflowController.listInvestigators);
 router.post('/incidents/:id/assign-investigator', requirePermission('case:assign_investigator'), CaseWorkflowController.assignInvestigator);
+// Director / Deputy Director route an unassigned incident to a Security Coordinator
+router.get('/incidents/:id/assignable-coordinators', requirePermission('case:assign_coordinator'), CaseWorkflowController.listAssignableCoordinators);
+router.post('/incidents/:id/assign-coordinator', requirePermission('case:assign_coordinator'), CaseWorkflowController.assignCoordinator);
 router.post('/incidents/:id/submit-investigation', requirePermission('investigation:submit'), CaseWorkflowController.submitInvestigation);
 router.post('/incidents/:id/approval-decision', requirePermission('investigation:approve'), CaseWorkflowController.approvalDecision);
+// Investigation time extension: coordinator/investigator requests; Director/Deputy Director decides.
+// Requester role/window is enforced in the controller (gated on dashboard:view like comments/uploads);
+// the decision endpoint uses investigation:verify, which both the Director and Deputy Director hold.
+router.post('/incidents/:id/request-extension', requirePermission('dashboard:view'), CaseWorkflowController.requestExtension);
+router.post('/incidents/:id/extension-decision', requirePermission('investigation:verify'), CaseWorkflowController.decideExtension);
 
 // Performance Statistics
 router.get('/stats', requirePermission('dashboard:view'), StatsController.getAll);
@@ -104,6 +129,12 @@ router.post('/quarterly-reports', requirePermission('reports:submit_operational'
 
 router.get('/tra-audits', requirePermission('reports:view_archive'), ReportController.getAllTra);
 router.post('/tra-audits', requirePermission('reports:submit_operational'), ReportController.createTra);
+// Digital signature (email-PIN) for TRA sign-off. Gated on the broad archive-view
+// permission so both assessors (coordinators) and managers (national roles) qualify;
+// the manager-sign endpoint additionally enforces role + ownership in the controller.
+router.post('/tra-audits/sign/request-otp', requirePermission('reports:view_archive'), ReportController.requestSignOtp);
+router.post('/tra-audits/sign/verify-otp', requirePermission('reports:view_archive'), ReportController.verifySignOtp);
+router.post('/tra-audits/:id/manager-sign', requirePermission('reports:view_archive'), ReportController.managerSignTra);
 
 router.get('/search', requirePermission('dashboard:view'), SearchController.search);
 

@@ -15,6 +15,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { CoordinatorDashboardView } from './CoordinatorDashboardView';
+import { Pagination } from './Pagination';
 
 
 interface DashboardViewProps {
@@ -77,6 +78,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   // 4. Render animated count values
   const [progress, setProgress] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
   useEffect(() => {
     let raf = 0;
     const t0 = performance.now();
@@ -259,69 +261,54 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </tr>
                   </thead>
                   <tbody>
-                    {(() => {
-                      const sortedIncidents = [...myIncidents].sort(
-                        (a, b) => new Date(b.dateTime || b.dateCreated).getTime() - new Date(a.dateTime || a.dateCreated).getTime()
+                    {myIncidents.slice((currentPage - 1) * 10, currentPage * 10).map(inc => {
+                      const slaStatus = inc.slaInfo?.status || 'On Track';
+                      const slaBadgeClass = slaStatus === 'Overdue' ? 'danger' : slaStatus === 'At Risk' ? 'warning' : 'success';
+                      return (
+                        <tr key={inc.id}>
+                          <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{inc.refNo}</td>
+                          <td style={{ fontSize: '0.8rem' }}>
+                            {new Date(inc.dateTime).toLocaleDateString('en-ZA', { year: 'numeric', month: '2-digit', day: '2-digit' })}
+                          </td>
+                          <td style={{ fontSize: '0.8rem' }}>{inc.natureOfCase || 'Theft'}</td>
+                          <td>
+                            <span className={`badge ${slaBadgeClass}`} style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem' }}>
+                              {slaStatus}
+                            </span>
+                          </td>
+                          <td>
+                             <span style={{ fontSize: '0.8rem', fontWeight: 600, color: inc.classification === 'Top Secret' || inc.classification === 'Secret' ? '#B4432D' : 'var(--text-secondary)' }}>
+                               {inc.classification || 'Restricted'}
+                             </span>
+                           </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button 
+                              className="btn btn-secondary" 
+                              onClick={() => onNavigate(`case:${inc.id}`)}
+                              style={{ padding: '0.25rem 0.6rem', fontSize: '0.72rem' }}
+                            >
+                              Open
+                            </button>
+                          </td>
+                        </tr>
                       );
-                      const latestTen = sortedIncidents.slice(0, 10);
-                      
-                      if (latestTen.length === 0) {
-                        return (
-                          <tr>
-                            <td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
-                              No incidents reported by you.
-                            </td>
-                          </tr>
-                        );
-                      }
-                      
-                      return latestTen.map(inc => {
-                        const slaStatus = inc.slaInfo?.status || 'On Track';
-                        const slaBadgeClass = slaStatus === 'Overdue' ? 'danger' : slaStatus === 'At Risk' ? 'warning' : 'success';
-                        return (
-                          <tr key={inc.id}>
-                            <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{inc.refNo}</td>
-                            <td style={{ fontSize: '0.8rem' }}>
-                              {new Date(inc.dateTime).toLocaleDateString('en-ZA', { year: 'numeric', month: '2-digit', day: '2-digit' })}
-                            </td>
-                            <td style={{ fontSize: '0.8rem' }}>{inc.natureOfCase || 'Theft'}</td>
-                            <td>
-                              <span className={`badge ${slaBadgeClass}`} style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem' }}>
-                                {slaStatus}
-                              </span>
-                            </td>
-                            <td>
-                               <span style={{ fontSize: '0.8rem', fontWeight: 600, color: inc.classification === 'Top Secret' || inc.classification === 'Secret' ? '#B4432D' : 'var(--text-secondary)' }}>
-                                 {inc.classification || 'Restricted'}
-                               </span>
-                             </td>
-                            <td style={{ textAlign: 'center' }}>
-                              <button 
-                                className="btn btn-secondary" 
-                                onClick={() => onNavigate(`case:${inc.id}`)}
-                                style={{ padding: '0.25rem 0.6rem', fontSize: '0.72rem' }}
-                              >
-                                Open
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      });
-                    })()}
+                    })}
+                    {myIncidents.length === 0 && (
+                      <tr>
+                        <td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                          No incidents reported by you.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
-              {myIncidents.length > 10 && (
-                <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
-                  <button 
-                    className="btn btn-secondary"
-                    onClick={() => onNavigate('my_cases')}
-                    style={{ fontSize: '0.8rem', padding: '0.4rem 1.25rem' }}
-                  >
-                    See More
-                  </button>
-                </div>
-              )}
+              <Pagination
+                currentPage={currentPage}
+                totalItems={myIncidents.length}
+                itemsPerPage={10}
+                onPageChange={setCurrentPage}
+              />
             </div>
           </div>
 
@@ -509,9 +496,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* Quick Action Links matching Dashboard.png layout */}
       <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-        <button 
-          onClick={() => onNavigate(currentUser.role === 'employee' ? 'my_cases' : 'register')}
-          className="btn btn-secondary" 
+        <button
+          onClick={() => onNavigate(
+            currentUser.role === 'employee'
+              ? 'my_cases'
+              : currentUser.role === 'deputy_director'
+                ? 'incidents'
+                : 'register'
+          )}
+          className="btn btn-secondary"
           style={{ padding: '0.75rem 1.5rem', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
         >
           View incidents <ArrowRight size={16} />

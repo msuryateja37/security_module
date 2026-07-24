@@ -22,6 +22,23 @@ const UPLOAD_ROOT = path.join(process.cwd(), 'uploads');
 const AZURE_PREFIX = 'azure:';
 
 export const MAX_FILE_BYTES = 15 * 1024 * 1024; // 15 MB per file
+export const MAX_AVATAR_BYTES = 5 * 1024 * 1024; // 5 MB per profile photo
+
+// Profile photos are the only image kinds accepted on the avatar upload path.
+const ALLOWED_IMAGE_EXTENSIONS = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.heic'
+]);
+
+// Content types keyed by extension, used to serve avatars back with the right header.
+const IMAGE_MIME_BY_EXT: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.bmp': 'image/bmp',
+  '.heic': 'image/heic'
+};
 
 // Document/evidence types accepted on the incident form and investigation uploads.
 // Executables and scripts are rejected (MISS: uploads are evidence, not software).
@@ -37,7 +54,7 @@ const sanitizeFileName = (name: string): string => {
   return base.length > 0 ? base.slice(0, 180) : 'attachment';
 };
 
-// Case refNos look like SEC/2026/001 — slashes would nest extra folders, so
+// Case refNos look like GAU/07-2026/1001 — slashes would nest extra folders, so
 // they become dashes: one folder per case, named after the case.
 const sanitizeCaseFolder = (caseRef: string): string => {
   const safe = caseRef.replace(/[\\/]/g, '-').replace(/[^\w-]/g, '_');
@@ -64,17 +81,23 @@ const getContainer = (): Promise<ContainerClient> => {
   return containerReady;
 };
 
-const decodeBase64 = (base64Data: string): Buffer => {
+const decodeBase64 = (base64Data: string, maxBytes: number = MAX_FILE_BYTES): Buffer => {
   // Tolerate data-URL prefixes from FileReader.readAsDataURL
   const raw = base64Data.includes(',') ? base64Data.slice(base64Data.indexOf(',') + 1) : base64Data;
   const buffer = Buffer.from(raw, 'base64');
   if (buffer.length === 0) {
     throw new Error('Empty file payload');
   }
-  if (buffer.length > MAX_FILE_BYTES) {
-    throw new Error(`File exceeds the ${Math.round(MAX_FILE_BYTES / (1024 * 1024))} MB upload limit`);
+  if (buffer.length > maxBytes) {
+    throw new Error(`File exceeds the ${Math.round(maxBytes / (1024 * 1024))} MB upload limit`);
   }
   return buffer;
+};
+
+// Avatars live under one folder per user, named by the (sanitised) username.
+const sanitizeUserFolder = (username: string): string => {
+  const safe = username.replace(/[^\w.-]/g, '_');
+  return safe.length > 0 ? safe : 'user';
 };
 
 const resolveLocal = (storagePath: string): string => {
@@ -90,9 +113,44 @@ export const FileStorageService = {
     return ALLOWED_EXTENSIONS.has(path.extname(fileName).toLowerCase());
   },
 
+  isAllowedImageName(fileName: string): boolean {
+    return ALLOWED_IMAGE_EXTENSIONS.has(path.extname(fileName).toLowerCase());
+  },
+
+  /** Best-guess content type from a stored path's extension (used to serve avatars back). */
+  contentTypeFor(storagePath: string): string {
+    return IMAGE_MIME_BY_EXT[path.extname(storagePath).toLowerCase()] || 'application/octet-stream';
+  },
+
+  /**
+   * Persist a profile photo for a user. Unlike case evidence, avatars are
+   * replaceable — each upload writes a fresh timestamped blob under
+   * avatars/<username>/ and the DB row keeps only the latest storagePath.
+   * Returns the storagePath to record and the decoded size in bytes.
+   */
+  async saveAvatar(username: string, fileName: string, base64Data: string, mimeType?: string): Promise<{ storagePath: string; fileSize: number }> {
+    const buffer = decodeBase64(base64Data, MAX_AVATAR_BYTES);
+    const folder = `avatars/${sanitizeUserFolder(username)}`;
+    const storedName = `${Date.now()}__${sanitizeFileName(fileName)}`;
+
+    if (azureConfigured()) {
+      const container = await getContainer();
+      const blobName = `${folder}/${storedName}`;
+      await container.getBlockBlobClient(blobName).uploadData(buffer, {
+        blobHTTPHeaders: { blobContentType: mimeType || this.contentTypeFor(fileName) }
+      });
+      return { storagePath: `${AZURE_PREFIX}${blobName}`, fileSize: buffer.length };
+    }
+
+    const dir = path.join(UPLOAD_ROOT, folder);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, storedName), buffer);
+    return { storagePath: path.posix.join(folder, storedName), fileSize: buffer.length };
+  },
+
   /**
    * Persist a base64 payload for a case. caseRef names the per-case folder
-   * (the incident refNo, e.g. SEC/2026/001 -> folder SEC-2026-001).
+   * (the incident refNo, e.g. GAU/07-2026/1001 -> folder GAU-07-2026-1001).
    * Returns the storagePath to record on the attachment row and the decoded
    * size in bytes. Throws on oversized/empty payloads.
    */

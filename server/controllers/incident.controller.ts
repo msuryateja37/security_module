@@ -4,7 +4,7 @@ import { ResponseView } from '../views/response.view.js';
 import { AuthenticatedRequest } from '../security/auth.middleware.js';
 import { AuditService } from '../security/audit.service.js';
 import { SlaService } from '../security/sla.service.js';
-import { ROLE_USERS, isNationalRole, isProvincialRole } from '../security/roleAccess.js';
+import { isNationalRole, isProvincialRole } from '../security/roleAccess.js';
 import { LeaveService } from '../services/leave.service.js';
 import { NotificationService } from '../services/notification.service.js';
 import { ConfigService } from '../services/config.service.js';
@@ -12,41 +12,35 @@ import { CaseEventModel } from '../models/caseEvent.model.js';
 import { UserModel } from '../models/user.model.js';
 import { notifyReporterOfProgress } from './caseWorkflow.controller.js';
 import { query } from '../config/db.js';
+import { parsePagination, paginate } from '../utils/pagination.js';
 
-// Province name → 2–3 letter official South-African code used in the SIM ref format
+// Province name → 3-letter short form code used in incident reference numbers
 const PROVINCE_CODES: Record<string, string> = {
-  'Gauteng': 'GP',
-  'Western Cape': 'WC',
-  'Eastern Cape': 'EC',
+  'Gauteng': 'GAU',
+  'Western Cape': 'WCP',
+  'Eastern Cape': 'ECP',
   'KwaZulu Natal': 'KZN',
   'KwaZulu-Natal': 'KZN',
-  'Limpopo': 'LP',
-  'Mpumalanga': 'MP',
-  'Free State': 'FS',
-  'North West': 'NW',
-  'Northern Cape': 'NC',
+  'Limpopo': 'LIM',
+  'Mpumalanga': 'MPU',
+  'Free State': 'FST',
+  'North West': 'NWP',
+  'Northern Cape': 'NCP',
   'National': 'NAT',
 };
 
 /**
- * Generate a canonical SIM reference number:  SIM-{YYYY}-{provinceCode}-{seqN}
- * The sequence number is the total count of incidents in the DB + 1,
- * giving a globally increasing number regardless of province.
+ * Generate a canonical incident reference number: [PROV_SHORT]/[MM-YYYY]/[RANDOM_NUMBER]
+ * Example: GAU/07-2026/4829
  */
 async function generateSimRefNo(province: string): Promise<string> {
-  const year = new Date().getFullYear();
-  const code = PROVINCE_CODES[province] || province.substring(0, 2).toUpperCase();
-  const rows = await query<{ total: number }>('SELECT COUNT(*) AS total FROM incidents');
-  const seq = (rows[0]?.total ?? 0) + 1;
-  return `SIM-${year}-${code}-${seq}`;
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const year = now.getFullYear();
+  const code = PROVINCE_CODES[province] || (province ? province.replace(/[^A-Za-z]/g, '').substring(0, 3).toUpperCase() : 'NAT');
+  const randNum = Math.floor(1000 + Math.random() * 9000);
+  return `${code}/${month}-${year}/${randNum}`;
 }
-
-// Workflow: significant/big cases are escalated to the role configured in the
-// escalation matrix (default: the Chief Security Director), who then
-// assigns a Security Investigator for field work.
-const getEscalationTarget = (notifyRole: string) => {
-  return ROLE_USERS.find(u => u.role === notifyRole);
-};
 
 export const IncidentController = {
   async getDashboardSummary(req: AuthenticatedRequest, res: Response) {
@@ -56,7 +50,9 @@ export const IncidentController = {
 
       // Scoping incidents
       if (user.role === 'security_coordinator') {
-        incidents = incidents.filter(i => i.province === user.province || i.province === 'National');
+        // Own province, National, or a case explicitly assigned to them (cross-province assignment)
+        incidents = incidents.filter(i =>
+          i.province === user.province || i.province === 'National' || i.responsiblePerson === user.displayName);
       } else if (user.role === 'employee') {
         incidents = incidents.filter(i =>
           i.ownerId === user.username || i.reportedBy === user.displayName || i.contactDetails === user.email
@@ -193,7 +189,9 @@ export const IncidentController = {
 
       // Provincial Segregation (RBAC & MISS compliance, FR-033)
       if (user.role === 'security_coordinator') {
-        incidents = incidents.filter(i => i.province === user.province || i.province === 'National');
+        // Own province, National, or a case explicitly assigned to them (cross-province assignment)
+        incidents = incidents.filter(i =>
+          i.province === user.province || i.province === 'National' || i.responsiblePerson === user.displayName);
       } else if (user.role === 'employee') {
         // Employees only see incidents they reported themselves.
         // ownerId is authoritative; name/email matching kept for pre-migration records
@@ -216,48 +214,20 @@ export const IncidentController = {
         slaInfo: SlaService.calculateSla(inc, slaRules)
       }));
 
-      // Pagination and filtration query parameters
-      const page = req.query.page ? parseInt(req.query.page as string, 10) : undefined;
-      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
-      const search = req.query.search ? (req.query.search as string).trim().toLowerCase() : undefined;
-      const status = req.query.status ? (req.query.status as string).trim().toLowerCase() : undefined;
-      const coordinatorTab = req.query.coordinatorTab ? (req.query.coordinatorTab as string).trim() : undefined;
+      // Optional server-side filtering — applied only when the caller passes the params.
+      const search = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
+      const filterProvince = typeof req.query.province === 'string' ? req.query.province : '';
+      const filterClassification = typeof req.query.classification === 'string' ? req.query.classification : '';
+      const filterStatus = typeof req.query.status === 'string' ? req.query.status : '';
 
-      // Filter by coordinator tab if applicable
-      if (user.role === 'security_coordinator' && coordinatorTab) {
-        enrichedIncidents = enrichedIncidents.filter(incident => {
-          const isProvincialMatch = incident.province === user.province;
-          const isAssignedToMe = incident.responsiblePerson === user.displayName;
-          const isUnassigned = !incident.responsiblePerson || incident.responsiblePerson === 'Unassigned' || incident.responsiblePerson.trim() === '';
-
-          if (coordinatorTab === 'assigned') {
-            return isProvincialMatch && isAssignedToMe;
-          }
-          return isProvincialMatch && isUnassigned;
-        });
-      }
-
-      // Filter by search term
+      if (filterProvince) enrichedIncidents = enrichedIncidents.filter(i => i.province === filterProvince);
+      if (filterClassification) enrichedIncidents = enrichedIncidents.filter(i => i.classification === filterClassification);
+      if (filterStatus) enrichedIncidents = enrichedIncidents.filter(i => i.status === filterStatus);
       if (search) {
-        enrichedIncidents = enrichedIncidents.filter(incident => 
-          (incident.refNo || '').toLowerCase().includes(search) ||
-          (incident.place || '').toLowerCase().includes(search) ||
-          (incident.province || '').toLowerCase().includes(search) ||
-          (incident.status || '').toLowerCase().includes(search)
-        );
-      }
-
-      // Filter by status (stage)
-      if (status && status !== 'all cases') {
-        const getStage = (incident: any): string => {
-          const stage = incident.workflowStage;
-          if (stage) {
-            return stage === 'Closed' ? 'approved' : String(stage).toLowerCase();
-          }
-          return incident.status === 'Closed' ? 'approved' : incident.status.toLowerCase();
-        };
-        enrichedIncidents = enrichedIncidents.filter(incident => 
-          getStage(incident) === status
+        enrichedIncidents = enrichedIncidents.filter(i =>
+          [i.refNo, i.place, i.province, i.status, i.reportedBy, i.classification,
+           Array.isArray(i.incidentType) ? i.incidentType.join(' ') : i.incidentType]
+            .some(field => (field || '').toString().toLowerCase().includes(search))
         );
       }
 
@@ -273,26 +243,14 @@ export const IncidentController = {
         clearanceLevel: user.clearanceLevel
       });
 
-      // Paginate if requested
-      if (page !== undefined && limit !== undefined) {
-        const total = enrichedIncidents.length;
-        const startIndex = (page - 1) * limit;
-        const endIndex = startIndex + limit;
-        const paginatedIncidents = enrichedIncidents.slice(startIndex, endIndex);
-        const pages = Math.ceil(total / limit);
-
-        ResponseView.sendSuccess(res, {
-          incidents: paginatedIncidents,
-          pagination: {
-            total,
-            page,
-            limit,
-            pages
-          }
-        }, 'Fetched incidents successfully');
-      } else {
-        ResponseView.sendSuccess(res, enrichedIncidents, 'Fetched incidents successfully');
+      // Opt-in pagination: returns one page + total when ?page/?pageSize is present,
+      // otherwise the full scoped array (aggregate consumers rely on the full set).
+      const pageParams = parsePagination(req.query);
+      if (pageParams) {
+        return ResponseView.sendPaginated(res, paginate(enrichedIncidents, pageParams), 'Fetched incidents page successfully');
       }
+
+      ResponseView.sendSuccess(res, enrichedIncidents, 'Fetched incidents successfully');
     } catch (error) {
       ResponseView.sendError(res, error as any, 'Failed to fetch incidents');
     }
@@ -326,18 +284,11 @@ export const IncidentController = {
       // Every new report enters the workflow at the start, regardless of client payload
       incident.workflowStage = 'Submitted';
 
-      // Auto-route to the province's effective coordinator (FR-006). A coordinator
-      // on approved leave is replaced in this pool by their acting substitute, so
-      // new incidents during the leave go to the leave cover automatically.
+      // No auto-assignment upon incident form submission.
+      // Every submitted incident enters as 'Unassigned' so that the Security Coordinator 
+      // can review the report and assign it to themselves.
       const provinceCoordinators = await LeaveService.getEffectiveCoordinatorsForProvince(incident.province);
-
-      if (provinceCoordinators.length === 1) {
-        // Automatically assign to the single effective coordinator
-        incident.responsiblePerson = provinceCoordinators[0].displayName;
-      } else {
-        // Leave unassigned for manual assignment if there are 0 or 2+ coordinators
-        incident.responsiblePerson = 'Unassigned';
-      }
+      incident.responsiblePerson = 'Unassigned';
 
       const success = await IncidentModel.create(incident);
       if (success) {
@@ -362,7 +313,7 @@ export const IncidentController = {
           actor: user.username,
           actorName: user.displayName,
           actorRole: user.role,
-          notes: `Incident ${incident.refNo} submitted and auto-routed to ${incident.responsiblePerson === 'Unassigned' ? `the ${incident.province} coordinator pool` : incident.responsiblePerson}`
+          notes: `Incident ${incident.refNo} submitted and routed to the ${incident.province} coordinator pool for review`
         });
 
         const templates = await ConfigService.getNotificationTemplates();
@@ -384,10 +335,13 @@ export const IncidentController = {
             caseLink
           );
 
-          // FR-007: the national office (Chief Security Director) is notified of ALL incidents
+          // FR-007: the national office is notified of ALL incidents — the Deputy Director:
+          // Physical Security (national monitoring/escalations) and the Chief Security Director
           const allUsers = await UserModel.getAll();
           await NotificationService.notifyMany(
-            allUsers.filter(u => u.role === 'security_director').map(u => u.username),
+            allUsers
+              .filter(u => u.role === 'deputy_director' || u.role === 'security_director')
+              .map(u => u.username),
             rendered.title,
             rendered.message,
             caseLink
@@ -504,149 +458,6 @@ export const IncidentController = {
       }
     } catch (error) {
       ResponseView.sendError(res, error as any, 'Failed to update incident');
-    }
-  },
-
-  async escalate(req: AuthenticatedRequest, res: Response) {
-    try {
-      const user = req.user!;
-      const id = req.params.id as string;
-      const { escalationLevel, escalationReason, escalationNotes } = req.body;
-
-      if (!escalationLevel || !escalationReason) {
-        return ResponseView.sendError(res, 'Escalation level and reason are required', 'Validation failed', 400);
-      }
-
-      // Escalation matrix (FR-037): only levels configured by the System Administrator are accepted
-      const escalationRules = await ConfigService.getEscalationRules();
-      if (!escalationRules.levels.includes(escalationLevel)) {
-        return ResponseView.sendError(
-          res,
-          `Unknown escalation level '${escalationLevel}'. Configured levels: ${escalationRules.levels.join(', ')}`,
-          'Validation failed',
-          400
-        );
-      }
-
-      const existing = await IncidentModel.getById(id);
-      if (!existing) {
-        return ResponseView.sendError(res, 'Incident not found', 'Operation failed', 404);
-      }
-
-      if (existing.status === 'Closed') {
-        return ResponseView.sendError(res, 'Closed incidents cannot be escalated', 'Validation failed', 400);
-      }
-
-      if (existing.workflowStage === 'Escalated') {
-        return ResponseView.sendError(
-          res,
-          `Case ${existing.refNo} has already been escalated to ${existing.escalatedTo || 'the national office'} and is awaiting action`,
-          'Validation failed',
-          400
-        );
-      }
-
-      if (user.role === 'security_coordinator') {
-        const isOwnProvince = existing.province === user.province;
-        const isAssignedToCoordinator =
-          existing.responsiblePerson === user.displayName ||
-          !existing.responsiblePerson ||
-          existing.responsiblePerson === 'Unassigned';
-
-        if (!isOwnProvince || !isAssignedToCoordinator) {
-          return ResponseView.sendError(res, 'Access denied for this incident', 'Forbidden', 403);
-        }
-      }
-
-      const escalationTarget = getEscalationTarget(escalationRules.notifyRole);
-      if (!escalationTarget) {
-        return ResponseView.sendError(res, 'No national escalation target is configured', 'Configuration error', 500);
-      }
-
-      const escalatedAt = new Date().toISOString();
-      const escalationSummary = [
-        existing.outcomeOfInvestigation || '',
-        `[Escalated ${escalatedAt}] ${user.displayName} escalated to ${escalationTarget.displayName}. Level: ${escalationLevel}. Reason: ${escalationReason}.${escalationNotes ? ` Notes: ${escalationNotes}` : ''}`
-      ].filter(Boolean).join('\n\n');
-
-      const updates = {
-        status: 'Under Investigation' as const,
-        workflowStage: 'Escalated' as const,
-        responsiblePerson: escalationTarget.displayName,
-        isEscalated: 1,
-        escalationLevel,
-        escalationReason,
-        escalationNotes: escalationNotes || '',
-        escalatedBy: user.displayName,
-        escalatedTo: escalationTarget.displayName,
-        escalatedAt,
-        outcomeOfInvestigation: escalationSummary
-      };
-
-      const success = await IncidentModel.update(id, updates);
-      if (success) {
-        await CaseEventModel.record({
-          incidentId: id,
-          eventType: 'ESCALATED',
-          stage: 'Escalated',
-          actor: user.username,
-          actorName: user.displayName,
-          actorRole: user.role,
-          notes: `Escalated to ${escalationTarget.displayName} (${escalationLevel}). Reason: ${escalationReason}.${escalationNotes ? ` Notes: ${escalationNotes}` : ''}`
-        });
-
-        await AuditService.log({
-          timestamp: escalatedAt,
-          userId: user.id,
-          username: user.username,
-          userRole: user.role,
-          province: user.province,
-          action: 'ESCALATE',
-          resource: 'Incident',
-          resourceId: id,
-          details: `Escalated ${existing.refNo} to ${escalationTarget.displayName}. Level: ${escalationLevel}. Reason: ${escalationReason}`,
-          clearanceLevel: user.clearanceLevel
-        });
-
-        // Notify the escalation target via the configurable template (FR-018/FR-038)
-        const templates = await ConfigService.getNotificationTemplates();
-        const escalatedTemplate = templates.incident_escalated;
-        if (escalatedTemplate) {
-          const rendered = ConfigService.renderTemplate(escalatedTemplate, {
-            refNo: existing.refNo,
-            province: existing.province,
-            level: escalationLevel,
-            reason: escalationReason,
-            escalatedBy: user.displayName
-          });
-          await NotificationService.notify(escalationTarget.username, rendered.title, rendered.message, `#/case/${id}`);
-        }
-
-        // Progress update to the original reporter (status change: Escalated)
-        await notifyReporterOfProgress(existing, user,
-          `Your incident ${existing.refNo} has been escalated to the Chief Security Director for national-level investigation.`);
-
-        ResponseView.sendSuccess(
-          res,
-          {
-            ...existing,
-            ...updates,
-            notificationTargets: [
-              {
-                userId: escalationTarget.id,
-                displayName: escalationTarget.displayName,
-                role: escalationTarget.role,
-                email: escalationTarget.email
-              }
-            ]
-          },
-          'Incident escalated successfully'
-        );
-      } else {
-        ResponseView.sendError(res, 'Incident not found or no changes made', 'Operation failed', 404);
-      }
-    } catch (error) {
-      ResponseView.sendError(res, error as any, 'Failed to escalate incident');
     }
   }
 };

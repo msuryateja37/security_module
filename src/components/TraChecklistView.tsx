@@ -1,13 +1,19 @@
 import React, { useState, useMemo } from 'react';
 import type { TraAudit } from '../types/security';
-import { Save, Check, Pen } from 'lucide-react';
+import { Save, Check, Pen, Lock, Clock } from 'lucide-react';
 import { useModal } from './NotificationModal';
+import { SignatureModal } from './SignatureModal';
 
 interface TraChecklistViewProps {
   reports: TraAudit[];
   onSubmitReport: (newReport: TraAudit) => void;
+  onUpdateReport?: (updated: TraAudit) => void;
+  authFetch?: (url: string, options?: RequestInit) => Promise<Response>;
   currentUser?: any;
 }
+
+// Roles permitted to counter-sign as "manager" (national supervisory roles).
+const MANAGER_ROLES = ['deputy_director', 'security_director'];
 
 // 52-item digital checklist ordered exactly per design mockups (TRA.png, TRA (2).png, TRA (3).png)
 const SECTION_A_ITEMS = [
@@ -73,9 +79,26 @@ const SECTION_C_ITEMS = [
 
 const ALL_CHECKLIST_ITEMS = [...SECTION_A_ITEMS, ...SECTION_B_ITEMS, ...SECTION_C_ITEMS];
 
-export const TraChecklistView: React.FC<TraChecklistViewProps> = ({ reports, onSubmitReport, currentUser }) => {
+export const TraChecklistView: React.FC<TraChecklistViewProps> = ({ reports, onSubmitReport, onUpdateReport, authFetch, currentUser }) => {
   const { showAlert } = useModal();
   const [viewingReport, setViewingReport] = useState<TraAudit | null>(null);
+  const [activeTab, setActiveTab] = useState<'checklist' | 'records'>('checklist');
+  // Which signature block (if any) has its draw+PIN modal open.
+  const [signModal, setSignModal] = useState<null | 'assessor' | 'manager'>(null);
+
+  const isManager = MANAGER_ROLES.includes(currentUser?.role);
+  
+  const latestReport = useMemo(() => {
+    if (!reports || reports.length === 0) return null;
+    return [...reports].sort((a, b) => (b.dateCreated || b.date || '').localeCompare(a.dateCreated || a.date || ''))[0];
+  }, [reports]);
+
+  // A manager may counter-sign a viewed record only when it is still pending and
+  // they are not the coordinator who submitted it.
+  const canManagerSign = !!viewingReport
+    && isManager
+    && (viewingReport.status === 'pending_manager')
+    && viewingReport.ownerId !== currentUser?.username;
 
   // Form states
   const [officeName, setOfficeName] = useState('');
@@ -131,38 +154,106 @@ export const TraChecklistView: React.FC<TraChecklistViewProps> = ({ reports, onS
     }));
   };
 
-  // Digital signature helper format: 'Name|Date'
-  const parseSignature = (sigStr: string) => {
-    if (!sigStr) return { signed: false, name: '', date: '' };
+  // Digital signature: new records store JSON { name, date, image (dataURL) };
+  // legacy records used a plain 'Name|Date' string with no drawn image.
+  const parseSignature = (sigStr: string): { signed: boolean; name: string; date: string; image: string } => {
+    if (!sigStr) return { signed: false, name: '', date: '', image: '' };
+    if (sigStr.trim().startsWith('{')) {
+      try {
+        const obj = JSON.parse(sigStr);
+        return { signed: true, name: obj.name || '', date: obj.date || '', image: obj.image || '' };
+      } catch {
+        /* fall through to legacy parsing */
+      }
+    }
     const parts = sigStr.split('|');
     if (parts.length === 2) {
-      return { signed: true, name: parts[0], date: parts[1] };
+      return { signed: true, name: parts[0], date: parts[1], image: '' };
     }
-    return { signed: true, name: sigStr, date: '' };
+    return { signed: true, name: sigStr, date: '', image: '' };
   };
 
-  const handleSignAssessor = () => {
-    const name = assessorName || (currentUser?.displayName) || 'Assessor';
-    if (!assessorName) {
-      setAssessorName(name);
-    }
+  const todaySlash = () => {
     const today = new Date();
-    const dateSlash = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}`;
-    setAssessorSignature(`${name}|${dateSlash}`);
+    return `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}`;
   };
 
-  const handleSignManager = () => {
-    const name = managerName || 'Manager';
-    if (!managerName) {
-      setManagerName(name);
+  // POST helper that survives a server restart / proxy hiccup: it reads the body
+  // as text first so an empty or non-JSON response yields a clear "server
+  // unreachable" message instead of the cryptic "Unexpected end of JSON input".
+  const postJson = async (url: string, body: any): Promise<any> => {
+    if (!authFetch) throw new Error('You appear to be offline. Please try again.');
+    let res: Response;
+    try {
+      res = await authFetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+    } catch {
+      throw new Error('Could not reach the server. Make sure the API server is running, then try again.');
     }
-    const today = new Date();
-    const dateSlash = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}`;
-    setManagerSignature(`${name}|${dateSlash}`);
+    const text = await res.text();
+    if (!text) {
+      throw new Error(
+        res.ok
+          ? 'The server returned an empty response. Please try again.'
+          : 'Could not reach the server. Make sure the API server is running, then try again.'
+      );
+    }
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error('The server returned an unexpected response. Make sure the API server is running, then try again.');
+    }
+  };
+
+  // Ask the server to email a fresh signing PIN to the current user.
+  const requestSignOtp = async (purpose: 'assessor' | 'manager') => {
+    const json = await postJson('/api/tra-audits/sign/request-otp', { purpose });
+    if (!json.success) throw new Error(json.error || json.message || 'Failed to send PIN');
+    return { devPin: json.data?.devPin, email: json.data?.email, emailed: json.data?.emailed };
+  };
+
+  // Assessor: verify the PIN, then capture the drawn signature into the form.
+  const verifyAssessorSign = async (pin: string, image: string): Promise<{ success: boolean; error?: string }> => {
+    let json: any;
+    try {
+      json = await postJson('/api/tra-audits/sign/verify-otp', { pin });
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Verification failed' };
+    }
+    if (!json.success) return { success: false, error: json.error || json.message };
+    const name = assessorName || currentUser?.displayName || 'Assessor';
+    if (!assessorName) setAssessorName(name);
+    setAssessorSignature(JSON.stringify({ name, date: todaySlash(), image }));
+    return { success: true };
+  };
+
+  // Manager: verify the PIN and persist the counter-signature on the record.
+  const verifyManagerSign = async (pin: string, image: string): Promise<{ success: boolean; error?: string }> => {
+    if (!viewingReport) return { success: false, error: 'No record selected' };
+    const name = currentUser?.displayName || 'Manager';
+    const signature = JSON.stringify({ name, date: todaySlash(), image });
+    let json: any;
+    try {
+      json = await postJson(`/api/tra-audits/${viewingReport.id}/manager-sign`, { pin, signature });
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Signing failed' };
+    }
+    if (!json.success) return { success: false, error: json.error || json.message };
+    const updated: TraAudit = json.data;
+    setManagerSignature(updated.managerSignature);
+    setManagerName(updated.managerName);
+    setViewingReport(updated);
+    onUpdateReport?.(updated);
+    showAlert('Manager signature saved. The TRA checklist is now fully signed.', 'Checklist Signed', 'success');
+    return { success: true };
   };
 
   const handleViewReport = (rep: TraAudit) => {
     setViewingReport(rep);
+    setActiveTab('checklist');
     setOfficeName(rep.officeName);
     setOfficeLocation(rep.officeLocation);
     setAssessorName(rep.assessorName);
@@ -233,16 +324,51 @@ export const TraChecklistView: React.FC<TraChecklistViewProps> = ({ reports, onS
       assessorSignature,
       managerSignature,
       checklistValues: formattedValues,
-      dateCreated: new Date().toISOString().split('T')[0]
+      dateCreated: new Date().toISOString().split('T')[0],
+      status: 'pending_manager'
     };
 
     onSubmitReport(report);
     handleCloseViewReport();
-    showAlert('Threat and Risk Assessment checklist submitted successfully.', 'Checklist Submitted', 'success');
+    setActiveTab('records');
+    showAlert('TRA checklist submitted and signed by assessor. Stored in Signed Records as In Progress until the manager counter-signs.', 'Submitted — In Progress', 'success');
   };
 
   const assessorSig = parseSignature(assessorSignature);
   const managerSig = parseSignature(managerSignature);
+
+  // Render a completed signature: the drawn image when present, otherwise the
+  // legacy cursive name, plus the signer + date and a verified badge.
+  const renderSignedBlock = (sig: { name: string; date: string; image: string }) => (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem' }}>
+      {sig.image ? (
+        <img src={sig.image} alt={`${sig.name} signature`} style={{ maxHeight: '70px', maxWidth: '100%', objectFit: 'contain' }} />
+      ) : (
+        <span style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--color-primary)', fontFamily: 'cursive' }}>{sig.name}</span>
+      )}
+      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>{sig.name}</span>
+      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Signed digitally{sig.date ? ` on ${sig.date}` : ''}</span>
+      <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}><Check size={12} /> Verified</span>
+    </div>
+  );
+
+  const subTabStyle = (tab: typeof activeTab) => {
+    const isActive = activeTab === tab;
+    return {
+      borderRadius: 'var(--radius-sm)',
+      padding: '0.5rem 1.25rem',
+      fontSize: '0.85rem',
+      fontWeight: 700,
+      cursor: 'pointer',
+      transition: 'all 0.18s ease',
+      border: 'none',
+      background: isActive
+        ? 'linear-gradient(90deg, var(--color-primary), var(--color-primary-hover))'
+        : 'rgba(0, 0, 0, 0.04)',
+      color: isActive ? '#ffffff' : 'var(--text-secondary)',
+      boxShadow: isActive ? '0 6px 16px rgba(116, 71, 39, 0.35)' : 'none',
+    };
+  };
 
   const renderChecklistItem = (item: typeof ALL_CHECKLIST_ITEMS[0]) => {
     const val = checklistValues[item.id] || { status: undefined, notes: '' };
@@ -313,21 +439,94 @@ export const TraChecklistView: React.FC<TraChecklistViewProps> = ({ reports, onS
 
   return (
     <div className="screen-fade-up">
-      <div className="header-row" style={{ marginBottom: '1.5rem' }}>
+      <div className="header-row" style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h1 className="page-title">Threat & Risk Assessment (TRA)</h1>
           <p className="page-subtitle">53-item digital checklist &bull; MPSS 2009 & MISS 1996 aligned</p>
         </div>
+        {latestReport && (
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.1)',
+            border: '1px solid rgba(255, 255, 255, 0.18)',
+            backdropFilter: 'blur(8px)',
+            padding: '0.65rem 1.15rem',
+            borderRadius: 'var(--radius-md)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.85rem'
+          }}>
+            <div style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '50%',
+              background: 'rgba(255, 255, 255, 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#ffffff',
+              flexShrink: 0
+            }}>
+              <Clock size={18} />
+            </div>
+            <div>
+              <div style={{
+                fontSize: '0.68rem',
+                fontWeight: 700,
+                color: 'var(--color-mint-200)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em'
+              }}>
+                Latest Checklist Conducted
+              </div>
+              <div style={{
+                fontSize: '0.92rem',
+                fontWeight: 800,
+                color: '#ffffff',
+                marginTop: '2px',
+                lineHeight: 1.2
+              }}>
+                {latestReport.officeLocation || latestReport.officeName || 'Facility'} &bull; {latestReport.date} {latestReport.time ? `at ${latestReport.time}` : ''}
+              </div>
+              <div style={{
+                fontSize: '0.75rem',
+                color: 'var(--color-mint-300)',
+                marginTop: '2px'
+              }}>
+                Assessor: {latestReport.assessorName}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
+      {/* Sub tabs: Checklist & Signing vs Signed Records */}
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid hsl(var(--border-color))', paddingBottom: '0.5rem' }}>
+        <button
+          type="button"
+          onClick={() => setActiveTab('checklist')}
+          style={subTabStyle('checklist')}
+        >
+          Checklist &amp; Signing
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('records')}
+          style={subTabStyle('records')}
+        >
+          Signed Records ({reports.length})
+        </button>
+      </div>
+
+      {activeTab === 'checklist' && (
+      <>
       {viewingReport && (
         <div style={{ background: '#fef3c7', border: '1px solid #f59e0b', color: '#b45309', padding: '0.75rem 1rem', borderRadius: '6px', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>
-            Viewing Signed Record: {viewingReport.officeLocation || viewingReport.officeName} (Read-Only)
+            Viewing Record: {viewingReport.officeLocation || viewingReport.officeName} &bull; Status: {viewingReport.status === 'pending_manager' || !parseSignature(viewingReport.managerSignature).signed ? 'In Progress (Awaiting Manager Signature)' : 'Signed'} (Read-Only)
           </span>
-          <button 
-            type="button" 
-            className="btn btn-secondary" 
+          <button
+            type="button"
+            className="btn btn-secondary"
             style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem' }}
             onClick={handleCloseViewReport}
           >
@@ -459,43 +658,50 @@ export const TraChecklistView: React.FC<TraChecklistViewProps> = ({ reports, onS
 
         {/* Signatures card */}
         <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1.5rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
-          <div style={{ border: '1px dashed #d1d5db', borderRadius: '6px', padding: '1.25rem', textAlign: 'center', background: '#f9fafb' }}>
+          {/* Assessor block — signed by the coordinator who fills the checklist */}
+          <div style={{ border: '1px dashed #d1d5db', borderRadius: '6px', padding: '1.25rem', textAlign: 'center', background: '#f9fafb', minHeight: '150px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Assessor Signature</h4>
             {assessorSig.signed ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem' }}>
-                <span style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--color-primary)', fontFamily: 'cursive' }}>{assessorSig.name}</span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Signed digitally{assessorSig.date ? ` on ${assessorSig.date}` : ''}</span>
-                <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}><Check size={12} /> Verified</span>
-              </div>
+              renderSignedBlock(assessorSig)
+            ) : viewingReport ? (
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Not signed</span>
             ) : (
               <button
                 type="button"
                 className="coord-btn coord-btn--outline"
                 style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', padding: '0.4rem 1rem' }}
-                onClick={handleSignAssessor}
+                onClick={() => setSignModal('assessor')}
               >
                 <Pen size={12} /> Sign digitally
               </button>
             )}
           </div>
 
-          <div style={{ border: '1px dashed #d1d5db', borderRadius: '6px', padding: '1.25rem', textAlign: 'center', background: '#f9fafb' }}>
+          {/* Manager block — locked for the assessor; only a manager counter-signs, and only after submission */}
+          <div style={{ border: '1px dashed #d1d5db', borderRadius: '6px', padding: '1.25rem', textAlign: 'center', background: '#f9fafb', minHeight: '150px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Manager Signature</h4>
             {managerSig.signed ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem' }}>
-                <span style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--color-primary)', fontFamily: 'cursive' }}>{managerSig.name}</span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Signed digitally{managerSig.date ? ` on ${managerSig.date}` : ''}</span>
-                <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}><Check size={12} /> Verified</span>
-              </div>
-            ) : (
+              renderSignedBlock(managerSig)
+            ) : canManagerSign ? (
               <button
                 type="button"
                 className="coord-btn coord-btn--outline"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', padding: '0.4rem 1rem' }}
-                onClick={handleSignManager}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', padding: '0.4rem 1rem', margin: '0 auto' }}
+                onClick={() => setSignModal('manager')}
               >
                 <Pen size={12} /> Sign digitally
               </button>
+            ) : viewingReport ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem', color: '#b45309' }}>
+                <Clock size={18} />
+                <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Awaiting manager signature</span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem', color: 'var(--text-muted)' }}>
+                <Lock size={18} />
+                <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>Signed by the manager after submission</span>
+                <span style={{ fontSize: '0.72rem' }}>You cannot sign this block.</span>
+              </div>
             )}
           </div>
         </div>
@@ -522,9 +728,12 @@ export const TraChecklistView: React.FC<TraChecklistViewProps> = ({ reports, onS
           )}
         </div>
       </form>
+      </>
+      )}
 
       {/* Signed Records history panel */}
-      <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1.5rem', marginTop: '2rem' }}>
+      {activeTab === 'records' && (
+      <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1.5rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
           <div>
             <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>Signed Records</h3>
@@ -539,6 +748,7 @@ export const TraChecklistView: React.FC<TraChecklistViewProps> = ({ reports, onS
             const managerSigObj = parseSignature(rep.managerSignature);
             const assessorSigned = assessorSigObj.signed;
             const managerSigned = managerSigObj.signed;
+            const isPending = rep.status ? rep.status === 'pending_manager' : !managerSigned;
 
             return (
               <div 
@@ -565,8 +775,21 @@ export const TraChecklistView: React.FC<TraChecklistViewProps> = ({ reports, onS
                   </p>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                  <span style={{ 
-                    background: assessorSigned ? '#EEF7F2' : '#f3f4f6', 
+                  <span style={{
+                    background: isPending ? '#FEF3C7' : '#EEF7F2',
+                    color: isPending ? '#B45309' : '#1D8A50',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    padding: '0.25rem 0.6rem',
+                    borderRadius: '4px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.25rem'
+                  }}>
+                    {isPending ? <><Clock size={11} /> In Progress</> : <><Check size={11} /> Signed</>}
+                  </span>
+                  <span style={{
+                    background: assessorSigned ? '#EEF7F2' : '#f3f4f6',
                     color: assessorSigned ? '#1D8A50' : '#4b5563', 
                     fontSize: '0.72rem', 
                     fontWeight: 600, 
@@ -602,6 +825,27 @@ export const TraChecklistView: React.FC<TraChecklistViewProps> = ({ reports, onS
           )}
         </div>
       </div>
+      )}
+
+      {signModal === 'assessor' && (
+        <SignatureModal
+          title="Assessor Signature"
+          subtitle="Draw your signature, then confirm the PIN emailed to you"
+          onRequestOtp={() => requestSignOtp('assessor')}
+          onVerify={verifyAssessorSign}
+          onClose={() => setSignModal(null)}
+        />
+      )}
+
+      {signModal === 'manager' && (
+        <SignatureModal
+          title="Manager Signature"
+          subtitle="Counter-sign this checklist, then confirm the PIN emailed to you"
+          onRequestOtp={() => requestSignOtp('manager')}
+          onVerify={verifyManagerSign}
+          onClose={() => setSignModal(null)}
+        />
+      )}
     </div>
   );
 };

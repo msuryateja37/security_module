@@ -63,6 +63,41 @@ export const AuditService = {
     }
   },
 
+  /**
+   * Server-side paginated + searchable log query (System Administrator > System Logs).
+   * Replaces the old hard TOP 100 cap so the full immutable trail is browsable.
+   */
+  async getPaginated(opts: { page: number; pageSize: number; search?: string }): Promise<{ data: AuditLogEntry[]; total: number }> {
+    const page = Math.max(1, opts.page);
+    const pageSize = Math.max(1, opts.pageSize);
+    const search = (opts.search || '').trim().toLowerCase();
+    const where = search
+      ? `WHERE (LOWER(username) LIKE ? OR LOWER(action) LIKE ? OR LOWER(resource) LIKE ? OR LOWER(details) LIKE ?)`
+      : '';
+    const like = `%${search}%`;
+    const searchParams = search ? [like, like, like, like] : [];
+    const offset = (page - 1) * pageSize;
+
+    try {
+      const countRows = await query<{ total: number }>(
+        `SELECT COUNT(*) AS total FROM audit_logs ${where}`,
+        searchParams
+      );
+      const total = countRows[0]?.total ?? 0;
+
+      const rows = await query<AuditLogEntry>(
+        isMssql
+          ? `SELECT * FROM audit_logs ${where} ORDER BY timestamp DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY`
+          : `SELECT * FROM audit_logs ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+        isMssql ? [...searchParams, offset, pageSize] : [...searchParams, pageSize, offset]
+      );
+      return { data: rows, total };
+    } catch (err) {
+      console.error('[AuditService Paginated Query Error]', err);
+      return { data: [], total: 0 };
+    }
+  },
+
   /** A user's own activity trail — powers the "Recent activity" section of the profile page. */
   async getLogsForUser(username: string, limit: number = 25): Promise<AuditLogEntry[]> {
     try {
