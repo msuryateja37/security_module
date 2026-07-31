@@ -42,11 +42,10 @@ async function connectMssql(): Promise<mssql.ConnectionPool> {
     console.log('Connected to Azure SQL Database successfully.');
 
     // Azure SQL drops idle connections; without a listener the pool's 'error'
-    // event crashes the process (killing any in-flight request). Log it and
-    // discard the pool so the next call reconnects.
+    // event crashes the process (killing any in-flight request). Log it and let
+    // the pool internally manage reconnection and evict bad connections.
     pool.on('error', (err) => {
-      console.error('Azure SQL connection pool error (will reconnect on next query):', err);
-      mssqlPoolPromise = null;
+      console.error('Azure SQL connection pool error:', err);
     });
 
     // Initialize Schema and Seed if needed
