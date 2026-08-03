@@ -87,6 +87,9 @@ router.put('/incidents/:id', requirePermission('incident:update'), IncidentContr
 // assign investigator -> field findings -> approve/return -> close -> notify reporter).
 // Record-level access is enforced inside the controller on top of these permissions.
 router.get('/incidents/:id', requirePermission('dashboard:view'), CaseWorkflowController.getDetail);
+// Evidence staged from the report form before the case exists, then linked on submit
+router.post('/uploads/staged', requirePermission('incident:create'), CaseWorkflowController.uploadStaged);
+router.post('/incidents/:id/attachments/link-staged', requirePermission('dashboard:view'), CaseWorkflowController.linkStagedAttachments);
 router.post('/incidents/:id/attachments', requirePermission('dashboard:view'), CaseWorkflowController.uploadAttachment);
 router.get('/incidents/:id/attachments/:attachmentId/download', requirePermission('dashboard:view'), CaseWorkflowController.downloadAttachment);
 router.post('/incidents/:id/comments', requirePermission('dashboard:view'), CaseWorkflowController.addComment);

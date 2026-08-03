@@ -316,50 +316,60 @@ export const IncidentController = {
           notes: `Incident ${incident.refNo} submitted and routed to the ${incident.province} coordinator pool for review`
         });
 
-        const templates = await ConfigService.getNotificationTemplates();
-        const caseLink = `#/case/${incident.id}`;
-
-        // Notify the routed coordinator(s) via the configurable template (FR-006/FR-008)
-        const reportedTemplate = templates.incident_reported;
-        if (reportedTemplate) {
-          const rendered = ConfigService.renderTemplate(reportedTemplate, {
-            refNo: incident.refNo,
-            classification: incident.classification || 'Unclassified',
-            province: incident.province,
-            reportedBy: incident.reportedBy || user.displayName
-          });
-          await NotificationService.notifyMany(
-            provinceCoordinators.map(c => c.username),
-            rendered.title,
-            rendered.message,
-            caseLink
-          );
-
-          // FR-007: the national office is notified of ALL incidents — the Deputy Director:
-          // Physical Security (national monitoring/escalations) and the Chief Security Director
-          const allUsers = await UserModel.getAll();
-          await NotificationService.notifyMany(
-            allUsers
-              .filter(u => u.role === 'deputy_director' || u.role === 'security_director')
-              .map(u => u.username),
-            rendered.title,
-            rendered.message,
-            caseLink
-          );
-        }
-
-        // Confirmation back to the reporter — email + in-app with the reference number (FR-008)
-        const confirmationTemplate = templates.incident_confirmation;
-        if (confirmationTemplate) {
-          const rendered = ConfigService.renderTemplate(confirmationTemplate, {
-            refNo: incident.refNo,
-            province: incident.province,
-            natureOfCase: incident.natureOfCase || 'not specified'
-          });
-          await NotificationService.notify(user.username, rendered.title, rendered.message, caseLink);
-        }
-
+        // The record is safe — answer the reporter now. The notification fan-out
+        // (one round-trip per recipient, plus SMTP) runs after the response so a
+        // busy recipient list never holds up the submit (NFR-006 still allows
+        // up to 2 minutes for delivery).
         ResponseView.sendSuccess(res, incident, 'Created incident successfully', 201);
+
+        void (async () => {
+          try {
+            const templates = await ConfigService.getNotificationTemplates();
+            const caseLink = `#/case/${incident.id}`;
+
+            // Notify the routed coordinator(s) via the configurable template (FR-006/FR-008)
+            const reportedTemplate = templates.incident_reported;
+            if (reportedTemplate) {
+              const rendered = ConfigService.renderTemplate(reportedTemplate, {
+                refNo: incident.refNo,
+                classification: incident.classification || 'Unclassified',
+                province: incident.province,
+                reportedBy: incident.reportedBy || user.displayName
+              });
+              await NotificationService.notifyMany(
+                provinceCoordinators.map(c => c.username),
+                rendered.title,
+                rendered.message,
+                caseLink
+              );
+
+              // FR-007: the national office is notified of ALL incidents — the Deputy Director:
+              // Physical Security (national monitoring/escalations) and the Chief Security Director
+              const allUsers = await UserModel.getAll();
+              await NotificationService.notifyMany(
+                allUsers
+                  .filter(u => u.role === 'deputy_director' || u.role === 'security_director')
+                  .map(u => u.username),
+                rendered.title,
+                rendered.message,
+                caseLink
+              );
+            }
+
+            // Confirmation back to the reporter — email + in-app with the reference number (FR-008)
+            const confirmationTemplate = templates.incident_confirmation;
+            if (confirmationTemplate) {
+              const rendered = ConfigService.renderTemplate(confirmationTemplate, {
+                refNo: incident.refNo,
+                province: incident.province,
+                natureOfCase: incident.natureOfCase || 'not specified'
+              });
+              await NotificationService.notify(user.username, rendered.title, rendered.message, caseLink);
+            }
+          } catch (err) {
+            console.error(`[IncidentController] Notification fan-out failed for ${incident.refNo}:`, err);
+          }
+        })();
       } else {
         ResponseView.sendError(res, 'Failed to create record', 'Operation failed');
       }

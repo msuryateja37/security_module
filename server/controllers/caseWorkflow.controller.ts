@@ -253,6 +253,126 @@ export const CaseWorkflowController = {
     }
   },
 
+  /**
+   * Stage an upload before the case exists (incident report form, FR-004).
+   * The reporter's files travel to the document store while they are still
+   * filling in the form; submitting the incident then only links them, so the
+   * submit round-trip never carries file bytes.
+   */
+  async uploadStaged(req: AuthenticatedRequest, res: Response) {
+    try {
+      const user = req.user!;
+      const { fileName, mimeType, dataBase64 } = req.body || {};
+
+      if (!fileName || !dataBase64) {
+        return ResponseView.sendError(res, 'fileName and dataBase64 are required', 'Validation failed', 400);
+      }
+      if (!FileStorageService.isAllowedFileName(fileName)) {
+        return ResponseView.sendError(res, `File type of '${fileName}' is not allowed`, 'Validation failed', 400);
+      }
+
+      const uploadId = `stg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      let stored;
+      try {
+        stored = await FileStorageService.saveStagedBase64(user.username, uploadId, fileName, dataBase64, mimeType);
+      } catch (err: any) {
+        return ResponseView.sendError(res, err.message || 'Failed to store file', 'Validation failed', 400);
+      }
+
+      // Clear out anything left behind by abandoned drafts — best effort, off the response path
+      void FileStorageService.purgeStaleStaged(user.username);
+
+      ResponseView.sendSuccess(
+        res,
+        { uploadId, fileName, mimeType: mimeType || 'application/octet-stream', fileSize: stored.fileSize, stagedPath: stored.storagePath },
+        'File uploaded successfully',
+        201
+      );
+    } catch (error) {
+      ResponseView.sendError(res, error as any, 'Failed to upload file');
+    }
+  },
+
+  /**
+   * Attach previously staged uploads to a freshly created incident. Only moves
+   * bytes that are already in the document store, so this stays fast even for
+   * large evidence sets.
+   */
+  async linkStagedAttachments(req: AuthenticatedRequest, res: Response) {
+    try {
+      const user = req.user!;
+      const id = req.params.id as string;
+      const uploads = Array.isArray(req.body?.uploads) ? req.body.uploads : null;
+
+      if (!uploads || uploads.length === 0) {
+        return ResponseView.sendError(res, 'uploads[] is required', 'Validation failed', 400);
+      }
+
+      const incident = await IncidentModel.getById(id);
+      if (!incident) {
+        return ResponseView.sendError(res, 'Incident not found', 'Operation failed', 404);
+      }
+      if (!canReadIncident(user, incident)) {
+        return ResponseView.sendError(res, 'Access denied for this incident', 'Forbidden', 403);
+      }
+      if (incident.status === 'Closed') {
+        return ResponseView.sendError(res, 'Closed cases are immutable — no further uploads are allowed', 'Validation failed', 400);
+      }
+
+      const attached: any[] = [];
+      const failed: { fileName: string; error: string }[] = [];
+
+      for (const upload of uploads) {
+        const fileName = upload?.fileName;
+        const stagedPath = upload?.stagedPath;
+        if (!fileName || !stagedPath || !FileStorageService.isAllowedFileName(fileName)) {
+          failed.push({ fileName: fileName || 'unknown', error: 'Invalid upload reference' });
+          continue;
+        }
+        // The browser hands the staged path back — accept it only from its own uploader
+        if (!FileStorageService.isStagedPathOwnedBy(stagedPath, user.username)) {
+          failed.push({ fileName, error: 'Upload does not belong to this user' });
+          continue;
+        }
+
+        const attachmentId = `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        let stored;
+        try {
+          stored = await FileStorageService.promoteStaged(stagedPath, incident.refNo || id, attachmentId, fileName, upload.mimeType);
+        } catch (err: any) {
+          failed.push({ fileName, error: err.message || 'Failed to store file' });
+          continue;
+        }
+
+        const attachment = {
+          id: attachmentId,
+          incidentId: id,
+          fileName,
+          mimeType: upload.mimeType || 'application/octet-stream',
+          fileSize: stored.fileSize,
+          category: upload.category || 'reporter_document',
+          stage: incident.workflowStage || 'Submitted',
+          uploadedBy: user.username,
+          uploadedByName: user.displayName,
+          uploadedByRole: user.role,
+          storagePath: stored.storagePath,
+          dateCreated: new Date().toISOString()
+        };
+        await AttachmentModel.create(attachment);
+        await recordEvent(id, 'ATTACHMENT_ADDED', incident.workflowStage || 'Submitted', user, `Uploaded "${fileName}" (${Math.max(1, Math.round(stored.fileSize / 1024))} KB)`);
+        attached.push(attachment);
+      }
+
+      if (attached.length > 0) {
+        await audit(user, 'CREATE', id, `Attached ${attached.length} supporting document(s) to ${incident.refNo}`);
+      }
+
+      ResponseView.sendSuccess(res, { attached, failed }, 'Attachments linked successfully', 201);
+    } catch (error) {
+      ResponseView.sendError(res, error as any, 'Failed to link attachments');
+    }
+  },
+
   /** Stream a stored attachment back to an authorised user. */
   async downloadAttachment(req: AuthenticatedRequest, res: Response) {
     try {
