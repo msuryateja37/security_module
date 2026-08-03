@@ -151,6 +151,9 @@ export const ROLE_PERMISSIONS: Record<SecurityRole, Permission[]> = {
   ],
   chief_security_investigator: [
     'dashboard:view',
+    // FR-001: any authorised employee may log an incident — every role that gets
+    // the "Incident Notification" tab (see REPORT_TABS) must be able to submit it
+    'incident:create',
     'incident:view_assigned',
     'incident:update',
     'investigation:submit',
@@ -175,6 +178,7 @@ export const ROLE_PERMISSIONS: Record<SecurityRole, Permission[]> = {
   ],
   security_director: [
     'dashboard:view',
+    'incident:create', // FR-001 — the Director reports incidents like any other employee
     'incident:view_all',
     'incident:update',
     'case:approve',

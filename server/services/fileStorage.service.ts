@@ -17,9 +17,17 @@ import { BlobServiceClient, ContainerClient } from '@azure/storage-blob';
 // Files are never overwritten or deleted (immutable evidence trail); the DB
 // row (attachments table) holds storagePath. Uploads arrive as base64 in the
 // JSON body (see express.json limit in server/index.ts).
+//
+// Staging: the incident report form uploads evidence while the reporter is
+// still filling in the form, before a case id exists. Those bytes land in
+// staging/<user>/ and are promoted into the case folder when the incident is
+// created, so submitting stays a fast metadata-only call. Staged files that
+// are never submitted (abandoned drafts) are swept after STAGING_TTL_MS.
 
 const UPLOAD_ROOT = path.join(process.cwd(), 'uploads');
 const AZURE_PREFIX = 'azure:';
+const STAGING_FOLDER = 'staging';
+const STAGING_TTL_MS = 24 * 60 * 60 * 1000;
 
 export const MAX_FILE_BYTES = 15 * 1024 * 1024; // 15 MB per file
 export const MAX_AVATAR_BYTES = 5 * 1024 * 1024; // 5 MB per profile photo
@@ -172,6 +180,102 @@ export const FileStorageService = {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, storedName), buffer);
     return { storagePath: path.posix.join(folder, storedName), fileSize: buffer.length };
+  },
+
+  /**
+   * Park an upload before the case exists (incident report form). The bytes go
+   * to staging/<user>/ and the returned storagePath is handed back to the
+   * browser, which passes it to promoteStaged() once the incident is created.
+   */
+  async saveStagedBase64(username: string, uploadId: string, fileName: string, base64Data: string, mimeType?: string): Promise<{ storagePath: string; fileSize: number }> {
+    const buffer = decodeBase64(base64Data);
+    const folder = `${STAGING_FOLDER}/${sanitizeUserFolder(username)}`;
+    const storedName = `${uploadId}__${sanitizeFileName(fileName)}`;
+
+    if (azureConfigured()) {
+      const container = await getContainer();
+      const blobName = `${folder}/${storedName}`;
+      await container.getBlockBlobClient(blobName).uploadData(buffer, {
+        blobHTTPHeaders: { blobContentType: mimeType || 'application/octet-stream' }
+      });
+      return { storagePath: `${AZURE_PREFIX}${blobName}`, fileSize: buffer.length };
+    }
+
+    const dir = path.join(UPLOAD_ROOT, folder);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, storedName), buffer);
+    return { storagePath: path.posix.join(folder, storedName), fileSize: buffer.length };
+  },
+
+  /**
+   * A staged path may only be claimed by the user who uploaded it — the browser
+   * sends the path back on submit, so it is untrusted input.
+   */
+  isStagedPathOwnedBy(storagePath: string, username: string): boolean {
+    if (typeof storagePath !== 'string' || storagePath.includes('..')) return false;
+    const relative = storagePath.startsWith(AZURE_PREFIX) ? storagePath.slice(AZURE_PREFIX.length) : storagePath;
+    return relative.startsWith(`${STAGING_FOLDER}/${sanitizeUserFolder(username)}/`);
+  },
+
+  /**
+   * Move a staged upload into the case folder once the incident exists. The
+   * returned fileSize is measured from the stored bytes, never from the client.
+   * Throws if the staged file is gone (expired or already promoted).
+   */
+  async promoteStaged(stagedPath: string, caseRef: string, attachmentId: string, fileName: string, mimeType?: string): Promise<{ storagePath: string; fileSize: number }> {
+    const folder = sanitizeCaseFolder(caseRef);
+    const storedName = `${attachmentId}__${sanitizeFileName(fileName)}`;
+
+    if (stagedPath.startsWith(AZURE_PREFIX)) {
+      const container = await getContainer();
+      const source = container.getBlockBlobClient(stagedPath.slice(AZURE_PREFIX.length));
+      if (!(await source.exists())) {
+        throw new Error('Staged upload is no longer available — please re-attach the file');
+      }
+      const buffer = await source.downloadToBuffer();
+      const blobName = `${folder}/${storedName}`;
+      await container.getBlockBlobClient(blobName).uploadData(buffer, {
+        blobHTTPHeaders: { blobContentType: mimeType || 'application/octet-stream' }
+      });
+      await source.deleteIfExists();
+      return { storagePath: `${AZURE_PREFIX}${blobName}`, fileSize: buffer.length };
+    }
+
+    const absoluteSource = resolveLocal(stagedPath);
+    if (!fs.existsSync(absoluteSource)) {
+      throw new Error('Staged upload is no longer available — please re-attach the file');
+    }
+    const dir = path.join(UPLOAD_ROOT, folder);
+    fs.mkdirSync(dir, { recursive: true });
+    const destination = path.join(dir, storedName);
+    fs.renameSync(absoluteSource, destination);
+    return { storagePath: path.posix.join(folder, storedName), fileSize: fs.statSync(destination).size };
+  },
+
+  /** Best-effort sweep of staged uploads from abandoned drafts. Never throws. */
+  async purgeStaleStaged(username: string): Promise<void> {
+    const folder = `${STAGING_FOLDER}/${sanitizeUserFolder(username)}`;
+    const cutoff = Date.now() - STAGING_TTL_MS;
+    try {
+      if (azureConfigured()) {
+        const container = await getContainer();
+        for await (const blob of container.listBlobsFlat({ prefix: `${folder}/` })) {
+          const created = blob.properties.createdOn?.getTime() ?? Date.now();
+          if (created < cutoff) {
+            await container.getBlockBlobClient(blob.name).deleteIfExists();
+          }
+        }
+        return;
+      }
+      const dir = path.join(UPLOAD_ROOT, folder);
+      if (!fs.existsSync(dir)) return;
+      for (const name of fs.readdirSync(dir)) {
+        const file = path.join(dir, name);
+        if (fs.statSync(file).mtimeMs < cutoff) fs.unlinkSync(file);
+      }
+    } catch (err) {
+      console.error('[FileStorageService] staging purge failed:', err);
+    }
   },
 
   async exists(storagePath: string): Promise<boolean> {

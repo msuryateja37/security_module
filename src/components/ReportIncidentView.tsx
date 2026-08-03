@@ -24,6 +24,36 @@ const readFileAsDataUrl = (file: File): Promise<string> =>
     reader.readAsDataURL(file);
   });
 
+/**
+ * A supporting document as it travels through the form. The bytes are uploaded
+ * to the document store as soon as the file is picked ("staged"); submitting the
+ * incident afterwards only links the staged path, so the submit itself is a
+ * small, fast request no matter how large the evidence is.
+ */
+type UploadStatus = 'pending' | 'uploading' | 'uploaded' | 'failed';
+
+interface StagedAttachment {
+  key: string;
+  file: File;
+  status: UploadStatus;
+  stagedPath?: string;
+  error?: string;
+}
+
+const UPLOAD_STATUS_LABEL: Record<UploadStatus, string> = {
+  pending: 'Waiting',
+  uploading: 'Uploading…',
+  uploaded: 'Uploaded',
+  failed: 'Failed'
+};
+
+const UPLOAD_STATUS_COLOR: Record<UploadStatus, string> = {
+  pending: 'var(--text-muted)',
+  uploading: 'var(--text-secondary)',
+  uploaded: 'var(--success, #1f7a3f)',
+  failed: 'var(--danger, #c0392b)'
+};
+
 const formatFileSize = (bytes: number) =>
   bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
@@ -88,10 +118,15 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
   const [reportedToSaps, setReportedToSaps] = useState<SecurityIncident['reportedToSapsSsa']>(initialData?.reportedToSapsSsa || 'No');
   // Expected resolution window for the case (required on both form types)
   const [natureOfCase, setNatureOfCase] = useState<string>(initialData?.natureOfCase || '');
-  // Supporting documents chosen by the reporter — uploaded right after the incident is created
-  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  // Supporting documents — uploaded in the background as soon as they are picked,
+  // then linked to the case on submit (see StagedAttachment)
+  const [attachedFiles, setAttachedFiles] = useState<StagedAttachment[]>([]);
+  const fileKeySeq = React.useRef(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadedCount, setUploadedCount] = useState(0);
+
+  const uploadsInFlight = attachedFiles.some(a => a.status === 'uploading' || a.status === 'pending');
+  const failedUploads = attachedFiles.filter(a => a.status === 'failed');
 
   // Selected incident types
   const [selectedTypes, setSelectedTypes] = useState<string[]>(
@@ -199,57 +234,124 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
     setCurrentStep(currentStep - 1);
   };
 
-  const handleAddFiles = (list: FileList | null) => {
-    if (!list) return;
-    const incoming = Array.from(list);
-    setAttachedFiles(prev => {
-      const next = [...prev];
-      for (const file of incoming) {
-        if (file.size > 15 * 1024 * 1024) {
-          showAlert(`"${file.name}" exceeds the 15 MB per-file limit and was skipped.`, 'File Too Large', 'warning');
-          continue;
-        }
-        if (!next.some(f => f.name === file.name && f.size === file.size)) {
-          next.push(file);
-        }
+  const patchAttachment = (key: string, patch: Partial<StagedAttachment>) =>
+    setAttachedFiles(prev => prev.map(a => (a.key === key ? { ...a, ...patch } : a)));
+
+  /** Send one file to the staging store; failures are shown inline with a Retry action. */
+  const uploadStaged = async (entry: StagedAttachment) => {
+    if (!currentUser) return;
+    patchAttachment(entry.key, { status: 'uploading', error: undefined });
+    try {
+      const dataUrl = await readFileAsDataUrl(entry.file);
+      const res = await fetch('/api/uploads/staged', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-username': currentUser.username,
+          'x-user-role': currentUser.role
+        },
+        body: JSON.stringify({
+          fileName: entry.file.name,
+          mimeType: entry.file.type,
+          dataBase64: dataUrl
+        })
+      });
+      const json = await res.json();
+      if (json.success && json.data?.stagedPath) {
+        patchAttachment(entry.key, { status: 'uploaded', stagedPath: json.data.stagedPath });
+      } else {
+        patchAttachment(entry.key, { status: 'failed', error: json.error || json.message || 'Upload failed' });
       }
-      return next;
-    });
+    } catch {
+      patchAttachment(entry.key, { status: 'failed', error: 'Upload failed — check your connection' });
+    }
   };
 
-  const uploadAttachments = async (incidentId: string): Promise<number> => {
-    if (!currentUser || attachedFiles.length === 0) return 0;
-    let uploaded = 0;
-    for (const file of attachedFiles) {
-      try {
-        const dataUrl = await readFileAsDataUrl(file);
-        const res = await fetch(`/api/incidents/${incidentId}/attachments`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-username': currentUser.username,
-            'x-user-role': currentUser.role
-          },
-          body: JSON.stringify({
-            fileName: file.name,
-            mimeType: file.type,
-            dataBase64: dataUrl,
-            category: 'reporter_document'
-          })
-        });
-        const json = await res.json();
-        if (json.success) uploaded++;
-        else showAlert(`"${file.name}" could not be uploaded: ${json.error || json.message}`, 'Upload Failed', 'warning');
-      } catch {
-        showAlert(`"${file.name}" could not be uploaded.`, 'Upload Failed', 'warning');
+  const handleAddFiles = (list: FileList | null) => {
+    if (!list) return;
+    const additions: StagedAttachment[] = [];
+    for (const file of Array.from(list)) {
+      if (file.size > 15 * 1024 * 1024) {
+        showAlert(`"${file.name}" exceeds the 15 MB per-file limit and was skipped.`, 'File Too Large', 'warning');
+        continue;
       }
+      const isDuplicate = (a: StagedAttachment) => a.file.name === file.name && a.file.size === file.size;
+      if (attachedFiles.some(isDuplicate) || additions.some(isDuplicate)) continue;
+      fileKeySeq.current += 1;
+      additions.push({ key: `file-${fileKeySeq.current}`, file, status: 'pending' });
     }
-    return uploaded;
+    if (additions.length === 0) return;
+    setAttachedFiles(prev => [...prev, ...additions]);
+    // Upload straight away and in parallel, so the files are already in the
+    // document store by the time the reporter reaches the Submit button
+    additions.forEach(entry => { void uploadStaged(entry); });
+  };
+
+  /** Manual "Upload" action for anything still waiting or previously failed. */
+  const handleUploadOutstanding = () => {
+    attachedFiles
+      .filter(a => a.status === 'pending' || a.status === 'failed')
+      .forEach(entry => { void uploadStaged(entry); });
+  };
+
+  /** Attach the already-uploaded documents to the new case — metadata only, no file bytes. */
+  const linkStagedAttachments = async (incidentId: string): Promise<number> => {
+    const staged = attachedFiles.filter(a => a.status === 'uploaded' && a.stagedPath);
+    if (!currentUser || staged.length === 0) return 0;
+    try {
+      const res = await fetch(`/api/incidents/${incidentId}/attachments/link-staged`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-username': currentUser.username,
+          'x-user-role': currentUser.role
+        },
+        body: JSON.stringify({
+          uploads: staged.map(a => ({
+            stagedPath: a.stagedPath,
+            fileName: a.file.name,
+            mimeType: a.file.type,
+            category: 'reporter_document'
+          }))
+        })
+      });
+      const json = await res.json();
+      if (!json.success) {
+        showAlert('The case was created, but the supporting documents could not be attached.', 'Attachment Failed', 'warning');
+        return 0;
+      }
+      const failed: { fileName: string }[] = json.data?.failed || [];
+      if (failed.length > 0) {
+        showAlert(
+          `The case was created, but ${failed.length} document(s) could not be attached: ${failed.map(f => f.fileName).join(', ')}. Please upload them from the case file.`,
+          'Attachment Failed',
+          'warning'
+        );
+      }
+      return (json.data?.attached || []).length;
+    } catch {
+      showAlert('The case was created, but the supporting documents could not be attached.', 'Attachment Failed', 'warning');
+      return 0;
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
+
+    // Uploads run separately from the submit — only block if any are unresolved
+    if (uploadsInFlight) {
+      showAlert('Your supporting documents are still uploading. Please wait a moment and submit again.', 'Upload In Progress', 'warning');
+      return;
+    }
+    if (failedUploads.length > 0) {
+      showAlert(
+        `${failedUploads.length} supporting document(s) failed to upload. Retry the upload or remove them before submitting.`,
+        'Upload Failed',
+        'warning'
+      );
+      return;
+    }
 
     if (formType === 'noc') {
       if (!reportedBy || !dateTime || !place || !contactDetails || selectedTypes.length === 0 || !nocBriefDetails) {
@@ -325,7 +427,7 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
         showAlert('The incident could not be saved. Please try again.', 'Submission Failed', 'danger');
         return;
       }
-      const uploaded = await uploadAttachments(newIncident.id);
+      const uploaded = await linkStagedAttachments(newIncident.id);
       setUploadedCount(uploaded);
       setCurrentStep(4);
     } finally {
@@ -372,23 +474,54 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
           onChange={(e) => { handleAddFiles(e.target.files); e.target.value = ''; }}
         />
       </label>
+      {!compact && (
+        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>
+          Documents upload as soon as you attach them — submitting the report only links them to the case.
+        </div>
+      )}
       {attachedFiles.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.6rem' }}>
-          {attachedFiles.map((file, idx) => (
-            <div key={`${file.name}-${idx}`} className="attached-file-row">
+          {attachedFiles.map(entry => (
+            <div key={entry.key} className="attached-file-row">
               <Paperclip size={14} style={{ flexShrink: 0 }} />
-              <span style={{ flexGrow: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
-              <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{formatFileSize(file.size)}</span>
+              <span style={{ flexGrow: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.file.name}</span>
+              <span
+                style={{ color: UPLOAD_STATUS_COLOR[entry.status], flexShrink: 0, fontWeight: 700, fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                title={entry.error || undefined}
+              >
+                {entry.status === 'uploaded' && <Check size={12} strokeWidth={3.5} />}
+                {UPLOAD_STATUS_LABEL[entry.status]}
+              </span>
+              {entry.status === 'failed' && (
+                <button
+                  type="button"
+                  onClick={() => { void uploadStaged(entry); }}
+                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-accent)', fontWeight: 700, fontSize: '12px', padding: 0 }}
+                >
+                  Retry
+                </button>
+              )}
+              <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{formatFileSize(entry.file.size)}</span>
               <button
                 type="button"
-                onClick={() => setAttachedFiles(prev => prev.filter((_, i) => i !== idx))}
+                onClick={() => setAttachedFiles(prev => prev.filter(a => a.key !== entry.key))}
                 style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex' }}
-                aria-label={`Remove ${file.name}`}
+                aria-label={`Remove ${entry.file.name}`}
               >
                 <X size={14} />
               </button>
             </div>
           ))}
+          {attachedFiles.some(a => a.status === 'pending' || a.status === 'failed') && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={handleUploadOutstanding}
+              style={{ alignSelf: 'flex-start', padding: '7px 14px', fontSize: '12.5px' }}
+            >
+              <UploadCloud size={14} /> Upload {failedUploads.length > 0 ? 'again' : 'now'}
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -695,8 +828,8 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
             <button type="button" className="btn btn-secondary btn-cancel-rust" onClick={() => setFormType('standard')} disabled={isSubmitting}>
               Cancel NOC Alert
             </button>
-            <button type="submit" className="btn btn-primary" style={{ padding: '13px 26px', fontWeight: 800 }} disabled={isSubmitting}>
-              <Send size={15} strokeWidth={2.5} /> {isSubmitting ? 'Dispatching...' : 'Submit NOC Initial Notification'}
+            <button type="submit" className="btn btn-primary" style={{ padding: '13px 26px', fontWeight: 800 }} disabled={isSubmitting || uploadsInFlight}>
+              <Send size={15} strokeWidth={2.5} /> {isSubmitting ? 'Dispatching...' : uploadsInFlight ? 'Uploading documents…' : 'Submit NOC Initial Notification'}
             </button>
           </div>
         </form>
@@ -930,8 +1063,8 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
                 <button type="button" className="btn btn-secondary" style={{ padding: '13px 22px', fontSize: '14px' }} onClick={handlePrevStep} disabled={isSubmitting}>
                   <ArrowLeft size={15} strokeWidth={2.5} /> Back
                 </button>
-                <button type="submit" className="btn btn-success" style={{ padding: '13px 26px', fontSize: '14px' }} disabled={isSubmitting}>
-                  <Send size={15} strokeWidth={2.5} /> {isSubmitting ? 'Submitting & Uploading...' : 'Submit Standard Incident Report'}
+                <button type="submit" className="btn btn-success" style={{ padding: '13px 26px', fontSize: '14px' }} disabled={isSubmitting || uploadsInFlight}>
+                  <Send size={15} strokeWidth={2.5} /> {isSubmitting ? 'Submitting...' : uploadsInFlight ? 'Uploading documents…' : 'Submit Standard Incident Report'}
                 </button>
               </div>
             </div>
