@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type { SecurityIncident, TraAudit } from '../types/security';
 import type { UserProfile } from '../security/roleAccess';
+import { canAccessView } from '../security/roleAccess';
 import { 
   Shield, 
   Users, 
@@ -75,6 +76,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const roleLabel = getRoleLabel(currentUser.role);
   const provinceLabel = currentUser.province || 'Gauteng';
+
+  // Shortcut tiles must only be shown when the role can actually reach the target
+  // view — a tile that silently does nothing reads as a broken control (CI-002).
+  const canOpenAdministration = canAccessView(currentUser.role, 'administration');
+  const canOpenReportsArchive = canAccessView(currentUser.role, 'reports_archive');
+  const registerTarget = currentUser.role === 'employee' ? 'my_cases' : 'register';
+  const canOpenRegister = canAccessView(currentUser.role, registerTarget as never);
+
+  // Recent Incidents — everything reported in the last 30 days that this user is
+  // allowed to see (CI-002). Gives investigators and directors immediate sight of
+  // active cases; the incident list handed in is already province-scoped.
+  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+  const recentIncidents = [...incidents]
+    .filter(i => {
+      const reported = new Date(i.dateReported || i.dateCreated || i.dateTime).getTime();
+      return Number.isFinite(reported) && Date.now() - reported <= THIRTY_DAYS_MS;
+    })
+    .sort((a, b) =>
+      new Date(b.dateReported || b.dateCreated || b.dateTime).getTime() -
+      new Date(a.dateReported || a.dateCreated || a.dateTime).getTime()
+    )
+    .slice(0, 8);
 
   // 4. Render animated count values
   const [progress, setProgress] = useState(0);
@@ -393,8 +416,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem', marginBottom: '2rem' }}>
         
         {/* User Management */}
-        <div 
-          className="glass-card" 
+        {canOpenAdministration && (
+        <div
+          className="glass-card"
           onClick={() => onNavigate('administration')}
           style={{ padding: '1.5rem', cursor: 'pointer', transition: 'all 0.2s ease', display: 'flex', gap: '1rem', alignItems: 'center' }}
           onMouseEnter={(e) => {
@@ -416,11 +440,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Roles, provinces & delegation</p>
           </div>
         </div>
+        )}
 
         {/* Breaches Register */}
-        <div 
-          className="glass-card" 
-          onClick={() => onNavigate(currentUser.role === 'employee' ? 'my_cases' : 'register')}
+        {canOpenRegister && (
+        <div
+          className="glass-card"
+          onClick={() => onNavigate(registerTarget)}
           style={{ padding: '1.5rem', cursor: 'pointer', transition: 'all 0.2s ease', display: 'flex', gap: '1rem', alignItems: 'center' }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-2px)';
@@ -441,10 +467,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Master register export</p>
           </div>
         </div>
+        )}
 
         {/* Performance Reports */}
-        <div 
-          className="glass-card" 
+        {canOpenReportsArchive && (
+        <div
+          className="glass-card"
           onClick={() => onNavigate('reports_archive')}
           style={{ padding: '1.5rem', cursor: 'pointer', transition: 'all 0.2s ease', display: 'flex', gap: '1rem', alignItems: 'center' }}
           onMouseEnter={(e) => {
@@ -466,10 +494,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Excel export by province</p>
           </div>
         </div>
+        )}
 
         {/* System Settings */}
-        <div 
-          className="glass-card" 
+        {canOpenAdministration && (
+        <div
+          className="glass-card"
           onClick={() => onNavigate('administration')}
           style={{ padding: '1.5rem', cursor: 'pointer', transition: 'all 0.2s ease', display: 'flex', gap: '1rem', alignItems: 'center' }}
           onMouseEnter={(e) => {
@@ -491,7 +521,73 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>SLAs, audit logs</p>
           </div>
         </div>
+        )}
 
+      </div>
+
+      {/* Recent Incidents — last 30 days, for immediate visibility of active cases (CI-002) */}
+      <div style={{ marginBottom: '2rem' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '1rem' }}>
+          <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>Recent Incidents</h3>
+          <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Reported in the last 30 days</span>
+        </div>
+        <div className="glass-card" style={{ padding: '1.25rem' }}>
+          <div className="table-container">
+            <table className="custom-table compact">
+              <thead>
+                <tr>
+                  <th>Ref#</th>
+                  <th>Date Reported</th>
+                  <th>Type</th>
+                  <th>Province</th>
+                  <th>Stage</th>
+                  <th>Status</th>
+                  <th style={{ width: '80px', textAlign: 'center' }}>View</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentIncidents.map(inc => (
+                  <tr key={inc.id}>
+                    <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{inc.refNo}</td>
+                    <td style={{ fontSize: '0.8rem' }}>
+                      {new Date(inc.dateReported || inc.dateCreated || inc.dateTime)
+                        .toLocaleDateString('en-ZA', { year: 'numeric', month: '2-digit', day: '2-digit' })}
+                    </td>
+                    <td style={{ fontSize: '0.8rem' }}>
+                      {(inc.incidentType && inc.incidentType.length > 0 ? inc.incidentType[0] : inc.natureOfLoss) || 'N/A'}
+                    </td>
+                    <td style={{ fontSize: '0.8rem' }}>{inc.province}</td>
+                    <td style={{ fontSize: '0.8rem' }}>{inc.workflowStage || 'Submitted'}</td>
+                    <td>
+                      <span
+                        className={`badge ${inc.status === 'Closed' ? 'success' : inc.isEscalated || inc.workflowStage === 'Escalated' ? 'danger' : 'warning'}`}
+                        style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem' }}
+                      >
+                        {inc.status || 'Open'}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => onNavigate(`case:${inc.id}`)}
+                        style={{ padding: '0.25rem 0.6rem', fontSize: '0.72rem' }}
+                      >
+                        Open
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {recentIncidents.length === 0 && (
+                  <tr>
+                    <td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                      No incidents reported in the last 30 days.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       {/* Quick Action Links matching Dashboard.png layout */}

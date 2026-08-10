@@ -10,6 +10,7 @@ import { AdminController } from '../controllers/admin.controller.js';
 import { AssistantController } from '../controllers/assistant.controller.js';
 import { LeaveController } from '../controllers/leave.controller.js';
 import { NotificationController } from '../controllers/notification.controller.js';
+import { PolicyController } from '../controllers/policy.controller.js';
 import { authenticateUser, requirePermission, AuthenticatedRequest } from '../security/auth.middleware.js';
 import { AuditService } from '../security/audit.service.js';
 import { ResponseView } from '../views/response.view.js';
@@ -117,6 +118,11 @@ router.get('/stats', requirePermission('dashboard:view'), StatsController.getAll
 router.put('/stats', requirePermission('reports:submit_operational'), StatsController.updateBulk);
 
 // Operational Checklists
+// Policy Hub repository — every role reads; publishing is an administrative action
+router.get('/policy-documents', requirePermission('dashboard:view'), PolicyController.list);
+router.get('/policy-documents/:id/download', requirePermission('dashboard:view'), PolicyController.download);
+router.post('/policy-documents', requirePermission('admin:manage_roles'), PolicyController.upload);
+
 router.get('/checklists', requirePermission('dashboard:view'), ChecklistController.getAll);
 router.put('/checklists', requirePermission('reports:submit_operational'), ChecklistController.updateBulk);
 

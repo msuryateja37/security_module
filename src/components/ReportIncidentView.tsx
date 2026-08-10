@@ -54,6 +54,13 @@ const UPLOAD_STATUS_COLOR: Record<UploadStatus, string> = {
   failed: 'var(--danger, #c0392b)'
 };
 
+/** Split a stored ISO/datetime-local value into the separate date and time inputs. */
+const splitOccurrence = (value?: string): { date: string; time: string } => {
+  if (!value) return { date: '', time: '' };
+  const [datePart, timePart = ''] = value.split('T');
+  return { date: datePart || '', time: timePart.slice(0, 5) };
+};
+
 const formatFileSize = (bytes: number) =>
   bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
@@ -97,7 +104,11 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
   // Form fields state (seeded from the assistant draft when present)
   const [department, setDepartment] = useState('Chief Directorate: Security and Facilities Management Services');
   const [contactDetails, setContactDetails] = useState(currentUser?.email || '');
-  const [dateTime, setDateTime] = useState(initialData?.dateTime || '');
+  // Date and Time of Occurrence are captured separately, as specified in the
+  // approved User Journey (CI-003); they are combined into the stored dateTime.
+  const [occurrenceDate, setOccurrenceDate] = useState(splitOccurrence(initialData?.dateTime).date);
+  const [occurrenceTime, setOccurrenceTime] = useState(splitOccurrence(initialData?.dateTime).time);
+  const dateTime = occurrenceDate ? `${occurrenceDate}T${occurrenceTime || '00:00'}` : '';
   const [place, setPlace] = useState(initialData?.place || '');
   const [province, setProvince] = useState<ProvinceType>(draftProvince || defaultProvince);
   const [lossValue, setLossValue] = useState<string | number>(initialData?.lossValue ?? '');
@@ -205,7 +216,7 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
   const handleNextStep = () => {
     if (currentStep === 1) {
       if (!reportedBy || !dateTime || !place || !contactDetails) {
-        showAlert('Please fill in all general details (Reported By, Date/Time, Place, and Contact Details).', 'Validation Error', 'warning');
+        showAlert('Please fill in all general details (Reported By, Date and Time of Occurrence, Place, and Contact Details).', 'Validation Error', 'warning');
         return;
       }
       if (reportFor === 'Others' && !reportForEmployee) {
@@ -647,7 +658,8 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
       {/* Header band with scheme/step kicker */}
       <div className="header-row">
         <div>
-          <h1 className="page-title">Report Security Incident</h1>
+          {/* Terminology matches the approved User Journey — "Report Incident" (CI-003) */}
+          <h1 className="page-title">Report Incident</h1>
           <p className="page-subtitle">File incident notifications directly to the National Operations Centre</p>
         </div>
         {currentStep < 4 && (
@@ -765,12 +777,22 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
               />
             </div>
             <div className="form-group">
-              <label className="form-label">Date and Time of Incident<RequiredStar /></label>
+              <label className="form-label">Date of Occurrence<RequiredStar /></label>
               <input
-                type="datetime-local"
+                type="date"
                 className="form-input"
-                value={dateTime}
-                onChange={(e) => setDateTime(e.target.value)}
+                value={occurrenceDate}
+                onChange={(e) => setOccurrenceDate(e.target.value)}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Time of Occurrence<RequiredStar /></label>
+              <input
+                type="time"
+                className="form-input"
+                value={occurrenceTime}
+                onChange={(e) => setOccurrenceTime(e.target.value)}
                 required
               />
             </div>
@@ -865,8 +887,12 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
                   <input type="text" className="form-input" placeholder="e.g. 012 312 8624 / john.doe@dlrrd.gov.za" value={contactDetails} onChange={(e) => setContactDetails(e.target.value)} required />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Date and Time of Occurrence<RequiredStar /></label>
-                  <input type="datetime-local" className="form-input" value={dateTime} onChange={(e) => setDateTime(e.target.value)} required />
+                  <label className="form-label">Date of Occurrence<RequiredStar /></label>
+                  <input type="date" className="form-input" value={occurrenceDate} onChange={(e) => setOccurrenceDate(e.target.value)} required />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Time of Occurrence<RequiredStar /></label>
+                  <input type="time" className="form-input" value={occurrenceTime} onChange={(e) => setOccurrenceTime(e.target.value)} required />
                 </div>
               </div>
 

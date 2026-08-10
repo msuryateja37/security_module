@@ -50,7 +50,8 @@ import {
   Bell,
   Menu,
   X,
-  UserRound
+  UserRound,
+  LogOut
 } from 'lucide-react';
 import { useModal } from './components/NotificationModal';
 
@@ -703,6 +704,16 @@ function App() {
       .catch(err => console.error('Error refreshing TRA audits:', err));
   };
 
+  /** Ends the session and clears everything user-scoped (sidebar + profile page). */
+  const handleLogout = () => {
+    localStorage.removeItem('dlrrd_logged_in_user');
+    setCurrentUser(null);
+    setActiveView('dashboard');
+    setSubmitReportSubView('incident');
+    setAssistantMessages([]);
+    setAssistantDraft(null);
+  };
+
   const getTopbarTitle = () => {
     switch (activeView) {
       case 'dashboard': return 'Dashboard';
@@ -842,7 +853,8 @@ function App() {
           </ul>
         </div>
 
-        {/* Bottom user identity card — click to open profile */}
+        {/* Bottom user identity card — click to open profile. Logout sits beneath it,
+            separated from the functional modules as an account action (CI-0014). */}
         <div className="sidebar-user-container">
           <button
             type="button"
@@ -858,6 +870,15 @@ function App() {
               <span className="sidebar-user-role">{currentUser.roleLabel}</span>
               <span className="sidebar-user-province">{currentUser.province}</span>
             </span>
+          </button>
+          <button
+            type="button"
+            className="sidebar-logout-btn"
+            onClick={handleLogout}
+            title="Sign out of SIMS"
+          >
+            <LogOut size={16} />
+            <span className="nav-text">Logout</span>
           </button>
         </div>
       </nav>
@@ -1229,6 +1250,7 @@ function App() {
             <PolicyHubView
               checklists={checklists}
               onUpdateChecklist={handleUpdateChecklist}
+              currentUser={currentUser}
             />
           )}
 
@@ -1240,14 +1262,6 @@ function App() {
               onUserUpdated={(user) => {
                 setCurrentUser(user);
                 localStorage.setItem('dlrrd_logged_in_user', JSON.stringify(user));
-              }}
-              onLogout={() => {
-                localStorage.removeItem('dlrrd_logged_in_user');
-                setCurrentUser(null);
-                setActiveView('dashboard');
-                setSubmitReportSubView('incident');
-                setAssistantMessages([]);
-                setAssistantDraft(null);
               }}
             />
           )}

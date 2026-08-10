@@ -27,6 +27,7 @@ import { BlobServiceClient, ContainerClient } from '@azure/storage-blob';
 const UPLOAD_ROOT = path.join(process.cwd(), 'uploads');
 const AZURE_PREFIX = 'azure:';
 const STAGING_FOLDER = 'staging';
+const POLICY_FOLDER = 'policies';
 const STAGING_TTL_MS = 24 * 60 * 60 * 1000;
 
 export const MAX_FILE_BYTES = 15 * 1024 * 1024; // 15 MB per file
@@ -180,6 +181,30 @@ export const FileStorageService = {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, storedName), buffer);
     return { storagePath: path.posix.join(folder, storedName), fileSize: buffer.length };
+  },
+
+  /**
+   * Persist an approved policy document. Policies live in one flat folder rather
+   * than per-case, and superseded versions are never deleted (each version keeps
+   * its own blob) so historic references remain resolvable.
+   */
+  async savePolicyDocument(documentId: string, fileName: string, base64Data: string, mimeType?: string): Promise<{ storagePath: string; fileSize: number }> {
+    const buffer = decodeBase64(base64Data);
+    const storedName = `${documentId}__${sanitizeFileName(fileName)}`;
+
+    if (azureConfigured()) {
+      const container = await getContainer();
+      const blobName = `${POLICY_FOLDER}/${storedName}`;
+      await container.getBlockBlobClient(blobName).uploadData(buffer, {
+        blobHTTPHeaders: { blobContentType: mimeType || 'application/octet-stream' }
+      });
+      return { storagePath: `${AZURE_PREFIX}${blobName}`, fileSize: buffer.length };
+    }
+
+    const dir = path.join(UPLOAD_ROOT, POLICY_FOLDER);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, storedName), buffer);
+    return { storagePath: path.posix.join(POLICY_FOLDER, storedName), fileSize: buffer.length };
   },
 
   /**

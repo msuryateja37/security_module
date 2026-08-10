@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($scratch = \"C:\\\\Users\\\\iamsr\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\d--security-module\\\\9a66cb88-9db3-4761-a2e3-814c9f520230\\\\scratchpad\"; New-Item -ItemType Directory -Force $scratch | Out-Null; $zip = Join-Path $scratch \"ci-testing.zip\"; Copy-Item \"d:\\\\security_module\\\\docs\\\\SECURITY Chief Investigator Role User Testing \\(1\\).docx\" $zip -Force; $out = Join-Path $scratch \"ci-testing\"; if \\(Test-Path $out\\) { Remove-Item -Recurse -Force $out }; Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory\\($zip, $out\\); Get-ChildItem -Recurse $out | Select-Object -ExpandProperty FullName)",
+      "Bash(awk 'NR>=100' ci-testing.txt)",
+      "Bash(awk 'NR>=320' ci-testing.txt)",
+      "Bash(node -e \"const p=require\\('./package.json'\\);console.log\\(JSON.stringify\\({dep:p.dependencies,dev:p.devDependencies},null,1\\)\\)\")",
+      "Bash(curl -s http://localhost:8080/api/policy-documents -H \"x-username: investigator\" -H \"x-user-role: chief_security_investigator\")",
+      "Bash(curl -s -X POST http://localhost:8080/api/policy-documents -H \"Content-Type: application/json\" -H \"x-username: director\" -H \"x-user-role: security_director\" -d '{\"title\":\"DLRRD Security Policy\",\"category\":\"General\",\"version\":\"1.0\",\"effectiveDate\":\"2026-01-01\",\"revisionDate\":\"2027-01-01\",\"summary\":\"Smoke test entry\",\"fileName\":\"policy-smoke.txt\",\"mimeType\":\"text/plain\",\"dataBase64\":\"data:text/plain;base64,cG9saWN5IHNtb2tlIHRlc3Q=\"}')",
+      "Bash(curl -s -o /dev/null -w \"incidents:%{http_code}\\\\n\" http://localhost:8080/api/incidents -H \"x-username: employee\" -H \"x-user-role: employee\")",
+      "Bash(curl -s -o /dev/null -w \"policy:%{http_code}\\\\n\" http://localhost:8080/api/policy-documents -H \"x-username: employee\" -H \"x-user-role: employee\")",
+      "PowerShell(Get-Process node -ErrorAction SilentlyContinue)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" -X POST http://localhost:8080/api/policy-documents -H \"Content-Type: application/json\" -H \"x-username: investigator\" -H \"x-user-role: chief_security_investigator\" -d '{\"title\":\"x\",\"fileName\":\"x.txt\",\"dataBase64\":\"data:text/plain;base64,eA==\"}')",
+      "Bash(curl -s \"http://localhost:8080/api/policy-documents/pol-1786121373497-8a319u/download\" -H \"x-username: investigator\" -H \"x-user-role: chief_security_investigator\")",
+      "Bash(curl -s -X POST http://localhost:8080/api/policy-documents -H \"Content-Type: application/json\" -H \"x-username: director\" -H \"x-user-role: security_director\" -d '{\"title\":\"DLRRD Security Policy\",\"category\":\"General\",\"version\":\"2.0\",\"effectiveDate\":\"2026-08-01\",\"fileName\":\"policy-smoke-v2.txt\",\"mimeType\":\"text/plain\",\"dataBase64\":\"data:text/plain;base64,dmVyc2lvbiB0d28=\"}' -o /dev/null -w \"%{http_code}\\\\n\")",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);\\(j.data||[]\\).forEach\\(p=>console.log\\(p.title,'| v'+p.version,'| current:',p.isCurrent\\)\\);}\\)\")",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\('documents:',\\(j.data||[]\\).length\\);}\\)\")",
+      "Bash(curl -s -o /dev/null -w \"health:%{http_code}\\\\n\" http://localhost:8080/api/incidents -H \"x-username: employee\" -H \"x-user-role: employee\")",
+      "PowerShell(Stop-Process -Name node -Force -ErrorAction SilentlyContinue)",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\('policy documents:',\\(j.data||[]\\).length\\);}\\)\")",
+      "Bash(curl -s -o /dev/null -w \"vite:%{http_code}\\\\n\" http://localhost:5173/)",
+      "Bash(curl -s -o /dev/null -w \"proxied:%{http_code}\\\\n\" \"http://localhost:5173/api/incidents\" -H \"x-username: employee\" -H \"x-user-role: employee\")",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"ProcessId = 16348 OR ProcessId = 23168 OR ProcessId = 23232\" | Select-Object ProcessId, ParentProcessId, @{n='Cmd';e={$_.CommandLine.Substring\\(0, [Math]::Min\\(150, $_.CommandLine.Length\\)\\)}} | Format-List)",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"Name = 'node.exe'\" | Where-Object { $_.ProcessId -notin 16348,23168,23232 } | Select-Object ProcessId, ParentProcessId, @{n='Cmd';e={$_.CommandLine.Substring\\(0, [Math]::Min\\(120, $_.CommandLine.Length\\)\\)}} | Format-Table -AutoSize -Wrap)",
+      "PowerShell(foreach \\($id in 23232, 16348, 23168\\) { try { Stop-Process -Id $id -Force -ErrorAction Stop; \"killed $id\" } catch { \"already gone: $id\" } }; Start-Sleep -Seconds 3; \"--- port 8080 now ---\"; $c = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue; if \\($c\\) { foreach \\($x in $c\\) { \"owned by PID $\\($x.OwningProcess\\)\" } } else { \"free\" })",
+      "Bash(curl -s -o /dev/null -w \"api-direct:%{http_code}\\\\n\" http://localhost:8080/api/incidents -H \"x-username: employee\" -H \"x-user-role: employee\")",
+      "Bash(curl -s -o /dev/null -w \"via-vite-proxy:%{http_code}\\\\n\" \"http://localhost:5173/api/incidents\" -H \"x-username: employee\" -H \"x-user-role: employee\")",
+      "Bash(curl -s -o /dev/null -w \"policy:%{http_code}\\\\n\" \"http://localhost:5173/api/policy-documents\" -H \"x-username: investigator\" -H \"x-user-role: chief_security_investigator\")",
+      "Bash(python -c \"print\\('py ok'\\)\")"
+    ]
+  }
+}

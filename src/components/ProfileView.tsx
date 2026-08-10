@@ -13,8 +13,7 @@ import {
   Pencil,
   Camera,
   ImagePlus,
-  Loader2,
-  LogOut
+  Loader2
 } from 'lucide-react';
 import type { UserProfile } from '../security/roleAccess';
 import { useModal } from './NotificationModal';
@@ -26,8 +25,6 @@ interface ProfileViewProps {
   /** Shared profile-photo object URL, loaded once by App and kept in sync across the app. */
   avatarObjectUrl?: string | null;
   onUserUpdated: (user: UserProfile) => void;
-  /** Signs the user out and returns to the login screen. */
-  onLogout?: () => void;
 }
 
 // Colleagues pool for the "Recommend a person (AD)" dropdown
@@ -111,7 +108,9 @@ const ACTING_ROLES: Array<UserProfile['role']> = [
   'system_administrator',
 ];
 
-export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, avatarObjectUrl, onUserUpdated, onLogout }) => {
+// Logout lives at the bottom of the sidebar as a separate account action (CI-0014),
+// so the profile header only carries profile actions.
+export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, avatarObjectUrl, onUserUpdated }) => {
   const { showAlert } = useModal();
   useBreadcrumbTail('Profile');
 
@@ -292,25 +291,30 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, avatarObj
                 </button>
               </>
             ) : (
-              <>
-                <button className="pv-edit-btn" onClick={() => setIsEditing(true)}>
-                  <Pencil size={15} />
-                  Edit Profile
-                </button>
-                {onLogout && (
-                  <button className="pv-logout-btn" onClick={onLogout}>
-                    <LogOut size={15} />
-                    Logout
-                  </button>
-                )}
-              </>
+              <button className="pv-edit-btn" onClick={() => setIsEditing(true)}>
+                <Pencil size={15} />
+                Edit Profile
+              </button>
             )}
           </div>
         </div>
       </div>
 
+      {/* Editing state must be unmistakable — without it the mode change reads as
+          "the button did nothing", since most fields stay read-only (CI-0013). */}
+      {isEditing && (
+        <div className="pv-edit-banner">
+          <Pencil size={15} />
+          <span>
+            <strong>Editing your profile.</strong> Job Title, Work Contact Number and your
+            photo can be changed here. Name, email, role and province come from Active
+            Directory and are read-only.
+          </span>
+        </div>
+      )}
+
       {/* ===== Personal Information Card ===== */}
-      <div className="pv-card">
+      <div className={`pv-card${isEditing ? ' pv-card--editing' : ''}`}>
         <h3 className="pv-card-title">Personal Information</h3>
         <div className="pv-info-grid">
           <InfoField icon={User} label="Full name" value={currentUser.displayName} />

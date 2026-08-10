@@ -313,7 +313,8 @@ export const NAV_ITEMS: NavItem[] = [
 ];
 
 export const REPORT_TABS: ReportTab[] = [
-  { view: 'incident', label: 'Incident Notification', roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
+  // "Report Incident" is the wording used in the approved User Journey (CI-003)
+  { view: 'incident', label: 'Report Incident', roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
   { view: 'bto', label: 'Back to Office Report', roles: ['chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
   { view: 'investigation', label: 'Investigation Report', roles: ['chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
   { view: 'stats', label: 'Monthly Performance Statistics', roles: ['deputy_director', 'security_director', 'system_administrator'] },

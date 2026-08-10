@@ -344,3 +344,28 @@ BEGIN
         dateCreated VARCHAR(50) NOT NULL
     );
 END;
+
+-- 15. Policy Hub repository
+-- The approved security policies and procedures investigators reference during a
+-- case. Superseded versions are retained (isCurrent = 0) so older case notes that
+-- cite a version can still be resolved.
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'policy_documents')
+BEGIN
+    CREATE TABLE policy_documents (
+        id VARCHAR(50) PRIMARY KEY,
+        title NVARCHAR(300) NOT NULL,
+        category VARCHAR(100),                -- e.g. Physical Security, Information Security
+        version VARCHAR(50),                  -- e.g. 2.1
+        effectiveDate VARCHAR(50),            -- 'YYYY-MM-DD'
+        revisionDate VARCHAR(50),             -- next scheduled review, 'YYYY-MM-DD'
+        summary NVARCHAR(MAX),
+        fileName VARCHAR(255) NOT NULL,
+        mimeType VARCHAR(100),
+        fileSize INT DEFAULT 0,
+        storagePath VARCHAR(500) NOT NULL,    -- policies/<id>__<name>, 'azure:' prefixed in production
+        uploadedBy VARCHAR(100),              -- users.username
+        uploadedByName VARCHAR(255),
+        isCurrent BIT DEFAULT 1,              -- 0 once superseded by a newer version
+        dateCreated VARCHAR(50) NOT NULL
+    );
+END;
