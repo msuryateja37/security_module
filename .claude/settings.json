@@ -26,7 +26,16 @@
       "Bash(curl -s -o /dev/null -w \"api-direct:%{http_code}\\\\n\" http://localhost:8080/api/incidents -H \"x-username: employee\" -H \"x-user-role: employee\")",
       "Bash(curl -s -o /dev/null -w \"via-vite-proxy:%{http_code}\\\\n\" \"http://localhost:5173/api/incidents\" -H \"x-username: employee\" -H \"x-user-role: employee\")",
       "Bash(curl -s -o /dev/null -w \"policy:%{http_code}\\\\n\" \"http://localhost:5173/api/policy-documents\" -H \"x-username: investigator\" -H \"x-user-role: chief_security_investigator\")",
-      "Bash(python -c \"print\\('py ok'\\)\")"
+      "Bash(python -c \"print\\('py ok'\\)\")",
+      "PowerShell(npm run build:ui 2>&1)",
+      "PowerShell(npm run build:server 2>&1)",
+      "PowerShell(npm run lint 2>&1)",
+      "PowerShell($r = try { Invoke-WebRequest -Uri \"http://localhost:3000/api/health\" -TimeoutSec 3 -UseBasicParsing } catch { $null }; if \\($r\\) { \"server already running: $\\($r.StatusCode\\)\" } else { \"no server on 3000\" })",
+      "Bash(curl -s -m 10 -H \"x-username: coordinator\" -H \"x-user-role: security_coordinator\" http://localhost:8080/api/notifications)",
+      "Bash(python -c ' *)",
+      "Bash(curl -s -m 20 -X POST http://localhost:8080/api/uploads/staged -H \"Content-Type: application/json\" -H \"x-username: coordinator\" -H \"x-user-role: security_coordinator\" --data @up.json)",
+      "Bash(curl -s -m 15 -X POST http://localhost:8080/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"coordinator\",\"password\":\"password\"}')",
+      "Bash(curl -s -m 15 -X POST http://localhost:8080/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"coordinator\",\"password\":\"wrong\"}')"
     ]
   }
 }

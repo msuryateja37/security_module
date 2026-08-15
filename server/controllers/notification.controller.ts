@@ -8,8 +8,14 @@ export const NotificationController = {
   async list(req: AuthenticatedRequest, res: Response) {
     try {
       const user = req.user!;
-      const notifications = await NotificationService.getForUser(user.username);
-      ResponseView.sendSuccess(res, notifications, 'Fetched notifications successfully');
+      // unreadCount is counted over the whole feed, not the returned slice, so the
+      // badge stays correct once a user has more than `limit` notifications (NOTIF-001).
+      const { rows, unreadCount } = await NotificationService.getForUserWithCount(user.username);
+      ResponseView.sendSuccess(
+        res,
+        { notifications: rows, unreadCount },
+        'Fetched notifications successfully'
+      );
     } catch (error) {
       ResponseView.sendError(res, error as any, 'Failed to fetch notifications');
     }

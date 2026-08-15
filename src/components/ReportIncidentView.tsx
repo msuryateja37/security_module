@@ -135,6 +135,10 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
   const fileKeySeq = React.useRef(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadedCount, setUploadedCount] = useState(0);
+  // Documents that did not make it onto the case. The case is already created by the
+  // time linking runs, so this has to be stated on the confirmation screen itself — a
+  // dismissible toast let the reporter walk away believing the evidence was filed (PERF-005).
+  const [unattachedFiles, setUnattachedFiles] = useState<string[]>([]);
 
   const uploadsInFlight = attachedFiles.some(a => a.status === 'uploading' || a.status === 'pending');
   const failedUploads = attachedFiles.filter(a => a.status === 'failed');
@@ -328,11 +332,13 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
       });
       const json = await res.json();
       if (!json.success) {
+        setUnattachedFiles(staged.map(a => a.file.name));
         showAlert('The case was created, but the supporting documents could not be attached.', 'Attachment Failed', 'warning');
         return 0;
       }
       const failed: { fileName: string }[] = json.data?.failed || [];
       if (failed.length > 0) {
+        setUnattachedFiles(failed.map(f => f.fileName));
         showAlert(
           `The case was created, but ${failed.length} document(s) could not be attached: ${failed.map(f => f.fileName).join(', ')}. Please upload them from the case file.`,
           'Attachment Failed',
@@ -341,6 +347,7 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
       }
       return (json.data?.attached || []).length;
     } catch {
+      setUnattachedFiles(staged.map(a => a.file.name));
       showAlert('The case was created, but the supporting documents could not be attached.', 'Attachment Failed', 'warning');
       return 0;
     }
@@ -1125,6 +1132,24 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
             {' '}You will be notified automatically as the case progresses.
           </p>
 
+          {unattachedFiles.length > 0 && (
+            <div className="submit-attachment-warning" role="alert">
+              <AlertTriangle size={18} />
+              <div>
+                <strong>
+                  {unattachedFiles.length} supporting document
+                  {unattachedFiles.length === 1 ? ' was' : 's were'} not attached to this case.
+                </strong>
+                <p>
+                  {unattachedFiles.join(', ')} — the case was registered, but{' '}
+                  {unattachedFiles.length === 1 ? 'this file is' : 'these files are'} not on
+                  the case file. Open the case from Track My Incidents and upload{' '}
+                  {unattachedFiles.length === 1 ? 'it' : 'them'} again.
+                </p>
+              </div>
+            </div>
+          )}
+
           <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginTop: '26px' }}>
             <button type="button" className="btn btn-primary" style={{ padding: '12px 22px' }} onClick={() => onNavigate('my_cases')}>
               Track My Incidents
@@ -1133,7 +1158,7 @@ export const ReportIncidentView: React.FC<ReportIncidentViewProps> = ({ onAddInc
               type="button"
               className="btn btn-secondary"
               style={{ padding: '12px 22px' }}
-              onClick={() => { setFormType('standard'); setCurrentStep(1); setSelectedTypes([]); setNatureOfLoss(''); setLossValue(''); setNocBriefDetails(''); setNatureOfCase(''); setAttachedFiles([]); setUploadedCount(0); setReportFor('Self'); setReportForEmployee(null); setEmployeeQuery(''); setEmployeeResults([]); }}
+              onClick={() => { setFormType('standard'); setCurrentStep(1); setSelectedTypes([]); setNatureOfLoss(''); setLossValue(''); setNocBriefDetails(''); setNatureOfCase(''); setAttachedFiles([]); setUploadedCount(0); setUnattachedFiles([]); setReportFor('Self'); setReportForEmployee(null); setEmployeeQuery(''); setEmployeeResults([]); }}
             >
               Report Another Incident
             </button>

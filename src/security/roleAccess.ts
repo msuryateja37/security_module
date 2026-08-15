@@ -305,7 +305,7 @@ export const NAV_ITEMS: NavItem[] = [
   { view: 'approval', label: 'Approval', icon: ClipboardCheck, roles: ['deputy_director', 'security_director', 'system_administrator'] },
   { view: 'sla_monitor', label: 'SLA Monitor', icon: Clock, roles: ['chief_security_investigator', 'deputy_director', 'security_director'] },
   { view: 'reports_archive', label: 'Reports', icon: Archive, roles: ['chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
-  { view: 'leaves', label: 'Leaves Management', icon: CalendarDays, roles: ['security_coordinator'] },
+  { view: 'leaves', label: 'Leave Management', icon: CalendarDays, roles: ['security_coordinator'] },
   { view: 'leave_management', label: 'Leave Management', icon: CalendarCheck, roles: ['security_director'] },
   { view: 'assistant', label: 'AI Assistant', icon: Sparkles, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
   { view: 'policy', label: 'Policy Hub', icon: BookOpen, roles: ['employee', 'security_coordinator', 'chief_security_investigator', 'deputy_director', 'security_director', 'system_administrator'] },
@@ -385,10 +385,7 @@ export const getViewLabelForRole = (view: AppView, role: SecurityRole): string =
     return 'AI Assistant';
   }
   if (view === 'leaves') {
-    if (role === 'security_coordinator') {
-      return 'Leave Management';
-    }
-    return 'Leaves Management';
+    return 'Leave Management';
   }
   if (view === 'profile') {
     return 'My Profile';

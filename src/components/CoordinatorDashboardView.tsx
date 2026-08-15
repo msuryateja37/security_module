@@ -139,9 +139,20 @@ const SeverityChart: React.FC<{
     { key: 'low', label: 'low', color: '#D6A331', value: data.low },
   ];
 
-  // Y-axis ticks
-  const yMax = Math.max(4, Math.ceil(max / 2) * 2);
-  const ticks = Array.from({ length: yMax + 1 }, (_, i) => yMax - i);
+  // Y axis: always baselined at 0, with a tick *step* chosen so the labels fit the
+  // fixed-height axis column. Emitting one tick per unit (the old behaviour) overflowed
+  // the 140px body once counts passed ~10, which pushed the low labels out of view and
+  // desynced the axis from the bars (DASH-001).
+  const TARGET_TICKS = 5;
+  const rawStep = max / (TARGET_TICKS - 1);
+  const magnitude = Math.pow(10, Math.floor(Math.log10(Math.max(rawStep, 1))));
+  // Counts are whole numbers, so drop any candidate that would produce fractional ticks.
+  const candidates = [1, 2, 2.5, 5, 10]
+    .map(m => m * magnitude)
+    .filter(Number.isInteger);
+  const step = candidates.find(s => s >= rawStep) ?? 10 * magnitude;
+  const yMax = step * (TARGET_TICKS - 1);
+  const ticks = Array.from({ length: TARGET_TICKS }, (_, i) => yMax - i * step);
 
   return (
     <div className="coord-chart-card">
@@ -413,10 +424,10 @@ export const CoordinatorDashboardView: React.FC<CoordinatorDashboardViewProps> =
         <div className="table-container">
           <table className="custom-table compact">
             <thead>
+              {/* No selection column: this card is a read-only recent-activity summary and
+                  the checkboxes were wired to nothing. Bulk actions live on Case Management,
+                  reached via "View all" (DASH-003). */}
               <tr>
-                <th style={{ width: 40 }}>
-                  <input type="checkbox" disabled />
-                </th>
                 <th>Ref #</th>
                 <th>Submitted by</th>
                 <th>Place</th>
@@ -428,7 +439,7 @@ export const CoordinatorDashboardView: React.FC<CoordinatorDashboardViewProps> =
             <tbody>
               {stats.recentIncidents.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
                     No recent incidents for {province}.
                   </td>
                 </tr>
@@ -439,9 +450,6 @@ export const CoordinatorDashboardView: React.FC<CoordinatorDashboardViewProps> =
                   className="coord-table-row"
                   onClick={() => onNavigate(`case:${inc.id}`)}
                 >
-                  <td onClick={e => e.stopPropagation()}>
-                    <input type="checkbox" />
-                  </td>
                   <td style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
                     {inc.refNo}
                   </td>
@@ -450,7 +458,9 @@ export const CoordinatorDashboardView: React.FC<CoordinatorDashboardViewProps> =
                     {inc.place}
                   </td>
                   <td>
-                    <span className="coord-badge coord-badge--type">
+                    {/* Long official incident types are CSS-truncated — expose the full
+                        value on hover so it stays readable. */}
+                    <span className="coord-badge coord-badge--type" title={inc.incidentType}>
                       {inc.incidentType}
                     </span>
                   </td>

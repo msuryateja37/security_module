@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { User, Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import type { UserProfile } from '../security/roleAccess';
-import { getPermissionsForRole, getUserByUsername, ROLE_USERS } from '../security/roleAccess';
 
 interface LoginViewProps {
   onLoginSuccess: (user: UserProfile) => void;
@@ -32,15 +31,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         return;
       }
 
-      setError(json.message || 'Invalid username or password. Use one of the role demo accounts below.');
+      setError(json.message || 'Invalid username or password.');
     } catch {
-      const user = getUserByUsername(username);
-
-      if (user && password === 'password') {
-        onLoginSuccess(user);
-      } else {
-        setError('Invalid username or password. Use one of the role demo accounts below.');
-      }
+      // Never fall back to client-side authentication — an attacker who can make the
+      // API unreachable would otherwise be able to sign in as any seeded role (SEC-002).
+      setError('Unable to reach the authentication service. Please check your connection and try again.');
     } finally {
       setIsLoading(false);
     }
@@ -54,9 +49,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
           <div className="login-logo">
             <img src="/short_logo.png" alt="DLRRD Logo" />
           </div>
-          <h2 className="login-title">rural development & land reform</h2>
+          <h2 className="login-title">land reform &amp; rural development</h2>
           <span style={{ fontSize: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'rgba(255, 255, 255, 0.6)', display: 'block', marginBottom: '0.25rem' }}>
-            Department: Rural Development and Land Reform
+            Department of Land Reform and Rural Development (DLRRD)
           </span>
           <span className="login-subtitle">REPUBLIC OF SOUTH AFRICA</span>
         </div>
@@ -64,31 +59,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         {/* Login Credentials Body */}
         <div className="login-body">
           <h3 style={{ fontSize: '1.1rem', fontWeight: 600, color: '#1f2937', marginBottom: '0.5rem', textAlign: 'center' }}>
-            CD: Security Services Portal
+            Security Incident Management System (SIMS)
           </h3>
           <p style={{ fontSize: '0.75rem', color: '#6b7280', textAlign: 'center', marginBottom: '1.5rem' }}>
             Log in to manage and report security incidents, inspections, and audit logs.
           </p>
-          <div className="login-role-hint">
-            {/* One chip per role — the first seed account of each role */}
-            {ROLE_USERS.filter(
-              (user, _, all) => all.find(u => u.role === user.role) === user
-            ).map(user => (
-              <button
-                type="button"
-                key={user.id}
-                className="login-role-chip"
-                onClick={() => {
-                  setUsername(user.username);
-                  setPassword('password');
-                  setError(null);
-                }}
-                title={`${user.roleLabel}: ${getPermissionsForRole(user.role).join(', ')}`}
-              >
-                {user.roleLabel}
-              </button>
-            ))}
-          </div>
+          {/* No role picker: the role is resolved from the account after authentication
+              (SEC-002). Presenting roles pre-auth both contradicts role-based access and
+              leaks the permission matrix to anyone who can reach the login page. */}
 
           {error && (
             <div className="login-error-msg">
@@ -120,17 +98,19 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 <Lock className="login-input-icon" size={18} />
                 <input
                   type={showPassword ? "text" : "password"}
-                  className="login-input"
+                  className="login-input login-input--with-toggle"
                   placeholder="Enter password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  style={{ paddingRight: '2.5rem' }}
                   required
                 />
                 <button
                   type="button"
                   className="password-toggle-btn"
                   onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showPassword}
+                  title={showPassword ? 'Hide password' : 'Show password'}
                 >
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>

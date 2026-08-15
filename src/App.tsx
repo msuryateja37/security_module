@@ -210,6 +210,9 @@ function App() {
   // In-app notification feed — persisted server-side (FR-008), polled so leave
   // decisions, acting-coordinator activations etc. appear without a reload.
   const [notifications, setNotifications] = useState<{ id: string; title: string; message: string; time: string; read: boolean; link?: string | null }[]>([]);
+  // Unread total across the whole feed. The panel only renders the most recent slice,
+  // so this is counted server-side rather than derived from `notifications` (NOTIF-001).
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
 
   // The current user's profile photo, loaded once here and shared everywhere it
   // is shown (top bar, profile dropdown, Profile page). The image is served by an
@@ -237,7 +240,8 @@ function App() {
         .then(res => res.json())
         .then(json => {
           if (cancelled || !json.success) return;
-          setNotifications((json.data as AppNotification[]).map(n => ({
+          const rows: AppNotification[] = json.data?.notifications ?? [];
+          setNotifications(rows.map(n => ({
             id: n.id,
             title: n.title,
             message: n.message,
@@ -245,6 +249,11 @@ function App() {
             read: !!n.isRead,
             link: n.link
           })));
+          setUnreadNotificationCount(
+            typeof json.data?.unreadCount === 'number'
+              ? json.data.unreadCount
+              : rows.filter(n => !n.isRead).length
+          );
         })
         .catch(err => console.error('Error loading notifications:', err));
     };
@@ -287,6 +296,7 @@ function App() {
 
   const handleMarkAllNotificationsRead = () => {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    setUnreadNotificationCount(0);
     authFetch('/api/notifications/read-all', { method: 'PUT' })
       .catch(err => console.error('Error marking notifications read:', err));
   };
@@ -294,6 +304,7 @@ function App() {
   const handleOpenNotification = (notif: { id: string; read: boolean; link?: string | null }) => {
     if (!notif.read) {
       setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, read: true } : n));
+      setUnreadNotificationCount(prev => Math.max(0, prev - 1));
       authFetch(`/api/notifications/${encodeURIComponent(notif.id)}/read`, { method: 'PUT' })
         .catch(err => console.error('Error marking notification read:', err));
     }
@@ -727,12 +738,12 @@ function App() {
       case 'assistant': return 'AI Assistant';
       case 'administration': return 'Administration';
       case 'profile': return 'My Profile';
-      case 'leaves': return 'Leaves Management';
+      case 'leaves': return 'Leave Management';
       case 'leave_management': return 'Leave Management';
       case 'case_detail': return 'Case File';
       case 'tra_checklist': return 'Threat & Risk Assessment (TRA)';
       case 'bto_report': return 'Back to Office Report';
-      default: return 'CD: Security Services';
+      default: return 'Security Incident Management System';
     }
   };
 
@@ -756,15 +767,21 @@ function App() {
           : canAccessView(currentUser.role, 'my_cases')
             ? 'my_cases'
             : getDefaultViewForRole(currentUser.role);
+      // 'Home' already navigates to the dashboard, so adding a 'Dashboard' crumb for
+      // dashboard-originated cases produces two crumbs to the same page (NAV-002).
+      const originCrumbs: Crumb[] =
+        origin === 'dashboard'
+          ? []
+          : [{
+              label: getViewLabelForRole(origin, currentUser.role),
+              onClick: () => {
+                setCaseDetailId(null);
+                setActiveView(origin);
+              }
+            }];
       return [
         home,
-        {
-          label: getViewLabelForRole(origin, currentUser.role),
-          onClick: () => {
-            setCaseDetailId(null);
-            setActiveView(origin);
-          }
-        },
+        ...originCrumbs,
         ...(breadcrumbTail.length > 0 ? breadcrumbTail : [{ label: 'Case File' }])
       ];
     }
@@ -909,9 +926,12 @@ function App() {
               style={{ position: 'relative' }}
             >
               <Bell size={18} />
-              {notifications.some(n => !n.read) && (
-                <span className="notif-count-badge">
-                  {(() => { const c = notifications.filter(n => !n.read).length; return c > 99 ? '99+' : c; })()}
+              {unreadNotificationCount > 0 && (
+                <span
+                  className="notif-count-badge"
+                  aria-label={`${unreadNotificationCount} unread notification${unreadNotificationCount === 1 ? '' : 's'}`}
+                >
+                  {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
                 </span>
               )}
             </button>
@@ -941,10 +961,18 @@ function App() {
           {showNotifications && (
             <div className="notifications-dropdown">
               <div className="dropdown-header">
-                <span>Notifications</span>
+                {/* The panel lists recent notifications, read and unread; stating the
+                    unread total makes the badge reconcile with what is on screen. */}
+                <span>
+                  Notifications
+                  {unreadNotificationCount > 0 && (
+                    <span className="dropdown-header-count"> · {unreadNotificationCount} unread</span>
+                  )}
+                </span>
                 <button
                   onClick={handleMarkAllNotificationsRead}
                   className="dropdown-action-btn"
+                  disabled={unreadNotificationCount === 0}
                 >
                   Mark all read
                 </button>

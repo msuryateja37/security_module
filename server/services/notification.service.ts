@@ -69,16 +69,31 @@ export const NotificationService = {
   },
 
   async getForUser(username: string, limit = 30): Promise<NotificationRow[]> {
+    return (await this.getForUserWithCount(username, limit)).rows;
+  },
+
+  /**
+   * The most recent `limit` notifications, plus the unread count over *every* row.
+   * The panel only ever renders the recent slice, so counting unread within that slice
+   * silently under-reports the badge once a user passes the limit (NOTIF-001).
+   */
+  async getForUserWithCount(
+    username: string,
+    limit = 30
+  ): Promise<{ rows: NotificationRow[]; unreadCount: number }> {
     try {
       // No SQL LIMIT — keeps the query portable between SQLite and Azure SQL (TOP vs LIMIT)
       const rows = await query<NotificationRow>(
         'SELECT * FROM notifications WHERE username = ? ORDER BY dateCreated DESC',
         [username]
       );
-      return rows.slice(0, limit);
+      return {
+        rows: rows.slice(0, limit),
+        unreadCount: rows.filter(r => !r.isRead).length,
+      };
     } catch (err) {
       console.error('[NotificationService] getForUser failed:', err);
-      return [];
+      return { rows: [], unreadCount: 0 };
     }
   },
 

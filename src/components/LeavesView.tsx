@@ -3,7 +3,7 @@ import type { UserProfile } from '../security/roleAccess';
 import type { LeaveBalance, LeaveDay } from '../types/leave';
 import { LEAVE_STATUS_BADGE } from '../types/leave';
 import { addDays, buildMonthGrid, isPublicHoliday, isWorkingDay, MONTH_NAMES } from '../utils/workdays';
-import { CalendarDays, ChevronLeft, ChevronRight, ListChecks, Plus, Send, X } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Info, ListChecks, Plus, Send, X } from 'lucide-react';
 import { useModal } from './NotificationModal';
 import { Pagination } from './Pagination';
 
@@ -198,6 +198,23 @@ export const LeavesView: React.FC<LeavesViewProps> = ({ currentUser }) => {
 
   const requestDisabled = balance.available < 1;
 
+  /** Kept clickable when there is no balance so the user gets an explanation rather
+      than an inert button (LEAVE-001). */
+  const handleRequestLeaveClick = () => {
+    if (requestDisabled) {
+      showAlert(
+        balance.total === 0
+          ? 'You do not have a leave allocation yet. The Chief Security Director must set your annual leave days before you can submit a request.'
+          : `All ${balance.total} of your allocated leave day(s) are already pending or approved. Cancel a pending day, or ask the Chief Security Director to review your allocation.`,
+        'No Leave Days Available',
+        'warning'
+      );
+      return;
+    }
+    setScreen('calendar');
+    setRequestMode(true);
+  };
+
   return (
     <div>
       <div className="header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
@@ -214,26 +231,39 @@ export const LeavesView: React.FC<LeavesViewProps> = ({ currentUser }) => {
         </div>
 
         <div style={{ textAlign: 'center', flexGrow: 1 }}>
-          <h1 className="page-title" style={{ marginBottom: '0.25rem' }}>Leaves Management</h1>
+          <h1 className="page-title" style={{ marginBottom: '0.25rem' }}>Leave Management</h1>
           <p className="page-subtitle" style={{ margin: 0 }}>Request leave and track approvals — an acting coordinator covers your cases while you are away</p>
         </div>
 
         {/* Top-right: balance + Request Leave */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <span className={`badge ${balance.available > 0 ? 'success' : 'muted'}`} style={{ fontSize: '0.8rem', padding: '0.35rem 0.7rem' }}>
-            Leaves available: {balance.available} / {balance.total}
+            Leave available: {balance.available} / {balance.total}
           </span>
           <button
             className="btn btn-primary"
-            disabled={requestDisabled || requestMode}
-            title={requestDisabled ? 'No leave days available — ask the Chief Security Director to update your allocation' : 'Select days on the calendar'}
-            onClick={() => { setScreen('calendar'); setRequestMode(true); }}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', opacity: requestDisabled || requestMode ? 0.55 : 1, cursor: requestDisabled || requestMode ? 'not-allowed' : 'pointer' }}
+            disabled={requestMode}
+            title={requestMode ? 'Select days on the calendar' : undefined}
+            onClick={handleRequestLeaveClick}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', opacity: requestMode ? 0.55 : 1, cursor: requestMode ? 'not-allowed' : 'pointer' }}
           >
             <Plus size={16} /> Request Leave
           </button>
         </div>
       </div>
+
+      {/* A disabled button with a tooltip reads as "nothing happened" — the reason a
+          coordinator cannot request leave has to be on the page (LEAVE-001). */}
+      {requestDisabled && !loading && (
+        <div className="leave-blocked-note">
+          <Info size={16} />
+          <span>
+            {balance.total === 0
+              ? 'You have no leave allocation yet. The Chief Security Director sets your annual leave days before you can submit a request.'
+              : `You have used all ${balance.total} of your allocated leave day(s) — ${balance.committed} are pending or approved. Cancel a pending day, or ask the Chief Security Director to review your allocation.`}
+          </span>
+        </div>
+      )}
 
       {screen === 'calendar' && (
         <div className="glass-card" style={{ padding: '1.5rem' }}>
