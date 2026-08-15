@@ -16,7 +16,11 @@ export const BackToOfficeView: React.FC<BackToOfficeViewProps> = ({ reports, onS
   const [officialName, setOfficialName] = useState('Supervisor');
   const [date, setDate] = useState('');
   const [venue, setVenue] = useState('');
-  const [times, setTimes] = useState('');
+  // Meeting window is captured with two time pickers and stored as one
+  // "HH:MM – HH:MM" string, which is the shape the report record already uses (CI-007).
+  const [timeFrom, setTimeFrom] = useState('');
+  const [timeTo, setTimeTo] = useState('');
+  const times = timeFrom || timeTo ? `${timeFrom || '—'} – ${timeTo || '—'}` : '';
   const [staffStakeholders, setStaffStakeholders] = useState('');
   const [eventName, setEventName] = useState('');
   const [purpose, setPurpose] = useState('');
@@ -56,7 +60,8 @@ export const BackToOfficeView: React.FC<BackToOfficeViewProps> = ({ reports, onS
     setOfficialName('');
     setDate('');
     setVenue('');
-    setTimes('');
+    setTimeFrom('');
+    setTimeTo('');
     setStaffStakeholders('');
     setEventName('');
     setPurpose('');
@@ -215,19 +220,26 @@ export const BackToOfficeView: React.FC<BackToOfficeViewProps> = ({ reports, onS
               </div>
             </div>
 
-            {/* Row 3: Times (50%) */}
+            {/* Row 3: Start / End time pickers — replaces the free-text "Times" field (CI-007) */}
             <div className="form-grid" style={{ marginBottom: '1.25rem' }}>
               <div className="form-group">
-                <label className="form-label" style={{ fontWeight: 600 }}>Times</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  placeholder="Enter times"
-                  value={times} 
-                  onChange={(e) => setTimes(e.target.value)} 
+                <label className="form-label" style={{ fontWeight: 600 }}>Time From</label>
+                <input
+                  type="time"
+                  className="form-input"
+                  value={timeFrom}
+                  onChange={(e) => setTimeFrom(e.target.value)}
                 />
               </div>
-              <div className="form-group"></div>
+              <div className="form-group">
+                <label className="form-label" style={{ fontWeight: 600 }}>Time To</label>
+                <input
+                  type="time"
+                  className="form-input"
+                  value={timeTo}
+                  onChange={(e) => setTimeTo(e.target.value)}
+                />
+              </div>
             </div>
 
             {/* Row 4: DLRRD Staff and Stakeholders */}
@@ -305,12 +317,14 @@ export const BackToOfficeView: React.FC<BackToOfficeViewProps> = ({ reports, onS
                 <span className="signature-line-label" style={{ marginTop: '0.5rem' }}>Signature</span>
               </div>
               <div className="signature-line-group">
-                <input 
-                  type="text" 
-                  readOnly 
-                  className="form-input" 
+                {/* Calendar picker rather than a plain text field (CI-007) */}
+                <input
+                  type="date"
+                  className="form-input"
                   style={{ background: 'transparent', border: 'none', borderBottom: '1px solid #4b5563', borderRadius: 0, paddingLeft: 0, paddingRight: 0 }}
                   value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  required
                 />
                 <span className="signature-line-label" style={{ marginTop: '0.5rem' }}>Date</span>
               </div>

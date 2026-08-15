@@ -127,20 +127,40 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
   };
 
   const gridCols = tracksOwnOnly
-    ? '1.7fr 0.9fr 1.2fr 1.5fr 1fr 1fr 0.5fr'
-    : '1.7fr 0.8fr 1.1fr 1.3fr 1fr 0.9fr 0.9fr 1.5fr';
+    ? '1.7fr 1.2fr 0.9fr 1.2fr 1.5fr 1fr 1fr 0.5fr'
+    : '1.7fr 1.2fr 0.8fr 1.1fr 1.3fr 1fr 0.9fr 0.9fr 1.5fr';
 
-  const slaLine = (incident: SecurityIncident) => {
-    if (!incident.slaInfo || incident.status === 'Closed') return null;
-    const { daysElapsed, targetDays, expectedDate, daysRemaining } = incident.slaInfo;
-    const color = daysRemaining < 0 ? 'var(--color-danger)'
-      : daysRemaining <= Math.ceil(targetDays * 0.25) ? '#B98A2F'
-      : '#8A978F';
+  /**
+   * Dedicated Dates cell (CI-004) — Date Reported, Due Date and Days
+   * Remaining/Overdue read as separate facts instead of being buried in the
+   * case-details column, so SLA position is scannable across a case list.
+   */
+  const datesCell = (incident: SecurityIncident) => {
+    const sla = incident.slaInfo;
+    const closed = incident.status === 'Closed';
+    const daysRemaining = sla?.daysRemaining;
+    const countdownColor = closed || daysRemaining === undefined ? '#8A978F'
+      : daysRemaining < 0 ? 'var(--color-danger)'
+      : sla && daysRemaining <= Math.ceil(sla.targetDays * 0.25) ? '#B98A2F'
+      : '#2F7D53';
     return (
-      <span className="cell-sub" style={{ display: 'block', fontWeight: 600, color }}>
-        Day {daysElapsed}/{targetDays} · due {expectedDate}
-        {daysRemaining < 0 ? ` · overdue by ${-daysRemaining}d` : ''}
-      </span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', lineHeight: 1.35 }}>
+        <span className="cell-sub" style={{ display: 'block' }}>
+          <strong style={{ fontWeight: 700 }}>Reported:</strong> {fmtDate(incident.dateReported)}
+        </span>
+        <span className="cell-sub" style={{ display: 'block' }}>
+          <strong style={{ fontWeight: 700 }}>Due:</strong> {sla?.expectedDate ? fmtDate(sla.expectedDate) : 'N/A'}
+        </span>
+        <span className="cell-sub" style={{ display: 'block', fontWeight: 700, color: countdownColor }}>
+          {closed
+            ? 'Closed'
+            : daysRemaining === undefined
+              ? 'No SLA set'
+              : daysRemaining < 0
+                ? `Overdue by ${-daysRemaining} day${daysRemaining === -1 ? '' : 's'}`
+                : `${daysRemaining} day${daysRemaining === 1 ? '' : 's'} remaining`}
+        </span>
+      </div>
     );
   };
 
@@ -218,6 +238,7 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
         {/* Column headers */}
         <div className="list-grid-head" style={{ gridTemplateColumns: gridCols }}>
           <div>Case Details</div>
+          <div>Dates</div>
           <div>Province</div>
           <div>Place</div>
           <div>{tracksOwnOnly ? 'Responsible Officer' : 'Assigned Coordinator'}</div>
@@ -248,9 +269,13 @@ export const MyCasesView: React.FC<MyCasesViewProps> = ({ incidents, currentUser
                 >
                   {incident.refNo}
                 </button>
-                <span className="cell-sub" style={{ display: 'block' }}>Reported {fmtDate(incident.dateReported)}</span>
-                {slaLine(incident)}
+                <span className="cell-sub" style={{ display: 'block' }}>
+                  {(incident.incidentType && incident.incidentType.length > 0
+                    ? incident.incidentType.join(', ')
+                    : incident.natureOfLoss) || 'Incident'}
+                </span>
               </div>
+              <div>{datesCell(incident)}</div>
               <div className="cell-body">{incident.province}</div>
               <div className="cell-body" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={incident.place}>
                 {incident.place}

@@ -34,7 +34,24 @@ export function useBreadcrumbTail(...crumbs: TailInput[]) {
   }, [key, setTail]);
 }
 
-export const Breadcrumbs: React.FC<{ items: Crumb[] }> = ({ items }) => {
+/**
+ * Drops a crumb whose label repeats the one before it. A view that publishes a tail
+ * matching its own nav label (e.g. "My Profile" > "Profile") would otherwise render the
+ * same page twice in the trail (NAV-003). Comparison ignores case, surrounding space and
+ * a leading "My ", which is how these duplicates actually present.
+ */
+const normalizeLabel = (label: string) =>
+  label.trim().toLowerCase().replace(/^my\s+/, '');
+
+const dedupeCrumbs = (items: Crumb[]): Crumb[] =>
+  items.filter((item, idx) => {
+    if (idx === 0) return true;
+    return normalizeLabel(item.label) !== normalizeLabel(items[idx - 1].label);
+  });
+
+export const Breadcrumbs: React.FC<{ items: Crumb[] }> = ({ items: rawItems }) => {
+  const items = dedupeCrumbs(rawItems);
+
   // Root pages (Dashboard) need no trail
   if (items.length <= 1) return null;
 

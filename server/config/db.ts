@@ -289,6 +289,30 @@ async function ensureCaseWorkflowMssql(pool: mssql.ConnectionPool) {
     );
   `);
 
+  // Policy Hub repository — the approved policies and procedures investigators
+  // reference during a case (FR-030; user testing CI-0012). Superseded versions
+  // are kept (isCurrent = 0) so historic references stay resolvable.
+  await pool.request().query(`
+    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'policy_documents')
+    CREATE TABLE policy_documents (
+      id VARCHAR(50) PRIMARY KEY,
+      title NVARCHAR(300) NOT NULL,
+      category VARCHAR(100),
+      version VARCHAR(50),
+      effectiveDate VARCHAR(50),
+      revisionDate VARCHAR(50),
+      summary NVARCHAR(MAX),
+      fileName VARCHAR(255) NOT NULL,
+      mimeType VARCHAR(100),
+      fileSize INT DEFAULT 0,
+      storagePath VARCHAR(500) NOT NULL,
+      uploadedBy VARCHAR(100),
+      uploadedByName VARCHAR(255),
+      isCurrent BIT DEFAULT 1,
+      dateCreated VARCHAR(50) NOT NULL
+    );
+  `);
+
   for (const sql of CASE_WORKFLOW_BACKFILL) {
     await pool.request().query(sql);
   }

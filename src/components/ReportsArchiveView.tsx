@@ -5,6 +5,21 @@ import { Archive, Printer, Eye, X, Search, Download } from 'lucide-react';
 import { useModal } from './NotificationModal';
 import { ROLE_USERS } from '../security/roleAccess';
 import { Pagination } from './Pagination';
+import { downloadSpreadsheet } from '../utils/exportSpreadsheet';
+
+// Programme / Branch scope for performance reporting (CI-0010). The department
+// reports performance per branch; "All Programmes" is the consolidated view.
+// NOTE: the official branch names must be confirmed with the client before sign-off.
+const PROGRAMME_OPTIONS = [
+  'All Programmes',
+  'Administration',
+  'Corporate Support Services',
+  'Chief Directorate: Security and Facilities Management Services',
+  'Land Reform and Tenure Reform',
+  'Land Restitution',
+  'Rural Development',
+  'Deeds Registration'
+];
 
 interface ReportsArchiveViewProps {
   btoReports: BackToOfficeReport[];
@@ -45,6 +60,7 @@ export const ReportsArchiveView: React.FC<ReportsArchiveViewProps> = ({
     isCoordinator ? 'filing_archive' : 'monthly_stats'
   );
   const [selectedProvince, setSelectedProvince] = useState<ProvinceType>('Gauteng');
+  const [selectedProgramme, setSelectedProgramme] = useState<string>(PROGRAMME_OPTIONS[0]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDoc, setSelectedDoc] = useState<DocItem | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -58,7 +74,7 @@ export const ReportsArchiveView: React.FC<ReportsArchiveViewProps> = ({
   // Quarterly metadata states
   const [qtrNumber, setQtrNumber] = useState<'Q1' | 'Q2' | 'Q3' | 'Q4'>('Q2');
   const [qtrYear, setQtrYear] = useState('2026');
-  const [qtrProgram, setQtrProgram] = useState('1. Corporate Services Support');
+  const [qtrProgram, setQtrProgram] = useState('Corporate Support Services');
 
   // Helper to resolve which short month belongs to which quarter
   const getQuarterMonths = (qtr: 'Q1' | 'Q2' | 'Q3' | 'Q4'): [string, string, string] => {
@@ -229,12 +245,70 @@ export const ReportsArchiveView: React.FC<ReportsArchiveViewProps> = ({
     }, 0);
   };
 
+  // Report scope shown in the header of every export (CI-0010). The financial year
+  // runs April–March, so the label spans two calendar years.
+  const reportScopeRows = (): (string | number)[][] => [
+    ['Department of Land Reform and Rural Development'],
+    ['Chief Directorate: Security and Facilities Management Services'],
+    ['Province', selectedProvince],
+    ['Programme / Branch', selectedProgramme],
+    ['Financial Year', `${qtrYear}/${Number(qtrYear) + 1} (April–March)`],
+    ['Generated', new Date().toLocaleString('en-ZA')],
+    []
+  ];
+
   const handleExportExcel = () => {
-    showAlert(`Successfully compiled and exported Gauteng ${selectedProvince} annual performance spreadsheet. Gauteng_Performance_Export.xlsx downloaded.`, 'Spreadsheet Exported', 'success');
+    const rows: (string | number)[][] = [
+      ...reportScopeRows(),
+      ['Monthly Performance Statistics'],
+      ['Performance Indicator', ...MONTHS, 'Total'],
+      ...PERFORMANCE_INDICATORS.map(indicator => [
+        indicator,
+        ...MONTHS.map(m => computedStats[indicator]?.[m] ?? 0),
+        getRowTotal(indicator)
+      ]),
+      ['Monthly Total', ...MONTHS.map(m => getColTotal(m)), getGrandTotal()]
+    ];
+    const fileName = downloadSpreadsheet(`${selectedProvince}_Monthly_Performance_${qtrYear}`, rows);
+    showAlert(`${selectedProvince} annual performance spreadsheet exported as ${fileName}.`, 'Spreadsheet Exported', 'success');
   };
 
   const handleExportQtrExcel = () => {
-    showAlert(`Successfully compiled and exported Gauteng ${selectedProvince} ${qtrNumber} performance spreadsheet. Quarterly_Performance_Export.xlsx downloaded.`, 'Spreadsheet Exported', 'success');
+    const [m1, m2, m3] = qtrMonths;
+    const rows: (string | number)[][] = [
+      ...reportScopeRows(),
+      [`Quarterly Performance Targets — ${qtrNumber} (${qtrYear})`],
+      [
+        'Performance Indicator', 'Annual Target', 'Quarter Target',
+        m1, m2, m3, 'Actual Quarter Performance', 'Reasons for Variance', 'Corrective Action'
+      ],
+      ...PERFORMANCE_INDICATORS.map(indicator => {
+        const v = quarterlyValues[indicator];
+        return [
+          indicator,
+          v?.annualTarget ?? 0,
+          v?.quarterTarget ?? 0,
+          v?.month1Val ?? 0,
+          v?.month2Val ?? 0,
+          v?.month3Val ?? 0,
+          v?.actualQuarterPerformance ?? 0,
+          v?.varianceReasons ?? '—',
+          v?.correctiveAction ?? '—'
+        ];
+      }),
+      [
+        'Total',
+        getQtrTargetTotal('annualTarget'),
+        getQtrTargetTotal('quarterTarget'),
+        getQtrTargetTotal('month1Val'),
+        getQtrTargetTotal('month2Val'),
+        getQtrTargetTotal('month3Val'),
+        getQtrTargetTotal('actualQuarterPerformance'),
+        '', ''
+      ]
+    ];
+    const fileName = downloadSpreadsheet(`${selectedProvince}_${qtrNumber}_Performance_${qtrYear}`, rows);
+    showAlert(`${selectedProvince} ${qtrNumber} performance spreadsheet exported as ${fileName}.`, 'Spreadsheet Exported', 'success');
   };
 
   // Compile filed documents safely
@@ -364,13 +438,24 @@ export const ReportsArchiveView: React.FC<ReportsArchiveViewProps> = ({
                 <h3 style={{ margin: 0 }}>Monthly Performance — {selectedProvince}</h3>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.35rem' }}>
                   <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Select Province:</label>
-                  <select 
-                    className="form-input" 
+                  <select
+                    className="form-input"
                     value={selectedProvince}
                     onChange={(e) => setSelectedProvince(e.target.value as ProvinceType)}
                     style={{ width: '160px', padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
                   >
                     {PROVINCES.map(p => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginLeft: '0.5rem' }}>Programme / Branch:</label>
+                  <select
+                    className="form-input"
+                    value={selectedProgramme}
+                    onChange={(e) => setSelectedProgramme(e.target.value)}
+                    style={{ width: '260px', padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
+                  >
+                    {PROGRAMME_OPTIONS.map(p => (
                       <option key={p} value={p}>{p}</option>
                     ))}
                   </select>
@@ -485,13 +570,18 @@ export const ReportsArchiveView: React.FC<ReportsArchiveViewProps> = ({
 
               <div>
                 <label style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.2rem' }}>Programme / Branch</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
+                {/* Selectable rather than free text, so branch names stay consistent
+                    across quarters and provinces (CI-0010). */}
+                <select
+                  className="form-input"
                   value={qtrProgram}
                   onChange={(e) => setQtrProgram(e.target.value)}
-                  style={{ padding: '0.35rem 0.5rem', fontSize: '0.85rem' }}
-                />
+                  style={{ padding: '0.35rem 0.5rem', fontSize: '0.85rem', width: '100%' }}
+                >
+                  {PROGRAMME_OPTIONS.map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
               </div>
             </div>
 

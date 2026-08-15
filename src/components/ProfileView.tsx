@@ -14,11 +14,12 @@ import {
   Camera,
   ImagePlus,
   Loader2,
-  LogOut
+  Paperclip,
+  Upload,
+  X
 } from 'lucide-react';
 import type { UserProfile } from '../security/roleAccess';
 import { useModal } from './NotificationModal';
-import { useBreadcrumbTail } from './Breadcrumbs';
 
 interface ProfileViewProps {
   currentUser: UserProfile;
@@ -26,8 +27,6 @@ interface ProfileViewProps {
   /** Shared profile-photo object URL, loaded once by App and kept in sync across the app. */
   avatarObjectUrl?: string | null;
   onUserUpdated: (user: UserProfile) => void;
-  /** Signs the user out and returns to the login screen. */
-  onLogout?: () => void;
 }
 
 // Colleagues pool for the "Recommend a person (AD)" dropdown
@@ -56,6 +55,27 @@ const authFetch = (url: string, currentUser: UserProfile, options: RequestInit =
 
 const MAX_AVATAR_BYTES = 5 * 1024 * 1024; // keep in step with the server limit
 const ALLOWED_AVATAR_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'image/heic'];
+
+// Supporting documents for the acting nomination. Both limits mirror the server
+// (FileStorageService.ALLOWED_EXTENSIONS / MAX_FILE_BYTES) so the user is told about a
+// rejected file before the bytes are sent.
+const MAX_DOC_BYTES = 15 * 1024 * 1024;
+const ACCEPTED_DOC_EXTENSIONS = [
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.heic',
+  '.txt', '.csv', '.rtf', '.msg', '.eml', '.zip',
+];
+
+interface ActingDocument {
+  fileName: string;
+  fileSize: number;
+  stagedPath: string;
+}
+
+const formatFileSize = (bytes: number) =>
+  bytes >= 1024 * 1024
+    ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+    : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
 const readFileAsDataUrl = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -111,9 +131,12 @@ const ACTING_ROLES: Array<UserProfile['role']> = [
   'system_administrator',
 ];
 
-export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, avatarObjectUrl, onUserUpdated, onLogout }) => {
+// Logout lives at the bottom of the sidebar as a separate account action (CI-0014),
+// so the profile header only carries profile actions.
+export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, avatarObjectUrl, onUserUpdated }) => {
   const { showAlert } = useModal();
-  useBreadcrumbTail('Profile');
+  // No breadcrumb tail: the nav label for this view is already "My Profile", and
+  // publishing "Profile" on top of it duplicated the page in the trail (NAV-003).
 
   const [isEditing, setIsEditing] = useState(false);
   const [jobTitle, setJobTitle] = useState(currentUser.jobTitle || '');
@@ -180,6 +203,58 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, avatarObj
   const [selectedColleague, setSelectedColleague] = useState('Select Colleague');
   const [submittingActing, setSubmittingActing] = useState(false);
 
+  // Supporting document for the acting nomination (FILE-002). The file is uploaded to
+  // the staging area as soon as it is picked, so submitting only carries the path.
+  const actingFileInputRef = useRef<HTMLInputElement>(null);
+  const [actingDoc, setActingDoc] = useState<ActingDocument | null>(null);
+  const [uploadingActingDoc, setUploadingActingDoc] = useState(false);
+
+  const handlePickActingDoc = () => actingFileInputRef.current?.click();
+
+  const handleActingDocSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-picking the same file after a removal
+    if (!file) return;
+
+    const dot = file.name.lastIndexOf('.');
+    const extension = dot > 0 ? file.name.slice(dot).toLowerCase() : '';
+    if (!ACCEPTED_DOC_EXTENSIONS.includes(extension)) {
+      showAlert(
+        `'${file.name}' is not a supported file type. Please attach a PDF, Word document, image or spreadsheet.`,
+        'Unsupported File',
+        'warning'
+      );
+      return;
+    }
+    if (file.size > MAX_DOC_BYTES) {
+      showAlert('Supporting documents must be 15 MB or smaller.', 'File Too Large', 'warning');
+      return;
+    }
+
+    setUploadingActingDoc(true);
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const res = await authFetch('/api/uploads/staged', currentUser, {
+        method: 'POST',
+        body: JSON.stringify({ fileName: file.name, mimeType: file.type, dataBase64: dataUrl }),
+      });
+      const json = await res.json();
+      if (json.success && json.data?.stagedPath) {
+        setActingDoc({
+          fileName: file.name,
+          fileSize: file.size,
+          stagedPath: json.data.stagedPath,
+        });
+      } else {
+        showAlert(json.message || json.error || 'The document could not be uploaded.', 'Upload Failed', 'danger');
+      }
+    } catch {
+      showAlert('Could not upload the document — please check your connection and try again.', 'Upload Failed', 'danger');
+    } finally {
+      setUploadingActingDoc(false);
+    }
+  };
+
   const canAct = ACTING_ROLES.includes(currentUser.role);
   const actingTitle = getActingTitle(currentUser.role);
 
@@ -210,18 +285,31 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, avatarObj
       showAlert('Please fill in all acting delegation fields before submitting.', 'Missing Fields', 'warning');
       return;
     }
+    if (leaveTo < leaveFrom) {
+      showAlert('The "Leave to" date cannot be earlier than the "Leave from" date.', 'Invalid Dates', 'warning');
+      return;
+    }
+    if (!actingDoc) {
+      showAlert(
+        'Please attach the supporting document for this nomination — the Chief Director needs it to approve the delegation.',
+        'Supporting Document Required',
+        'warning'
+      );
+      return;
+    }
     setSubmittingActing(true);
     try {
       // In production this would POST to /api/leave/acting-request
       await new Promise(r => setTimeout(r, 800));
       showAlert(
-        `Your acting delegation request has been submitted for Chief Director's approval. Stand-in: ${selectedColleague}`,
+        `Your acting delegation request has been submitted for Chief Director's approval. Stand-in: ${selectedColleague}. Attached: ${actingDoc.fileName}`,
         'Submitted for Approval',
         'success'
       );
       setLeaveFrom('');
       setLeaveTo('');
       setSelectedColleague('Select Colleague');
+      setActingDoc(null);
     } finally {
       setSubmittingActing(false);
     }
@@ -292,25 +380,30 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, avatarObj
                 </button>
               </>
             ) : (
-              <>
-                <button className="pv-edit-btn" onClick={() => setIsEditing(true)}>
-                  <Pencil size={15} />
-                  Edit Profile
-                </button>
-                {onLogout && (
-                  <button className="pv-logout-btn" onClick={onLogout}>
-                    <LogOut size={15} />
-                    Logout
-                  </button>
-                )}
-              </>
+              <button className="pv-edit-btn" onClick={() => setIsEditing(true)}>
+                <Pencil size={15} />
+                Edit Profile
+              </button>
             )}
           </div>
         </div>
       </div>
 
+      {/* Editing state must be unmistakable — without it the mode change reads as
+          "the button did nothing", since most fields stay read-only (CI-0013). */}
+      {isEditing && (
+        <div className="pv-edit-banner">
+          <Pencil size={15} />
+          <span>
+            <strong>Editing your profile.</strong> Job Title, Work Contact Number and your
+            photo can be changed here. Name, email, role and province come from Active
+            Directory and are read-only.
+          </span>
+        </div>
+      )}
+
       {/* ===== Personal Information Card ===== */}
-      <div className="pv-card">
+      <div className={`pv-card${isEditing ? ' pv-card--editing' : ''}`}>
         <h3 className="pv-card-title">Personal Information</h3>
         <div className="pv-info-grid">
           <InfoField icon={User} label="Full name" value={currentUser.displayName} />
@@ -320,7 +413,28 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, avatarObj
             value={currentUser.directorate || 'DLRRD — Security & Facilities'}
           />
           <InfoField icon={Mail} label="Email" value={currentUser.email} />
-          <InfoField icon={Phone} label="PHONE" value={currentUser.phoneNumber || ''} />
+
+          {/* Work contact number — editable in place, rather than repeated as a second
+              field further down the card while editing (PROF-002). */}
+          {isEditing ? (
+            <div className="pv-info-field pv-info-field--editable">
+              <span className="pv-info-field-icon-wrap">
+                <Phone size={15} className="pv-info-field-icon" />
+              </span>
+              <div className="pv-info-field-body">
+                <span className="pv-info-field-label">Work Contact Number</span>
+                <input
+                  className="pv-inline-input"
+                  value={phoneNumber}
+                  maxLength={25}
+                  onChange={e => setPhoneNumber(e.target.value)}
+                  placeholder="e.g. 012 312 8600"
+                />
+              </div>
+            </div>
+          ) : (
+            <InfoField icon={Phone} label="Phone" value={currentUser.phoneNumber || ''} />
+          )}
 
           {/* Job Title — editable when editing */}
           {isEditing ? (
@@ -349,30 +463,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, avatarObj
             value={getSupervisorLabel(currentUser.role)}
           />
 
-          <InfoField icon={MapPin} label="PROVINCE" value={currentUser.province} />
+          <InfoField icon={MapPin} label="Province" value={currentUser.province} />
           <InfoField icon={Shield} label="Role" value={currentUser.roleLabel} />
         </div>
-
-        {/* Editable phone number row */}
-        {isEditing && (
-          <div className="pv-info-grid" style={{ marginTop: '0.75rem' }}>
-            <div className="pv-info-field pv-info-field--editable">
-              <span className="pv-info-field-icon-wrap">
-                <Phone size={15} className="pv-info-field-icon" />
-              </span>
-              <div className="pv-info-field-body">
-                <span className="pv-info-field-label">Work Contact Number</span>
-                <input
-                  className="pv-inline-input"
-                  value={phoneNumber}
-                  maxLength={25}
-                  onChange={e => setPhoneNumber(e.target.value)}
-                  placeholder="e.g. 012 312 8600"
-                />
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* ===== Acting Delegation Card (role-conditional) ===== */}
@@ -431,15 +524,56 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, avatarObj
             </div>
           </div>
 
+          {actingDoc && (
+            <div className="pv-acting-doc">
+              <Paperclip size={14} />
+              <span className="pv-acting-doc-name" title={actingDoc.fileName}>
+                {actingDoc.fileName}
+              </span>
+              <span className="pv-acting-doc-size">{formatFileSize(actingDoc.fileSize)}</span>
+              <button
+                type="button"
+                className="pv-acting-doc-remove"
+                onClick={() => setActingDoc(null)}
+                aria-label={`Remove ${actingDoc.fileName}`}
+                title="Remove document"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
           <div className="pv-acting-actions">
-            <button className="pv-upload-btn" type="button">
-              Upload Document
+            <input
+              ref={actingFileInputRef}
+              type="file"
+              accept={ACCEPTED_DOC_EXTENSIONS.join(',')}
+              className="pv-avatar-file-input"
+              onChange={handleActingDocSelected}
+            />
+            <button
+              className="pv-upload-btn"
+              type="button"
+              onClick={handlePickActingDoc}
+              disabled={uploadingActingDoc}
+            >
+              {uploadingActingDoc ? (
+                <>
+                  <Loader2 size={15} className="pv-spin" />
+                  Uploading…
+                </>
+              ) : (
+                <>
+                  <Upload size={15} />
+                  {actingDoc ? 'Replace Document' : 'Upload Document'}
+                </>
+              )}
             </button>
             <button
               className="pv-submit-btn"
               type="button"
               onClick={handleSubmitActing}
-              disabled={submittingActing}
+              disabled={submittingActing || uploadingActingDoc}
             >
               <User size={15} />
               {submittingActing ? 'Submitting…' : "Submit for Chief Director's approval"}
